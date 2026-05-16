@@ -1958,9 +1958,31 @@ mod tests {
         app_state.settings.sandbox.allowed_commands = vec!["cargo test".into()];
         let mut input = json!({"command": "cargo test --all"});
 
-        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None);
+        let result = crate::tool_runtime::execution::with_sandbox_availability_override(
+            crate::sandbox::Availability::Available(crate::sandbox::Mechanism::Bubblewrap),
+            || central_permission_result_for_tool("Bash", &mut input, &app_state, None),
+        );
 
         assert!(matches!(result, PermissionResult::Allow { .. }));
+    }
+
+    #[test]
+    fn central_permission_sandbox_allowed_command_asks_when_sandbox_unavailable() {
+        let mut app_state = AppState::default();
+        app_state.settings.sandbox.enabled = Some(true);
+        app_state.settings.sandbox.mode = Some("workspace".into());
+        app_state.settings.sandbox.allowed_commands = vec!["cargo test".into()];
+        let mut input = json!({"command": "cargo test --all"});
+
+        let result = crate::tool_runtime::execution::with_sandbox_availability_override(
+            crate::sandbox::Availability::Unavailable {
+                platform: "test",
+                reason: "forced unavailable".to_string(),
+            },
+            || central_permission_result_for_tool("Bash", &mut input, &app_state, None),
+        );
+
+        assert!(matches!(result, PermissionResult::Ask { .. }));
     }
 
     #[test]
@@ -1975,7 +1997,10 @@ mod tests {
             .insert("test".into(), vec!["Bash".into()]);
         let mut input = json!({"command": "cargo test --all"});
 
-        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None);
+        let result = crate::tool_runtime::execution::with_sandbox_availability_override(
+            crate::sandbox::Availability::Available(crate::sandbox::Mechanism::Bubblewrap),
+            || central_permission_result_for_tool("Bash", &mut input, &app_state, None),
+        );
 
         assert!(matches!(result, PermissionResult::Ask { .. }));
     }
@@ -1989,7 +2014,10 @@ mod tests {
         app_state.settings.sandbox.allowed_commands = vec!["cargo test".into()];
         let mut input = json!({"command": "cargo test --all"});
 
-        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None);
+        let result = crate::tool_runtime::execution::with_sandbox_availability_override(
+            crate::sandbox::Availability::Available(crate::sandbox::Mechanism::Bubblewrap),
+            || central_permission_result_for_tool("Bash", &mut input, &app_state, None),
+        );
 
         assert!(matches!(result, PermissionResult::Ask { .. }));
     }

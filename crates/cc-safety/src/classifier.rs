@@ -519,14 +519,12 @@ fn parse_classifier_response(
 }
 
 pub fn redact_classifier_text(input: &str) -> String {
+    const SECRET_KEY_PATTERN: &str =
+        r#"api[_-]?key|token|access[_-]?token|refresh[_-]?token|secret|password|passwd"#;
     let patterns = [
         (
             r#"(?i)\b(authorization)\s*[:=]\s*bearer\s+["']?[^"'\s,}]+["']?"#,
             "$1: Bearer <redacted>",
-        ),
-        (
-            r#"(?i)\b(api[_-]?key|token|access[_-]?token|refresh[_-]?token|secret|password|passwd)\s*[:=]\s*["']?[^"'\s,}]+["']?"#,
-            "$1=<redacted>",
         ),
         (
             r#"(?i)\bbearer\s+[a-z0-9._~+/=-]{12,}"#,
@@ -541,6 +539,29 @@ pub fn redact_classifier_text(input: &str) -> String {
     ];
 
     let mut out = input.to_string();
+    let quoted_secret_value = Regex::new(&format!(
+        r#"(?i)(?P<prefix>["']?(?:{})["']?\s*[:=]\s*)(?P<quote>["'])[^"']*(?P<close>["'])"#,
+        SECRET_KEY_PATTERN
+    ))
+    .expect("classifier quoted secret redaction regex must compile");
+    out = quoted_secret_value
+        .replace_all(&out, |caps: &regex::Captures| {
+            format!(
+                "{}{}<redacted>{}",
+                &caps["prefix"], &caps["quote"], &caps["close"]
+            )
+        })
+        .into_owned();
+
+    let unquoted_secret_value = Regex::new(&format!(
+        r#"(?i)(?P<prefix>["']?(?:{})["']?\s*[:=]\s*)[^"'\s,}}\]]+"#,
+        SECRET_KEY_PATTERN
+    ))
+    .expect("classifier unquoted secret redaction regex must compile");
+    out = unquoted_secret_value
+        .replace_all(&out, "${prefix}<redacted>")
+        .into_owned();
+
     for (pattern, replacement) in patterns {
         let regex = Regex::new(pattern).expect("classifier redaction regex must compile");
         out = regex.replace_all(&out, replacement).into_owned();
@@ -740,11 +761,38 @@ mod tests {
     }
 
     #[test]
+    fn redaction_removes_json_secret_fields() {
+        let input = r#"{"password":"hunter2","apiKey":"sk-json-secret","api_key":"sk_snake","accessToken":"abc123","refresh-token":"def456","secret":'topsecret'}"#;
+        let redacted = redact_classifier_text(input);
+
+        for secret in [
+            "hunter2",
+            "sk-json-secret",
+            "sk_snake",
+            "abc123",
+            "def456",
+            "topsecret",
+        ] {
+            assert!(!redacted.contains(secret), "secret value leaked: {secret}");
+        }
+        assert!(redacted.contains(r#""password":"<redacted>""#));
+        assert!(redacted.contains(r#""apiKey":"<redacted>""#));
+        assert!(redacted.contains(r#""api_key":"<redacted>""#));
+        assert!(redacted.contains(r#""accessToken":"<redacted>""#));
+        assert!(redacted.contains(r#""refresh-token":"<redacted>""#));
+        assert!(redacted.contains(r#""secret":'<redacted>'"#));
+    }
+
+    #[test]
     fn prompt_shape_is_stable_and_redacted() {
         let mut req = request("echo $ANTHROPIC_API_KEY");
         req.tool_classifier_input = json!({
             "command": "echo",
-            "env": "OPENAI_API_KEY=sk-testsecret1234567890"
+            "env": "OPENAI_API_KEY=sk-testsecret1234567890",
+            "metadata": {
+                "password": "hunter2",
+                "accessToken": "abc123"
+            }
         });
 
         let prompt =
@@ -752,11 +800,13 @@ mod tests {
                 .expect("prompt builds");
 
         assert!(!prompt.user.contains("sk-testsecret1234567890"));
+        assert!(!prompt.user.contains("hunter2"));
+        assert!(!prompt.user.contains("abc123"));
         insta::assert_snapshot!(
             prompt
                 .user
                 .lines()
-                .take(15)
+                .take(19)
                 .collect::<Vec<_>>()
                 .join("\n"),
             @r###"
@@ -773,7 +823,11 @@ tool_input:
 tool_classifier_input:
 {
   "command": "echo",
-  "env": "OPENAI_API_KEY=<redacted-secret>"
+  "env": "OPENAI_API_KEY=<redacted>",
+  "metadata": {
+    "accessToken": "<redacted>",
+    "password": "<redacted>"
+  }
 }
 "###
         );

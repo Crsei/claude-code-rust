@@ -212,8 +212,8 @@ impl Tool for ExitPlanModeTool {
             .and_then(|v| v.as_str())
             .map(str::to_string);
 
-        let allowed_prompt_count = match allowed_prompt_rules(input) {
-            Ok(rules) => rules.len(),
+        let derived_rules = match allowed_prompt_rules(input) {
+            Ok(rules) => rules,
             Err(message) => {
                 return PermissionResult::Deny { message };
             }
@@ -223,15 +223,20 @@ impl Tool for ExitPlanModeTool {
             crate::plan_workflow::request_approval_state(state, cwd, existing, "main", "tool", plan)
         }) {
             Ok(record) => PermissionResult::Ask {
-                message: if allowed_prompt_count == 0 {
+                message: if derived_rules.is_empty() {
                     format!(
                         "Approve plan {} and exit plan mode to begin implementation?",
                         record.id
                     )
                 } else {
+                    let rules = derived_rules
+                        .into_iter()
+                        .map(|rule| format!("- {rule}"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     format!(
-                        "Approve plan {} and exit plan mode to begin implementation? This will also add {} transient allowed prompt rule(s).",
-                        record.id, allowed_prompt_count
+                        "Approve plan {} and exit plan mode to begin implementation?\n\nTransient allowed prompt rules:\n{}",
+                        record.id, rules
                     )
                 },
             },
@@ -255,10 +260,12 @@ impl Tool for ExitPlanModeTool {
             .to_string();
         let allowed_prompt_rules =
             allowed_prompt_rules(&input).map_err(|message| anyhow::anyhow!(message))?;
+        let auto_mode_stripped_allowed_prompt_rules = Arc::new(Mutex::new(0usize));
 
         let record = mutate_plan_workflow(ctx, plan_cwd(), {
             let plan_for_record = (!plan.is_empty()).then(|| plan.clone());
             let rules_for_state = allowed_prompt_rules.clone();
+            let stripped_count = Arc::clone(&auto_mode_stripped_allowed_prompt_rules);
             move |state, cwd, existing| {
                 let record = crate::plan_workflow::approve_and_exit_state(
                     state,
@@ -275,6 +282,14 @@ impl Tool for ExitPlanModeTool {
                         .entry("plan_allowed_prompts".into())
                         .or_default()
                         .extend(rules_for_state);
+                    let transition =
+                        cc_permissions::dangerous::strip_dangerous_permissions_for_active_auto_mode(
+                            &mut state.tool_permission_context,
+                        );
+                    *stripped_count
+                        .lock()
+                        .expect("auto mode stripped allowed prompt count poisoned") =
+                        transition.stripped_session_allow_count;
                 }
                 record
             }
@@ -290,6 +305,12 @@ impl Tool for ExitPlanModeTool {
         }
         if !allowed_prompt_rules.is_empty() {
             result["allowed_prompt_rules"] = json!(allowed_prompt_rules);
+            let stripped_count = *auto_mode_stripped_allowed_prompt_rules
+                .lock()
+                .expect("auto mode stripped allowed prompt count poisoned");
+            if stripped_count > 0 {
+                result["auto_mode_stripped_allowed_prompt_rules"] = json!(stripped_count);
+            }
         }
 
         Ok(ToolResult {
@@ -804,6 +825,104 @@ mod tests {
             decision.behavior,
             cc_permissions::decision::PermissionBehavior::Allow
         );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_exit_plan_mode_strips_dangerous_allowed_prompts_in_auto_mode() {
+        let _cwd_guard = PlanCwdGuard::new();
+        let state = Arc::new(RwLock::new(AppState::default()));
+        {
+            let mut s = state.write();
+            s.tool_permission_context.mode = PermissionMode::Plan;
+            s.tool_permission_context.pre_plan_mode = Some(PermissionMode::Auto);
+        }
+
+        let exit_tool = ExitPlanModeTool;
+        let dummy_msg = AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        };
+        let ctx = make_ctx(Arc::clone(&state));
+        let input = json!({
+            "plan": "Run requested checks after implementation.",
+            "allowedPrompts": [
+                {"tool": "Bash", "prompt": "*"},
+                {"tool": "Bash", "prompt": "prefix:python"},
+                {"tool": "Bash", "prompt": "prefix:npm"},
+                {"tool": "Bash", "prompt": "cargo test*"}
+            ]
+        });
+
+        let result = exit_tool.call(input, &ctx, &dummy_msg, None).await.unwrap();
+        assert_eq!(
+            result.data["auto_mode_stripped_allowed_prompt_rules"]
+                .as_u64()
+                .unwrap(),
+            3
+        );
+
+        let s = state.read();
+        assert_eq!(s.tool_permission_context.mode, PermissionMode::Auto);
+        let active_rules = s
+            .tool_permission_context
+            .session_allow_rules
+            .get("plan_allowed_prompts")
+            .expect("safe plan allowed prompt rule should remain active");
+        assert_eq!(active_rules, &vec!["Bash(cargo test*)".to_string()]);
+        for dangerous_rule in ["Bash(*)", "Bash(prefix:python)", "Bash(prefix:npm)"] {
+            assert!(
+                s.tool_permission_context
+                    .auto_mode_stripped_session_allow_rules
+                    .iter()
+                    .any(|stripped| stripped.rule == dangerous_rule),
+                "expected {dangerous_rule} to be withheld in Auto mode"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_exit_plan_mode_approval_message_lists_allowed_prompt_rules() {
+        let _cwd_guard = PlanCwdGuard::new();
+        let state = Arc::new(RwLock::new(AppState::default()));
+        {
+            let mut s = state.write();
+            s.tool_permission_context.mode = PermissionMode::Plan;
+            s.tool_permission_context.pre_plan_mode = Some(PermissionMode::Default);
+        }
+
+        let exit_tool = ExitPlanModeTool;
+        let ctx = make_ctx(state);
+        let result = exit_tool
+            .check_permissions(
+                &json!({
+                    "plan": "Run tests.",
+                    "allowedPrompts": [
+                        {"tool": "Bash", "prompt": "cargo test*"},
+                        {"tool": "Bash", "prompt": "cargo test*"},
+                        {"tool": "Bash", "prompt": "run lint"}
+                    ]
+                }),
+                &ctx,
+            )
+            .await;
+
+        let PermissionResult::Ask { message } = result else {
+            panic!("expected ask permission result");
+        };
+        assert!(message.contains("Transient allowed prompt rules:"));
+        assert!(message.contains("- Bash(cargo test*)"));
+        assert!(message.contains("- Bash(cargo clippy*)"));
+        assert_eq!(message.matches("- Bash(cargo test*)").count(), 1);
+        assert!(!message.contains("transient allowed prompt rule(s)"));
     }
 
     #[tokio::test]

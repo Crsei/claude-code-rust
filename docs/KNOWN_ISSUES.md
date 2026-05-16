@@ -19,10 +19,10 @@
 | ID | 严重度 | 状态 | 范围 | 摘要 | 详情 |
 | --- | --- | --- | --- | --- | --- |
 | SAFETY-001 | 高 | Fixed | Auto mode | `permissions.enableAutoMode=false` 现在由统一的 permission transition helper 强制执行，启动配置、Web、`/permissions`、`/config` 与子上下文不能绕过进入 Auto。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §四 |
-| SAFETY-002 | 高 | Open | Plan `allowedPrompts` | Auto -> Plan -> ExitPlanMode 后可能追加未经 Auto-mode 危险规则剥离的 Bash allow 规则。 | 同上 |
-| SAFETY-003 | 高 | Open | Sandbox `allowedCommands` | sandbox 不可用时仍可能预批准 `allowedCommands`；前缀匹配还允许 shell 链式命令搭车。 | 同上 |
-| SAFETY-004 | 高 | Open | classifier redaction | JSON 字段形式的 `password` / `apiKey` / `token` 等 secret 没有被 redaction regex 覆盖。 | 同上 |
-| SAFETY-005 | 中 | Open | Plan approval UI | 审批提示只显示 allowed prompt 规则数量，没有展示将写入的具体规则。 | 同上 |
+| SAFETY-002 | 高 | Fixed | Plan `allowedPrompts` | Auto -> Plan -> ExitPlanMode 追加的 `allowedPrompts` 规则会在恢复 Auto mode 后立即复用危险 allow 规则剥离逻辑，宽泛/解释器/package runner Bash 规则进入 Auto mode stripped side buffer。 | 同上 |
+| SAFETY-003 | 高 | Fixed | Sandbox `allowedCommands` | `allowedCommands` 仅在 workspace sandbox 且 OS-level sandbox 可用时预批准；匹配改为 argv 结构化检查，链式/管道命令中未显式允许的子命令不会搭车放行。 | 同上 |
+| SAFETY-004 | 高 | Fixed | classifier redaction | classifier redaction 覆盖 JSON/object-like secret 字段，包括 `password`、`apiKey`、`api_key`、`token`、`accessToken`、`refreshToken`、`secret` 等。 | 同上 |
+| SAFETY-005 | 中 | Fixed | Plan approval UI | ExitPlanMode 审批提示现在列出将写入的去重后 transient allowed prompt rules，而不是只显示数量。 | 同上 |
 
 ## 3. 模型与 provider 文档/兼容性
 

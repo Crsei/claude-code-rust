@@ -13,8 +13,9 @@ use cc_types::permissions::{
 use cc_utils::bash::{contains_multiline_string, has_unterminated_quotes};
 
 const CROSS_PLATFORM_CODE_EXEC_AUTO_ALLOW_PATTERNS: &[&str] = &[
-    "python", "python3", "python2", "node", "deno", "tsx", "ruby", "perl", "php", "lua", "npx",
-    "bunx", "npm run", "yarn run", "pnpm run", "bun run", "bash", "sh", "ssh",
+    "python", "python3", "python2", "node", "deno", "tsx", "ruby", "perl", "php", "lua", "npm",
+    "yarn", "pnpm", "bun", "npx", "bunx", "npm run", "yarn run", "pnpm run", "bun run", "bash",
+    "sh", "ssh",
 ];
 
 const DANGEROUS_BASH_AUTO_ALLOW_PATTERNS: &[&str] =
@@ -1437,6 +1438,7 @@ mod tests {
                 "Bash(cargo test*)".into(),
                 "Bash(prefix:git)".into(),
                 "Bash(prefix:python)".into(),
+                "Bash(prefix:npm)".into(),
                 "Bash(npm run:*)".into(),
                 "Bash(ssh *)".into(),
                 "Bash(sudo:*)".into(),
@@ -1465,6 +1467,7 @@ mod tests {
 
         for expected in [
             "Bash(prefix:python)",
+            "Bash(prefix:npm)",
             "Bash(npm run:*)",
             "Bash(ssh *)",
             "Bash(sudo:*)",

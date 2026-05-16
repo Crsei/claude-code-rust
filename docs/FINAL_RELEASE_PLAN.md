@@ -1,6 +1,6 @@
 # cc-rust 最终发布计划
 
-> 更新日期: 2026-05-08
+> 更新日期: 2026-05-17
 > 范围: `F:\AIclassmanager\cc\rust`
 > 阶段: 全量构建 / Full Build 发布收口
 
@@ -13,6 +13,17 @@
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md): 当前开放问题和代码审查发现。
 - [TECH_DEBT.md](TECH_DEBT.md): 代码层技术债。
 - [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md): Rust TUI 对标矩阵。
+
+## 0. 最近完成的发布收口
+
+以下条目不再按“待实现主线”处理，但仍需要在最终发布前完成 closeout 证据归档：
+
+| 范围 | 已完成状态 | 发布前剩余动作 |
+| --- | --- | --- |
+| Crate 重构 / owner migration | `claude-code-rs/src/engine/**` 与 `claude-code-rs/src/ipc/**` 已删除；engine/agent 实现由 `cc-engine` 拥有，IPC JSONL runtime、agent settings 与共享 protocol/handler facade 由 `cc-ipc` / `cc-ipc-client` / `cc-ipc-protocol` 拥有；root binary 仅保留 startup、Rust TUI 和 runtime adapter glue。2026-05-14 默认 workspace gates 已 green。 | 关闭 thin-binary source guards：剩余 cross-crate UI path shims、root-style imports、allow attributes、Codex compatibility path hits 需要清零或登记为 intentional residual；完成后把 crate migration 计划迁入 archive，并补 [archive/COMPLETED_FULL.md](archive/COMPLETED_FULL.md)。 |
+| Ratatui UI 美化 / P0-P1 parity | OMX closeout 已确认共享 UI primitives、settings/safety surfaces、message/composer surfaces、agent/team/task/search/integration surfaces 和对应 snapshot 更新已落地；P0/P1 基础面不再作为发布阻塞主线。 | 保留 runtime residual 跟踪：最新 shell output 自动展开、跨会话 history 质量、真实 Browser MCP/IDE/PR 数据路径，以及最终 UI snapshot / e2e release gate。 |
+| Auto mode enable policy | `SAFETY-001` 已修复：`permissions.enableAutoMode=false` 现在由统一的 permission transition helper 强制执行，启动配置、Web settings、`/permissions`、`/config` 与子上下文不能绕过进入 Auto mode。 | 发布证据保留新增回归测试：`cc-permissions auto_mode`、`cc-commands auto_respects_disabled_policy`、`cc-startup build_tool_permission_context_blocks_startup_auto_when_disabled`、`cc-web set_permission_mode_auto_respects_disabled_policy`、`claude-code-rs --test e2e_permissions`；[KNOWN_ISSUES.md](KNOWN_ISSUES.md) 中保持 `SAFETY-001` Fixed。 |
+| Safety closeout | `SAFETY-002` 到 `SAFETY-005` 已修复：Plan `allowedPrompts` 在 Auto mode 恢复后立即剥离危险 transient allow；Plan approval UI 展示具体去重规则；sandbox `allowedCommands` 对 sandbox availability 和 compound shell argv fail-closed；classifier redaction 覆盖 JSON secret 字段。 | 发布证据保留本轮验证：`cargo test -p cc-tools plan_mode -- --nocapture`、`cargo test -p cc-sandbox allowed_command -- --nocapture`、`cargo test -p cc-engine sandbox_allowed_command -- --nocapture`、`cargo test -p cc-safety redaction -- --nocapture`、`cargo fmt --check`；[KNOWN_ISSUES.md](KNOWN_ISSUES.md) 中保持 `SAFETY-002` 到 `SAFETY-005` Fixed。 |
 
 ## 1. 发布定义
 
@@ -101,10 +112,6 @@ cargo test -p claude-code-rs query::loop_helpers
 | --- | --- | --- | --- |
 | e2e terminal | `tests/e2e_terminal` 仍有未纳入版本控制的 `phase6.rs` 引用。 | e2e terminal 测试可在干净 checkout 运行，不依赖本地遗留文件。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `TEST-001` |
 | clippy gate | `cargo clippy -p claude-code-rs --all-targets -- -D warnings` 仍被跨模块 lint 阻塞。 | workspace clippy 作为发布硬门禁，不再需要豁免。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `CLIPPY-001` |
-| Auto mode 安全 | `permissions.enableAutoMode=false` 仍可能被启动配置、Web、插件上下文绕过。 | 一个全局策略源决定 Auto mode，所有入口一致执行。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `SAFETY-001` |
-| Plan allowed prompts | Auto -> Plan -> ExitPlanMode 后可能追加未剥离危险规则的 Bash allow。 | `allowedPrompts` 写入前经过同一危险规则分类与剥离逻辑。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `SAFETY-002` |
-| Sandbox allowed commands | sandbox 不可用时仍可能预批准命令，前缀匹配允许 shell 链式命令搭车。 | sandbox unavailable 时 fail closed；命令匹配使用结构化解析或严格边界。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `SAFETY-003` |
-| Secret redaction | JSON 字段形式的 password/apiKey/token 没有被 redaction regex 覆盖。 | classifier、日志、trace、prompt diagnostic 统一走 secret redaction。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `SAFETY-004` |
 | Context compact | auto compact 阈值可能重复扣减本地释放 token；exact count 漏 system prompt/tools。 | 模型请求大小估算可信，compact 不会错误跳过或误判。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `CONTEXT-001` / `CONTEXT-002` |
 | Model/provider mapping | Bedrock 模型 ID 和 legacy alias 文档/实现不一致。 | provider 模型路由准确；文档、配置校验、运行时错误口径一致。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `MODEL-001` / `MODEL-002` / `DOC-001` |
 | Worktree safety | `WorktreeRemove` 路径边界未覆盖 symlink / Windows junction 逃逸。 | 删除/清理路径在 Windows 与 Unix 都经过 resolved-boundary 校验。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `WORKTREE-001` |
@@ -123,7 +130,7 @@ cargo test -p claude-code-rs query::loop_helpers
 | Session export | 已有 transcript/tool/compact 基础，缺 API request snapshot、context collapse、mode/tag/title、raw vs apiView。 | 导出包可审计、可回放、能说明模型实际看到的上下文和裁剪历史。 | [plan/session-export-implementation-guide.md](plan/session-export-implementation-guide.md) |
 | Computer Use | 外置 MCP 和图片链路多数完成，session/storage/export 回归仍有缺口。 | screenshot 图片块在工具结果、下一轮模型请求、session 保存/恢复、导出中不丢失。 | [plan/computer-use-implementation-checklist.md](plan/computer-use-implementation-checklist.md) |
 | Browser MCP | 配置/提示/渲染基础存在，真实第三方 server 截图、console、network 端到端未验证。 | fake-server 与真实 browser MCP server 都有可重复验证；权限文案清楚。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-004` |
-| IPC subsystem | handler/types/events 仍有跨 LSP/MCP/Plugin/IDE/Skill/AgentSettings 聚合，协议缺版本策略。 | 每个 subsystem 独立 handler/type/event，JSON roundtrip contract tests 覆盖兼容策略。 | [TECH_DEBT.md](TECH_DEBT.md), [plan/ipc-refactor-plan.md](plan/ipc-refactor-plan.md) |
+| Crate / IPC ownership closeout | Engine + IPC owner migration 已落地，root `engine/**` / `ipc/**` source 已删除；thin-binary guard 仍有 path shims、root-style imports、allow attributes 与 Codex compatibility path hits。 | 关闭 source guard，固定 IPC 协议版本策略；crate migration 从活跃计划迁入 archive/completed-full。 | [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md), [plan/crate-migration-phase-plan-2026-05-14.md](plan/crate-migration-phase-plan-2026-05-14.md), [reference/CRATE_MIGRATION_PHASE0_OWNER_GUARD_MATRIX.md](reference/CRATE_MIGRATION_PHASE0_OWNER_GUARD_MATRIX.md) |
 | Plugin diagnostics | 全局 plugin diagnostics 仍可能没有进入 `/reload_plugins` 输出。 | plugin metadata/cache/manifest 错误对用户可见，不再表现为“没有插件”。 | [TECH_DEBT.md](TECH_DEBT.md) Remaining P1 follow-ups |
 | Auth compatibility | legacy auth wrapper 仍可能记录后返回 unauthenticated。 | 外部调用迁移到 diagnostic API；兼容 wrapper 不吞掉关键凭据错误。 | [TECH_DEBT.md](TECH_DEBT.md) Remaining P1 follow-ups |
 
@@ -131,11 +138,10 @@ cargo test -p claude-code-rs query::loop_helpers
 
 | 范围 | 当前状态 | 预期发布效果 | 证据入口 |
 | --- | --- | --- | --- |
-| Ratatui shell output | renderer 支持 expanded/detail，最新 shell 输出自动展开未接 runtime context。 | 长输出默认策略符合上游体验，用户能快速展开、折叠、查看细节。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-002` |
-| Ratatui history | Ctrl+R 只覆盖当前 session。 | 跨会话 prompt history 有 reader/API，搜索结果带来源和时间。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-003` |
-| Ratatui settings | usage、output style、language、thinking toggle、invalid settings、managed settings、sandbox tabs、cost/token warnings 等未完整。 | `/config` 和设置面覆盖最终支持的配置域，错误配置有可见修复路径。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md) §8 |
-| Ratatui agents/teams | AgentTree、Coordinator status、Agent progress、Team member card/summary 等缺失。 | 团队与 agent 状态能在 UI 中解释当前执行、阻塞和完成状态。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md) §5 |
-| Ratatui dialogs | session preview/export、global search、quick open、log selector、context visualization、API key/OAuth、diagnostics 等仍缺。 | 发布支持面内的对话框可用；不支持项明确裁剪或移到后续版本。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md) §17 |
+| Ratatui UI polish baseline | P0/P1 基础与美化已完成：共享 primitives、settings/safety、message/composer、agent/team/task/search/integration surfaces 以及 snapshot 更新已收口。 | 发布前保持 snapshot gate；新增 UI 只能作为真实 surface 接入，不再引入空占位。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md) `Ratatui UI parity OMX closeout`, [archive/ratatui-ui-parity-omx-execution-report-2026-05-08.md](archive/ratatui-ui-parity-omx-execution-report-2026-05-08.md) |
+| Ratatui shell output residual | renderer 支持 expanded/detail，最新 shell 输出自动展开未接 runtime context。 | 长输出默认策略符合上游体验，用户能快速展开、折叠、查看细节。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-002` |
+| Ratatui history residual | Ctrl+R 已有当前 session 搜索和可用 backend 数据下的 persistent-history reader wiring；跨会话质量仍依赖 durable reader 覆盖。 | 跨会话 prompt history 结果稳定带来源和时间；缺少后端数据时给出清晰空状态。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-003` |
+| Ratatui backend-gated surfaces | LSP/IDE/Chrome/channel/Claude Desktop MCP 等 UI surface 已有状态入口或 snapshot 覆盖，但真实后端数据与第三方 server 路径未全部验证。 | live backend 不可用时显示诊断；可用时有真实 e2e 或 fake-server 证据。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-004` |
 | Web UI | `web/handlers.rs` 仍有注入 messages 并启动 SSE stream 的 TODO。 | Web UI 能承载真实会话状态、权限事件、tool result、compact boundary 和重放。 | `crates/claude-code-rs/src/web/handlers.rs` |
 | Remote channels | `/channels` 和远程 channel 仍是阶段性 stub；schedule remote triggers 未实现。 | Telegram/Lark 等远程入口要么可连接/测试/显示状态，要么作为后续路线写入 crop/roadmap。 | [plan/remote-channel-phase1-telegram-lark-plan-2026-05-08.md](plan/remote-channel-phase1-telegram-lark-plan-2026-05-08.md) |
 | Voice | audio/STT 后端当前是明确 unsupported-build stub。 | 若纳入发布支持面，需真实 audio/STT backend；否则 UI/CLI 明确显示不可用原因。 | `crates/claude-code-rs/src/voice/**` |
@@ -156,9 +162,9 @@ cargo test -p claude-code-rs query::loop_helpers
 
 ## 5. 推荐执行顺序
 
-1. 修 P0 构建与安全项：`TEST-001`、`CLIPPY-001`、SAFETY、CONTEXT、MODEL、WORKTREE、critical hook。
+1. 修 P0 构建与剩余阻塞项：`TEST-001`、`CLIPPY-001`、CONTEXT、MODEL、WORKTREE、critical hook。
 2. 收 P1 核心链路：API provider e2e、PlanMode、TaskTools、Team Memory、Daemon ownership、Session Export、Computer Use、Browser MCP。
-3. 收 P2 用户体验：Ratatui settings/search/history/shell、Web UI、remote channel 决策、voice/browser/LSP/branch/terminal setup。
+3. 收 P2 用户体验：Ratatui runtime residuals、Web UI、remote channel 决策、voice/browser/LSP/branch/terminal setup。
 4. 做全仓文档收口：迁移完成历史到 archive，清理 Lite/mojibake，补最终发布说明草稿。
 5. 跑 release candidate 门禁：完整 cargo gate、真实 provider smoke、daemon soak、TUI snapshot、headless/Web/Brower MCP e2e。
 
