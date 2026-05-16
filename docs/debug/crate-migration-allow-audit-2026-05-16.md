@@ -107,6 +107,34 @@ Current second-batch status:
 | `cc-config` | 0 | `rg` over `crates/cc-config/src` finds no `dead_code` or `unused_imports` allowances. |
 | `cc-daemon` | 0 | `rg` over `crates/cc-daemon/src` finds no `dead_code` or `unused_imports` allowances. |
 
+Second-batch verification:
+
+| Check | Result | Notes |
+| --- | --- | --- |
+| `cargo check -p cc-browser -p cc-commands -p cc-config -p cc-daemon --all-targets` | Pass | Re-run after all cleanup and local clippy fixes. |
+| `cargo test -p cc-browser` | Pass | 44 unit tests, 2 boundary tests. |
+| `cargo test -p cc-commands` | Pass with `CC_RUST_HOME=/tmp/cc-rust-cc-commands-tests` | Default sandbox run hit an existing read-only `$HOME/.cc-rust` team-memory path; isolated `CC_RUST_HOME` avoids touching the real home data root. |
+| `cargo test -p cc-config` | Pass | 73 unit tests. |
+| `cargo test -p cc-daemon` | Pass | 46 unit tests. |
+| `cargo fmt --check` | Pass | No formatting drift. |
+| `rg` target-crate allow scan | Pass | `cc-browser` has only the 8 documented conditional `dead_code` allowances; `cc-commands`, `cc-config`, and `cc-daemon` have no `dead_code` or `unused_imports` allowances. |
+| `cargo clippy -p cc-browser --all-targets -- -D warnings` | Pass | Fixed local `filter_map_bool_then` lint in `cc-browser::detection`. |
+| `cargo clippy -p cc-config --all-targets -- -D warnings` | Pass | No local lints. |
+| `cargo clippy -p cc-commands --all-targets --no-deps -- -D warnings` | Pass | Fixed local lints in help/security-review/terminal env helpers. |
+| `cargo clippy -p cc-daemon --all-targets --no-deps -- -D warnings` | Pass | Fixed local `clone_on_copy` and `unnecessary_lazy_evaluations` lints. |
+| `cargo clippy -p cc-commands --all-targets -- -D warnings` | Blocked outside target crate | Existing dependency-chain lints in `gateway`, `cc-ipc-protocol`, and `cc-session`. |
+| `cargo clippy -p cc-daemon --all-targets -- -D warnings` | Blocked outside target crate | Same non-target dependency-chain lints as the commands clippy run. |
+
+Known full-clippy blockers observed during this pass:
+
+| Crate | File / lint | Notes |
+| --- | --- | --- |
+| `gateway` | `adapters/lark.rs`, `adapters/telegram.rs` / `clippy::result_large_err` | `AdapterStatus` is large as a `Result::Err` value. |
+| `gateway` | `api.rs` / `clippy::type_complexity` | `auth_verify` closure type should be factored if this crate is cleaned up. |
+| `gateway` | `config.rs`, `run.rs` / `clippy::derivable_impls` | Manual defaults can be derived. |
+| `cc-ipc-protocol` | `subsystem_events.rs` / `clippy::large_enum_variant` | `McpEvent::ConfigChanged` and `McpCommand::UpsertConfig` carry large config entries. |
+| `cc-session` | `storage.rs`, `transcript.rs` / `clippy::needless_borrows_for_generic_args` | Several filesystem calls pass needless `&PathBuf` borrows. |
+
 ## `allow(unused_imports)` Inventory
 
 | Type | File | Lines | Context |
