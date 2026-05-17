@@ -479,6 +479,20 @@ pub struct MessagesRequest {
     pub tools: Option<Vec<Value>>,
     pub stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_sequences: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_management: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<Value>,
@@ -1548,14 +1562,7 @@ impl ApiClient {
                     accumulator.process_event(&event);
                 }
                 Err(e) => {
-                    // If an error occurs mid-stream, return what we have with
-                    // an error marker 鈥?but first, if we have no content at all,
-                    // propagate the error directly.
-                    if accumulator.content_blocks.is_empty() {
-                        return Err(e);
-                    }
-                    tracing::warn!("stream error mid-accumulation: {}", e);
-                    break;
+                    return Err(e);
                 }
             }
         }

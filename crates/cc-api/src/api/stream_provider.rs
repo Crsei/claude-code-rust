@@ -14,7 +14,7 @@ use crate::api::client::{
     is_official_anthropic_base_url, parse_sse_byte_stream, AnthropicAuth, MessagesRequest,
     PromptCacheCapability,
 };
-use crate::api::retry::categorize_api_error;
+use crate::api::streaming::normalize_api_error_body;
 use cc_types::message::StreamEvent;
 
 /// Trait for provider-specific streaming implementations.
@@ -76,17 +76,23 @@ impl StreamProvider for AnthropicStreamProvider {
         let status = response.status().as_u16();
 
         if !response.status().is_success() {
+            let request_id = response
+                .headers()
+                .get("request-id")
+                .or_else(|| response.headers().get("x-request-id"))
+                .and_then(|value| value.to_str().ok())
+                .map(ToOwned::to_owned);
             let error_body = response
                 .text()
                 .await
                 .unwrap_or_else(|_| String::from("(failed to read error body)"));
-            let category = categorize_api_error(status, &error_body);
-            anyhow::bail!(
-                "API error (HTTP {}): {:?} 鈥?{}",
-                status,
-                category,
-                error_body
-            );
+            return Err(normalize_api_error_body(
+                "anthropic",
+                Some(status),
+                &error_body,
+                request_id,
+            )
+            .into());
         }
 
         let byte_stream = response.bytes_stream();

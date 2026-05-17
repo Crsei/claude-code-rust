@@ -154,7 +154,7 @@ pub fn categorize_stream_start_error(message: &str) -> ApiErrorCategory {
 
 fn extract_http_status(message: &str) -> Option<u16> {
     let lower = message.to_ascii_lowercase();
-    for marker in ["http ", "status ", "status: "] {
+    for marker in ["http ", "status ", "status: ", "status="] {
         if let Some(index) = lower.find(marker) {
             let after = &lower[index + marker.len()..];
             let digits: String = after
@@ -204,6 +204,12 @@ mod tests {
         assert!(
             categorize_stream_start_error("Google Gemini error (HTTP 504): gateway timeout")
                 .is_retryable()
+        );
+        assert!(
+            categorize_stream_start_error(
+                "API error provider=anthropic status=529 request_id=req type=overloaded_error: overloaded"
+            )
+            .is_retryable()
         );
         assert!(
             categorize_stream_start_error("failed to send HTTP request: connection closed")

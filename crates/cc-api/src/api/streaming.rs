@@ -1,6 +1,7 @@
 //! SSE (Server-Sent Events) stream parser for the Anthropic Messages API
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
+use std::fmt;
 
 use cc_types::message::{AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage};
 
@@ -10,6 +11,85 @@ pub struct CompletedToolUse {
     pub id: String,
     pub name: String,
     pub input: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NormalizedApiError {
+    pub provider: String,
+    pub status: Option<u16>,
+    pub request_id: Option<String>,
+    pub error_type: Option<String>,
+    pub message: String,
+}
+
+impl fmt::Display for NormalizedApiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "API error")?;
+        write!(f, " provider={}", self.provider)?;
+        if let Some(status) = self.status {
+            write!(f, " status={status}")?;
+        }
+        if let Some(request_id) = &self.request_id {
+            write!(f, " request_id={request_id}")?;
+        }
+        if let Some(error_type) = &self.error_type {
+            write!(f, " type={error_type}")?;
+        }
+        write!(f, ": {}", self.message)
+    }
+}
+
+impl std::error::Error for NormalizedApiError {}
+
+pub fn normalize_api_error_body(
+    provider: &str,
+    status: Option<u16>,
+    body: &str,
+    request_id: Option<String>,
+) -> NormalizedApiError {
+    match serde_json::from_str::<Value>(body) {
+        Ok(value) => normalize_api_error_value(provider, status, &value, request_id),
+        Err(_) => NormalizedApiError {
+            provider: provider.to_string(),
+            status,
+            request_id,
+            error_type: None,
+            message: body.trim().to_string(),
+        },
+    }
+}
+
+pub fn normalize_api_error_value(
+    provider: &str,
+    status: Option<u16>,
+    value: &Value,
+    request_id: Option<String>,
+) -> NormalizedApiError {
+    let error = value.get("error").unwrap_or(value);
+    let request_id = request_id
+        .or_else(|| string_field(value, "request_id"))
+        .or_else(|| string_field(value, "request-id"))
+        .or_else(|| string_field(error, "request_id"))
+        .or_else(|| string_field(error, "request-id"));
+    let status = status
+        .or_else(|| u16_field(value, "status"))
+        .or_else(|| u16_field(value, "status_code"))
+        .or_else(|| u16_field(error, "status"))
+        .or_else(|| u16_field(error, "status_code"));
+    let error_type = string_field(error, "type")
+        .or_else(|| string_field(error, "code"))
+        .or_else(|| string_field(value, "error_type"));
+    let message = string_field(error, "message")
+        .or_else(|| string_field(value, "message"))
+        .unwrap_or_else(|| value.to_string());
+
+    NormalizedApiError {
+        provider: provider.to_string(),
+        status,
+        request_id,
+        error_type,
+        message,
+    }
 }
 
 /// Parse a single SSE line into a StreamEvent
@@ -53,9 +133,26 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<Option<StreamEven
             Ok(Some(StreamEvent::MessageDelta { delta, usage }))
         }
         "message_stop" => Ok(Some(StreamEvent::MessageStop)),
-        "ping" | "error" => Ok(None),
+        "ping" => Ok(None),
+        "error" => Err(normalize_api_error_value("anthropic", None, &parsed, None).into()),
         _ => Ok(None),
     }
+}
+
+fn string_field(value: &Value, field: &str) -> Option<String> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn u16_field(value: &Value, field: &str) -> Option<u16> {
+    value
+        .get(field)
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
 }
 
 fn required_field(parsed: &Value, field: &str) -> Result<Value> {

@@ -1287,7 +1287,6 @@ fn test_sse_line_parsing_empty_text() {
 }
 
 #[test]
-#[ignore = "activated by phase 5: Anthropic stream error SSE events must become actionable errors"]
 fn regression_anthropic_stream_error_event_currently_ignored() {
     let sse_text =
         include_str!("../../../tests/fixtures/anthropic_compatible/stream_error_event.sse");
@@ -1296,6 +1295,25 @@ fn regression_anthropic_stream_error_event_currently_ignored() {
     // failures can disappear from the stream parser instead of surfacing.
     let err = parse_sse_text(sse_text).expect_err("error event should not be ignored");
     assert!(err.to_string().contains("overloaded_error"));
+}
+
+#[test]
+fn anthropic_stream_error_event_preserves_available_metadata() {
+    let sse_text = "\
+event: error\n\
+data: {\"type\":\"error\",\"status\":529,\"request_id\":\"req_sse\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\
+\n";
+
+    let err = parse_sse_text(sse_text).expect_err("error event should surface");
+    let normalized = err
+        .downcast_ref::<crate::api::streaming::NormalizedApiError>()
+        .expect("stream error should use normalized API error");
+
+    assert_eq!(normalized.provider, "anthropic");
+    assert_eq!(normalized.status, Some(529));
+    assert_eq!(normalized.request_id.as_deref(), Some("req_sse"));
+    assert_eq!(normalized.error_type.as_deref(), Some("overloaded_error"));
+    assert_eq!(normalized.message, "Overloaded");
 }
 
 struct FlakyStreamProvider {
@@ -1308,6 +1326,8 @@ struct StaticStreamProvider {
     events: Vec<StreamEvent>,
 }
 
+struct PartialThenErrorStreamProvider;
+
 #[async_trait::async_trait]
 impl crate::api::stream_provider::StreamProvider for StaticStreamProvider {
     async fn stream(
@@ -1318,6 +1338,44 @@ impl crate::api::stream_provider::StreamProvider for StaticStreamProvider {
         Ok(Box::pin(futures::stream::iter(
             self.events.clone().into_iter().map(Ok),
         )))
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::api::stream_provider::StreamProvider for PartialThenErrorStreamProvider {
+    async fn stream(
+        &self,
+        _http: &reqwest::Client,
+        _request: &MessagesRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+        let events = vec![
+            Ok(StreamEvent::MessageStart {
+                usage: cc_types::message::Usage {
+                    input_tokens: 11,
+                    output_tokens: 0,
+                    cache_read_input_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                },
+            }),
+            Ok(StreamEvent::ContentBlockStart {
+                index: 0,
+                content_block: cc_types::message::ContentBlock::Text {
+                    text: String::new(),
+                },
+            }),
+            Ok(StreamEvent::ContentBlockDelta {
+                index: 0,
+                delta: serde_json::json!({"type": "text_delta", "text": "partial"}),
+            }),
+            Err(anyhow::anyhow!(crate::api::streaming::NormalizedApiError {
+                provider: "anthropic".to_string(),
+                status: Some(529),
+                request_id: Some("req_partial".to_string()),
+                error_type: Some("overloaded_error".to_string()),
+                message: "Overloaded".to_string(),
+            })),
+        ];
+        Ok(Box::pin(futures::stream::iter(events)))
     }
 }
 
@@ -1345,6 +1403,13 @@ fn minimal_stream_request() -> MessagesRequest {
         max_tokens: 1024,
         tools: None,
         stream: true,
+        metadata: None,
+        service_tier: None,
+        stop_sequences: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
+        context_management: None,
         thinking: None,
         tool_choice: None,
         advisor_model: None,
@@ -1484,6 +1549,46 @@ async fn messages_collects_stream_events_into_assistant_message() {
     }
 }
 
+#[tokio::test]
+async fn messages_propagates_partial_stream_error_instead_of_fake_success() {
+    let client = ApiClient {
+        config: anthropic_config(),
+        http: reqwest::Client::new(),
+        stream_provider: Box::new(PartialThenErrorStreamProvider),
+    };
+
+    let err = client
+        .messages(minimal_stream_request())
+        .await
+        .expect_err("partial stream error must not become an assistant message");
+    let msg = err.to_string();
+
+    assert!(msg.contains("provider=anthropic"));
+    assert!(msg.contains("status=529"));
+    assert!(msg.contains("request_id=req_partial"));
+    assert!(msg.contains("type=overloaded_error"));
+}
+
+#[test]
+fn normalizes_anthropic_error_body_with_request_metadata() {
+    let err = crate::api::streaming::normalize_api_error_body(
+        "anthropic",
+        Some(400),
+        r#"{"type":"error","request_id":"req_123","error":{"type":"invalid_request_error","message":"bad request"}}"#,
+        None,
+    );
+
+    assert_eq!(err.provider, "anthropic");
+    assert_eq!(err.status, Some(400));
+    assert_eq!(err.request_id.as_deref(), Some("req_123"));
+    assert_eq!(err.error_type.as_deref(), Some("invalid_request_error"));
+    assert_eq!(err.message, "bad request");
+    assert_eq!(
+        err.to_string(),
+        "API error provider=anthropic status=400 request_id=req_123 type=invalid_request_error: bad request"
+    );
+}
+
 // -----------------------------------------------------------------------
 // MessagesRequest serialization
 // -----------------------------------------------------------------------
@@ -1497,6 +1602,13 @@ fn test_messages_request_serialization() {
         max_tokens: 1024,
         tools: None,
         stream: true,
+        metadata: None,
+        service_tier: None,
+        stop_sequences: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
+        context_management: None,
         thinking: None,
         tool_choice: None,
         advisor_model: None,
@@ -1510,6 +1622,49 @@ fn test_messages_request_serialization() {
     assert!(json.get("thinking").is_none());
     assert!(json.get("tool_choice").is_none());
     assert!(json.get("advisor_model").is_none());
+    assert!(json.get("metadata").is_none());
+    assert!(json.get("service_tier").is_none());
+    assert!(json.get("stop_sequences").is_none());
+    assert!(json.get("temperature").is_none());
+    assert!(json.get("top_p").is_none());
+    assert!(json.get("top_k").is_none());
+    assert!(json.get("context_management").is_none());
+}
+
+#[test]
+fn test_messages_request_optional_fields_serialize_when_present() {
+    let req = MessagesRequest {
+        model: "claude-sonnet-4-20250514".to_string(),
+        messages: vec![serde_json::json!({"role": "user", "content": "Hello"})],
+        system: None,
+        max_tokens: 1024,
+        tools: None,
+        stream: true,
+        metadata: Some(serde_json::json!({"user_id": "user-123"})),
+        service_tier: Some("auto".to_string()),
+        stop_sequences: Some(vec!["STOP".to_string()]),
+        temperature: Some(0.25),
+        top_p: Some(0.9),
+        top_k: Some(50),
+        context_management: Some(serde_json::json!({
+            "edits": [{"type": "clear_tool_uses_20250919"}]
+        })),
+        thinking: None,
+        tool_choice: None,
+        advisor_model: None,
+    };
+
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["metadata"]["user_id"], "user-123");
+    assert_eq!(json["service_tier"], "auto");
+    assert_eq!(json["stop_sequences"][0], "STOP");
+    assert_eq!(json["temperature"], 0.25);
+    assert_eq!(json["top_p"], 0.9);
+    assert_eq!(json["top_k"], 50);
+    assert_eq!(
+        json["context_management"]["edits"][0]["type"],
+        "clear_tool_uses_20250919"
+    );
 }
 
 #[test]
@@ -1525,6 +1680,13 @@ fn regression_prompt_cache_marker_serializes_in_anthropic_body() {
         max_tokens: 1024,
         tools: None,
         stream: true,
+        metadata: None,
+        service_tier: None,
+        stop_sequences: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
+        context_management: None,
         thinking: None,
         tool_choice: None,
         advisor_model: None,
@@ -1633,6 +1795,13 @@ fn test_messages_request_with_thinking() {
         max_tokens: 4096,
         tools: None,
         stream: true,
+        metadata: None,
+        service_tier: None,
+        stop_sequences: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
+        context_management: None,
         thinking: Some(serde_json::json!({"type": "enabled", "budget_tokens": 2048})),
         tool_choice: None,
         advisor_model: None,
@@ -1661,6 +1830,13 @@ fn test_anthropic_count_tokens_body_omits_generation_only_fields() {
             "input_schema": {"type": "object"}
         })]),
         stream: true,
+        metadata: None,
+        service_tier: None,
+        stop_sequences: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
+        context_management: None,
         thinking: Some(serde_json::json!({"type": "enabled", "budget_tokens": 1024})),
         tool_choice: None,
         advisor_model: Some("advisor".to_string()),
@@ -1778,6 +1954,13 @@ fn test_messages_request_advisor_model_serializes_when_set() {
         max_tokens: 1024,
         tools: None,
         stream: true,
+        metadata: None,
+        service_tier: None,
+        stop_sequences: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
+        context_management: None,
         thinking: None,
         tool_choice: None,
         advisor_model: Some("claude-opus-4-20250514".to_string()),
