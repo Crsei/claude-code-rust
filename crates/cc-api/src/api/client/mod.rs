@@ -2,6 +2,7 @@
 //! Anthropic Messages API (streaming + non-streaming).
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Once;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
@@ -27,6 +28,19 @@ pub const OPENAI_CODEX_PROVIDER_NAME: &str = "openai-codex";
 pub const OPENAI_CODEX_TOKEN_ENV: &str = "OPENAI_CODEX_AUTH_TOKEN";
 pub const OPENAI_CODEX_BASE_URL_ENV: &str = "OPENAI_CODEX_BASE_URL";
 pub const OPENAI_CODEX_MODEL_ENV: &str = "OPENAI_CODEX_MODEL";
+pub const ANTHROPIC_DEFAULT_SOTA_MODEL_ENV: &str = "ANTHROPIC_DEFAULT_SOTA_MODEL";
+pub const ANTHROPIC_DEFAULT_MOTA_MODEL_ENV: &str = "ANTHROPIC_DEFAULT_MOTA_MODEL";
+pub const ANTHROPIC_DEFAULT_FOTA_MODEL_ENV: &str = "ANTHROPIC_DEFAULT_FOTA_MODEL";
+pub const ANTHROPIC_DEFAULT_OPUS_MODEL_ENV: &str = "ANTHROPIC_DEFAULT_OPUS_MODEL";
+pub const ANTHROPIC_DEFAULT_SONNET_MODEL_ENV: &str = "ANTHROPIC_DEFAULT_SONNET_MODEL";
+pub const ANTHROPIC_DEFAULT_HAIKU_MODEL_ENV: &str = "ANTHROPIC_DEFAULT_HAIKU_MODEL";
+
+const ANTHROPIC_OFFICIAL_SOTA_MODEL: &str = "claude-opus-4-7";
+const ANTHROPIC_OFFICIAL_MOTA_MODEL: &str = "claude-sonnet-4-6";
+const ANTHROPIC_OFFICIAL_FOTA_MODEL: &str = "claude-haiku-4-5-20251001";
+const ANTHROPIC_DEFAULT_MODEL_ALIAS: &str = "MOTA";
+
+static ANTHROPIC_LEGACY_MODEL_ENV_WARNING: Once = Once::new();
 
 pub(crate) fn build_openai_compat_url(base_url: &str, provider_name: &str) -> String {
     let endpoint = if provider_name.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_NAME) {
@@ -307,6 +321,120 @@ fn anthropic_base_url_from_env() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+#[derive(Debug, Clone, Copy)]
+struct AnthropicModelAlias {
+    name: &'static str,
+    default_env: &'static str,
+    legacy_env: &'static str,
+    official_default: &'static str,
+}
+
+impl AnthropicModelAlias {
+    fn for_name(model: &str) -> Option<Self> {
+        let trimmed = model.trim();
+        if trimmed.eq_ignore_ascii_case("SOTA") {
+            Some(Self {
+                name: "SOTA",
+                default_env: ANTHROPIC_DEFAULT_SOTA_MODEL_ENV,
+                legacy_env: ANTHROPIC_DEFAULT_OPUS_MODEL_ENV,
+                official_default: ANTHROPIC_OFFICIAL_SOTA_MODEL,
+            })
+        } else if trimmed.eq_ignore_ascii_case("MOTA") {
+            Some(Self {
+                name: "MOTA",
+                default_env: ANTHROPIC_DEFAULT_MOTA_MODEL_ENV,
+                legacy_env: ANTHROPIC_DEFAULT_SONNET_MODEL_ENV,
+                official_default: ANTHROPIC_OFFICIAL_MOTA_MODEL,
+            })
+        } else if trimmed.eq_ignore_ascii_case("FOTA") {
+            Some(Self {
+                name: "FOTA",
+                default_env: ANTHROPIC_DEFAULT_FOTA_MODEL_ENV,
+                legacy_env: ANTHROPIC_DEFAULT_HAIKU_MODEL_ENV,
+                official_default: ANTHROPIC_OFFICIAL_FOTA_MODEL,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+fn non_empty_env(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn warn_legacy_anthropic_model_env_once(legacy_env: &str, default_env: &str) {
+    ANTHROPIC_LEGACY_MODEL_ENV_WARNING.call_once(|| {
+        tracing::warn!(
+            legacy_env,
+            default_env,
+            "legacy Anthropic model fallback env var is deprecated; use the SOTA/MOTA/FOTA env var instead"
+        );
+    });
+}
+
+fn anthropic_model_env_for_alias(alias: AnthropicModelAlias) -> Option<String> {
+    if let Some(model) = non_empty_env(alias.default_env) {
+        return Some(model);
+    }
+    let model = non_empty_env(alias.legacy_env)?;
+    warn_legacy_anthropic_model_env_once(alias.legacy_env, alias.default_env);
+    Some(model)
+}
+
+fn resolve_anthropic_model_alias(
+    model: &str,
+    endpoint_kind: AnthropicEndpointKind,
+) -> Result<String> {
+    let trimmed = model.trim();
+    let Some(alias) = AnthropicModelAlias::for_name(trimmed) else {
+        return Ok(trimmed.to_string());
+    };
+
+    if let Some(model) = anthropic_model_env_for_alias(alias) {
+        return Ok(model);
+    }
+
+    match endpoint_kind {
+        AnthropicEndpointKind::DirectAnthropic => Ok(alias.official_default.to_string()),
+        AnthropicEndpointKind::CompatibleAnthropic => bail!(
+            "Anthropic-compatible provider cannot resolve model alias `{}` without {}. Set ANTHROPIC_MODEL to an explicit provider model ID, or set {} for this compatible endpoint.",
+            alias.name,
+            alias.default_env,
+            alias.default_env
+        ),
+    }
+}
+
+fn resolve_anthropic_default_model(endpoint_kind: AnthropicEndpointKind) -> Result<String> {
+    let selected = non_empty_env("ANTHROPIC_MODEL")
+        .unwrap_or_else(|| ANTHROPIC_DEFAULT_MODEL_ALIAS.to_string());
+    resolve_anthropic_model_alias(&selected, endpoint_kind)
+}
+
+fn resolve_model_for_request(provider: &ApiProvider, model: &str) -> Result<String> {
+    match provider {
+        ApiProvider::Anthropic { endpoint_kind, .. } => {
+            resolve_anthropic_model_alias(model, *endpoint_kind)
+        }
+        ApiProvider::Bedrock { .. } | ApiProvider::Vertex { .. } => {
+            resolve_anthropic_model_alias(model, AnthropicEndpointKind::DirectAnthropic)
+        }
+        _ => Ok(model.trim().to_string()),
+    }
+}
+
+fn resolve_request_model_for_provider(
+    provider: &ApiProvider,
+    mut request: MessagesRequest,
+) -> Result<MessagesRequest> {
+    request.model = resolve_model_for_request(provider, &request.model)?;
+    Ok(request)
+}
+
 /// API client configuration
 #[derive(Debug, Clone)]
 pub struct ApiClientConfig {
@@ -526,6 +654,9 @@ impl ApiClient {
         &self,
         request: &MessagesRequest,
     ) -> Result<ExactTokenCount> {
+        let resolved_request =
+            resolve_request_model_for_provider(&self.config.provider, request.clone())?;
+        let request = &resolved_request;
         match &self.config.provider {
             ApiProvider::Anthropic {
                 auth,
@@ -722,9 +853,15 @@ impl ApiClient {
                 base_url: info.base_url.to_string(),
             },
         };
+        let default_model = if matches!(info.protocol, ProviderProtocol::Anthropic) {
+            resolve_anthropic_default_model(AnthropicEndpointKind::DirectAnthropic)
+                .expect("invalid Anthropic default model configuration")
+        } else {
+            info.default_model.to_string()
+        };
         Self::new(ApiClientConfig {
             provider,
-            default_model: info.default_model.to_string(),
+            default_model,
             max_retries: 3,
             timeout_secs: 120,
         })
@@ -824,7 +961,7 @@ impl ApiClient {
             let base_url = anthropic_base_url_from_env();
             let endpoint_kind =
                 crate::api::providers::anthropic_endpoint_kind_for_base_url(base_url.as_deref());
-            let default_model = info.default_model.to_string();
+            let default_model = resolve_anthropic_default_model(endpoint_kind)?;
             return Self::try_new(ApiClientConfig {
                 provider: ApiProvider::Anthropic {
                     auth: AnthropicAuth::ApiKey(api_key),
@@ -873,7 +1010,9 @@ impl ApiClient {
         let default_model = std::env::var("ANTHROPIC_MODEL")
             .ok()
             .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
+            .unwrap_or_else(|| ANTHROPIC_DEFAULT_MODEL_ALIAS.to_string());
+        let default_model =
+            resolve_anthropic_model_alias(&default_model, AnthropicEndpointKind::DirectAnthropic)?;
         Self::try_new(ApiClientConfig {
             provider: ApiProvider::Bedrock {
                 region,
@@ -911,7 +1050,9 @@ impl ApiClient {
         let default_model = std::env::var("ANTHROPIC_MODEL")
             .ok()
             .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
+            .unwrap_or_else(|| ANTHROPIC_DEFAULT_MODEL_ALIAS.to_string());
+        let default_model =
+            resolve_anthropic_model_alias(&default_model, AnthropicEndpointKind::DirectAnthropic)?;
         Self::try_new(ApiClientConfig {
             provider: ApiProvider::Vertex {
                 project_id,
@@ -1024,13 +1165,14 @@ impl ApiClient {
         let base_url = anthropic_base_url_from_env();
         let endpoint_kind =
             crate::api::providers::anthropic_endpoint_kind_for_base_url(base_url.as_deref());
+        let default_model = resolve_anthropic_default_model(endpoint_kind)?;
         Self::try_new(ApiClientConfig {
             provider: ApiProvider::Anthropic {
                 auth,
                 base_url,
                 endpoint_kind,
             },
-            default_model: "claude-sonnet-4-20250514".to_string(),
+            default_model,
             max_retries: 3,
             timeout_secs: 120,
         })
@@ -1134,6 +1276,7 @@ impl ApiClient {
         SleepFn: FnMut(Duration) -> SleepFuture,
         SleepFuture: Future<Output = ()>,
     {
+        let request = resolve_request_model_for_provider(&self.config.provider, request)?;
         let mut retry_attempt = 0;
 
         loop {
@@ -1171,6 +1314,7 @@ impl ApiClient {
     pub async fn messages(&self, request: MessagesRequest) -> Result<AssistantMessage> {
         use futures::StreamExt;
 
+        let request = resolve_request_model_for_provider(&self.config.provider, request)?;
         let model = request.model.clone();
         let stream = self.messages_stream(request).await?;
         let mut stream = std::pin::pin!(stream);
