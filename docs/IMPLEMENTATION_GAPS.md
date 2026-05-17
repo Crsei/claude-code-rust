@@ -1,6 +1,6 @@
 # cc-rust 未完备项与全量构建 TODO
 
-> 更新日期: 2026-05-17 | 当前阶段: 全量构建 / Full Build
+> 更新日期: 2026-05-18 | 当前阶段: 全量构建 / Full Build
 
 本文只登记仍未补齐、仍需重评或明确 intentional crop 的内容。已确认实现或已关闭的历史记录已迁移到：
 
@@ -14,7 +14,7 @@
 
 | 范围 | 当前状态 | 说明 |
 | --- | --- | --- |
-| API providers | 部分完成 | Bedrock 原生 AWS EventStream、Vertex direct service-account JWT exchange 已补；provider capability DTO 与 Azure/OpenAI/Foundry 命名诊断已接入，Foundry 明确 fail early；仍需补齐真实 provider/e2e 与更多 mock fixture 覆盖。 |
+| API providers | 基线完成，真实凭据证据待补 | Bedrock 原生 AWS EventStream、Vertex direct service-account JWT exchange、provider capability DTO、Azure/OpenAI/Foundry 命名诊断、Foundry fail early、Anthropic-compatible bearer/custom base URL、SOTA/MOTA/FOTA 默认值和 provider smoke matrix 已接入；真实 provider smoke 仍按凭据门控收集发布证据。 |
 | Team Memory 客户端同步 | 代码已接通，待验证/文档收口 | `ui/team-memory-server/sync.ts` / `watcher.ts` 与 Rust daemon spawn 参数已接通；仍需同步、断线恢复、冲突处理 e2e。 |
 | TaskTools remote/multi-type runtime | 基础完成，runtime parity 未完 | 持久化、依赖字段、输出保留、`TaskOutput` 阻塞/超时、task taxonomy、remote metadata、recoverable marker、restore timer reset、remote review timeout guard、local-agent 取消和 `/tasks` UI 基础已完成；仍需 remote/multi-type poller/reconnect runtime parity。 |
 | PlanMode auto-mode parity | 基础完成，classifier parity 未完 | 保守 classifier、计划持久化、approval lifecycle、实现任务关联、团队审批 mailbox、plan file 写入白名单已落地；仍需 full auto-mode LLM classifier parity 和 `allowedPrompts` 语义分类收口。 |
@@ -51,6 +51,7 @@
 | Rust TUI shell output | 已接 runtime context | renderer 支持 expanded/collapsed/detail view；最新 Bash/PowerShell tool result 自动展开，历史长输出默认折叠，选中后可展开 detail。 |
 | Rust TUI Ctrl+R history | 已接 workspace 持久历史 | Ctrl+R 按当前 workspace 读取跨会话 prompt history，条目带 session/title/cwd 来源和时间；无数据时显示明确空态。 |
 | Browser MCP real-server path | fake/e2e 已有，真实 server 手动证据待补 | `e2e_browser_mcp`、`e2e_chrome_native_host`、`e2e_chrome_mcp_bridge` 覆盖 fake/unreachable/native-host 路径；真实第三方 Browser MCP server 截图/console/network 仍是 release 手动证据，不作为默认已验证声明。 |
+| Anthropic-compatible provider smoke | Mock matrix complete, real smoke credential-gated | `scripts/provider_smoke_matrix.py` 覆盖 direct API key、direct bearer、compatible bearer + custom base URL、Bedrock/Vertex model mapping、prompt-cache strip/enabled knobs；`real` 模式只在所需 env 存在时运行，并会 redact secrets/auth headers。 |
 
 ## 4. 历史 Deferred 重评队列
 

@@ -1,9 +1,17 @@
 # 已完成模块 — 完整实现
 
-> 最后更新: 2026-05-17
+> 最后更新: 2026-05-18
 > 此文档记录与 TypeScript 原版功能对等或接近完整的已完成模块。
 > 大幅简化的模块见 [`COMPLETED_SIMPLIFIED.md`](COMPLETED_SIMPLIFIED.md)。
 > 剩余工作见 [`REWRITE_PLAN.md`](../REWRITE_PLAN.md)。
+
+---
+
+## 2026-05-18 Anthropic-compatible coding closeout
+
+| 模块 | 文件 | 验证 | 说明 |
+|------|------|------|------|
+| Provider smoke matrix and Anthropic coding reference | `scripts/provider_smoke_matrix.py`, `docs/reference/anthropic_coding.md`, `docs/IMPLEMENTATION_GAPS.md`, `docs/WORK_STATUS.md` | `python3 -m py_compile scripts/provider_smoke_matrix.py`; `scripts/provider_smoke_matrix.py list`; targeted mock/unit matrix | Provider smoke matrix 覆盖 direct Anthropic API key、direct bearer、compatible bearer + custom base URL、Bedrock/Vertex model mapping、prompt cache disabled/enabled gates；真实 smoke 只在所需 env 存在时运行，并 redacts tokens/auth headers。Reference 文档补齐 compatible coding mode、SOTA/MOTA/FOTA、legacy fallback、prompt cache knobs 与 authority refs。 |
 
 ---
 
