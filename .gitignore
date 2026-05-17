@@ -60,6 +60,7 @@ web-ui/tsconfig.tsbuildinfo
 # Global data dir junction
 .cc-rust
 .omx/
+.claude/launch.json
 .claude/
 tests/message_suite/results/
 docs/architecture/
