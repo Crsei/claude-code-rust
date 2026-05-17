@@ -10,7 +10,9 @@ use anyhow::{Context, Result};
 use futures::Stream;
 
 use crate::api::client::{
-    build_anthropic_headers, parse_sse_byte_stream, AnthropicAuth, MessagesRequest,
+    apply_prompt_cache_policy_to_body, build_anthropic_headers_for_body,
+    is_official_anthropic_base_url, parse_sse_byte_stream, AnthropicAuth, MessagesRequest,
+    PromptCacheCapability,
 };
 use crate::api::retry::categorize_api_error;
 use cc_types::message::StreamEvent;
@@ -44,13 +46,24 @@ impl StreamProvider for AnthropicStreamProvider {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let url = format!("{}/v1/messages", self.base_url.trim_end_matches('/'));
 
-        let headers = build_anthropic_headers(&self.auth, false)?;
-
         let mut req_body = request.clone();
         req_body.stream = true;
 
+        let mut body_value =
+            serde_json::to_value(&req_body).context("failed to serialize request body")?;
+        let direct_official_anthropic = is_official_anthropic_base_url(&self.base_url);
+        apply_prompt_cache_policy_to_body(
+            &mut body_value,
+            PromptCacheCapability {
+                explicit_markers: true,
+                ttl_1h: direct_official_anthropic,
+                global_scope: direct_official_anthropic,
+                direct_official_anthropic,
+            },
+        );
+        let headers = build_anthropic_headers_for_body(&self.auth, false, &body_value)?;
         let body_json =
-            serde_json::to_string(&req_body).context("failed to serialize request body")?;
+            serde_json::to_string(&body_value).context("failed to serialize request body")?;
 
         let response = http
             .post(&url)

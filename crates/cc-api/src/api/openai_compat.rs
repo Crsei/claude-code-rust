@@ -17,7 +17,10 @@ use anyhow::{Context, Result};
 use futures::Stream;
 use serde_json::{json, Value};
 
-use crate::api::client::{build_openai_compat_url, MessagesRequest, OPENAI_CODEX_PROVIDER_NAME};
+use crate::api::client::{
+    build_openai_compat_url, strip_anthropic_cache_fields, MessagesRequest,
+    OPENAI_CODEX_PROVIDER_NAME,
+};
 use cc_types::message::{ContentBlock, MessageDelta, StreamEvent, Usage};
 
 // ---------------------------------------------------------------------------
@@ -79,9 +82,17 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
     let is_codex_provider = provider_name.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_NAME);
     let is_deepseek_provider = provider_name.eq_ignore_ascii_case("deepseek");
     let mut oai_messages: Vec<Value> = Vec::new();
+    let mut messages = Value::Array(request.messages.clone());
+    strip_anthropic_cache_fields(&mut messages);
+    let messages = messages.as_array().cloned().unwrap_or_default();
 
     // System prompt 鈫?system message
-    if let Some(system) = &request.system {
+    let mut system = request.system.clone().map(Value::Array);
+    if let Some(value) = system.as_mut() {
+        strip_anthropic_cache_fields(value);
+    }
+    let system = system.and_then(|value| value.as_array().cloned());
+    if let Some(system) = &system {
         let text = extract_system_text(system);
         if !text.is_empty() {
             oai_messages.push(json!({"role": "system", "content": text}));
@@ -90,7 +101,7 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
 
     // User/assistant messages 鈥?convert to OpenAI format.
     // Handles: text messages, assistant tool_use blocks, user tool_result blocks.
-    for msg in &request.messages {
+    for msg in &messages {
         let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("user");
         let content = msg.get("content");
 
@@ -270,7 +281,12 @@ fn build_openai_request(request: &MessagesRequest, provider_name: &str) -> Value
     // Convert Anthropic-format tools to OpenAI function-calling format.
     // Anthropic: {"name": "X", "description": "...", "input_schema": {...}}
     // OpenAI:    {"type": "function", "function": {"name": "X", "description": "...", "parameters": {...}}}
-    if let Some(tools) = &request.tools {
+    let mut tools = request.tools.clone().map(Value::Array);
+    if let Some(value) = tools.as_mut() {
+        strip_anthropic_cache_fields(value);
+    }
+    let tools = tools.and_then(|value| value.as_array().cloned());
+    if let Some(tools) = &tools {
         let oai_tools: Vec<Value> = tools
             .iter()
             .filter_map(|t| {
@@ -712,6 +728,37 @@ mod tests {
         };
         let body = build_openai_request(&req, "openai");
         assert_eq!(body["model"], "gpt-4o");
+    }
+
+    #[test]
+    fn test_build_openai_request_strips_anthropic_cache_fields() {
+        let req = MessagesRequest {
+            model: "gpt-4o".to_string(),
+            messages: vec![json!({
+                "role": "user",
+                "content": [{
+                    "type": "text",
+                    "text": "Hello",
+                    "cache_control": {"type": "ephemeral"}
+                }]
+            })],
+            system: Some(vec![json!({
+                "type": "text",
+                "text": "Be helpful.",
+                "cache_control": {"type": "ephemeral"}
+            })]),
+            max_tokens: 1024,
+            tools: None,
+            stream: true,
+            thinking: None,
+            tool_choice: None,
+            advisor_model: None,
+        };
+        let body = build_openai_request(&req, "openai");
+        assert!(serde_json::to_string(&body)
+            .unwrap()
+            .find("cache_")
+            .is_none());
         assert_eq!(body["stream"], true);
         // OpenAI/Azure use max_completion_tokens for newer models
         assert_eq!(body["max_completion_tokens"], 1024);

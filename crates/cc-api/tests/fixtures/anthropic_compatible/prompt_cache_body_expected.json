@@ -16,5 +16,6 @@
     }
   ],
   "max_tokens": 1024,
+  "tools": null,
   "stream": true
 }

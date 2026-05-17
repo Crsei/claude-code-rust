@@ -43,7 +43,7 @@ use base64::{
 use futures::Stream;
 use serde_json::{json, Value};
 
-use crate::api::client::{parse_sse_byte_stream, MessagesRequest};
+use crate::api::client::{parse_sse_byte_stream, strip_anthropic_cache_fields, MessagesRequest};
 use crate::api::retry::categorize_api_error;
 use cc_models::to_vertex_model_id;
 use cc_types::message::StreamEvent;
@@ -451,16 +451,22 @@ pub fn build_count_tokens_url(region: &str, project_id: &str) -> String {
 ///
 /// Same as Bedrock: strip `model` and `stream`; add `anthropic_version`.
 fn to_vertex_body(request: &MessagesRequest) -> Result<Vec<u8>> {
+    let mut messages = Value::Array(request.messages.clone());
+    strip_anthropic_cache_fields(&mut messages);
     let mut body = json!({
         "anthropic_version": VERTEX_ANTHROPIC_VERSION,
         "max_tokens": request.max_tokens,
-        "messages": request.messages.clone(),
+        "messages": messages.as_array().cloned().unwrap_or_default(),
     });
     if let Some(system) = &request.system {
-        body["system"] = Value::Array(system.clone());
+        let mut value = Value::Array(system.clone());
+        strip_anthropic_cache_fields(&mut value);
+        body["system"] = value;
     }
     if let Some(tools) = &request.tools {
-        body["tools"] = Value::Array(tools.clone());
+        let mut value = Value::Array(tools.clone());
+        strip_anthropic_cache_fields(&mut value);
+        body["tools"] = value;
     }
     if let Some(thinking) = &request.thinking {
         body["thinking"] = thinking.clone();
@@ -477,15 +483,21 @@ fn to_vertex_body(request: &MessagesRequest) -> Result<Vec<u8>> {
 /// the target Anthropic model ID plus the input-bearing fields. Generation-only
 /// fields from the streaming call are omitted.
 fn to_vertex_count_tokens_body(request: &MessagesRequest) -> Result<Vec<u8>> {
+    let mut messages = Value::Array(request.messages.clone());
+    strip_anthropic_cache_fields(&mut messages);
     let mut body = json!({
         "model": to_vertex_model_id(&request.model),
-        "messages": request.messages.clone(),
+        "messages": messages.as_array().cloned().unwrap_or_default(),
     });
     if let Some(system) = &request.system {
-        body["system"] = Value::Array(system.clone());
+        let mut value = Value::Array(system.clone());
+        strip_anthropic_cache_fields(&mut value);
+        body["system"] = value;
     }
     if let Some(tools) = &request.tools {
-        body["tools"] = Value::Array(tools.clone());
+        let mut value = Value::Array(tools.clone());
+        strip_anthropic_cache_fields(&mut value);
+        body["tools"] = value;
     }
     if let Some(thinking) = &request.thinking {
         body["thinking"] = thinking.clone();

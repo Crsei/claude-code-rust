@@ -45,7 +45,7 @@ use base64::Engine;
 use futures::{Stream, StreamExt};
 use serde_json::{json, Value};
 
-use crate::api::client::MessagesRequest;
+use crate::api::client::{strip_anthropic_cache_fields, MessagesRequest};
 use crate::api::sigv4::{self, AwsCredentials, SignRequest};
 use crate::api::streaming::parse_sse_event;
 use cc_models::to_bedrock_model_id;
@@ -133,16 +133,22 @@ pub fn build_count_tokens_url(
 
 /// Convert a `MessagesRequest` into the Bedrock-specific JSON body.
 fn to_bedrock_body(request: &MessagesRequest) -> Result<Vec<u8>> {
+    let mut messages = Value::Array(request.messages.clone());
+    strip_anthropic_cache_fields(&mut messages);
     let mut body = json!({
         "anthropic_version": BEDROCK_ANTHROPIC_VERSION,
         "max_tokens": request.max_tokens,
-        "messages": request.messages.clone(),
+        "messages": messages.as_array().cloned().unwrap_or_default(),
     });
     if let Some(system) = &request.system {
-        body["system"] = Value::Array(system.clone());
+        let mut value = Value::Array(system.clone());
+        strip_anthropic_cache_fields(&mut value);
+        body["system"] = value;
     }
     if let Some(tools) = &request.tools {
-        body["tools"] = Value::Array(tools.clone());
+        let mut value = Value::Array(tools.clone());
+        strip_anthropic_cache_fields(&mut value);
+        body["tools"] = value;
     }
     if let Some(thinking) = &request.thinking {
         body["thinking"] = thinking.clone();

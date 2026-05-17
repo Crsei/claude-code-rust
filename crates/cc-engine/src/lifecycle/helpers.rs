@@ -103,7 +103,7 @@ pub(crate) fn build_messages_request(
     use crate::types::message::{Attachment, Message, MessageContent};
 
     // Convert Message list to API JSON format
-    let api_messages: Vec<serde_json::Value> = params
+    let mut api_messages: Vec<serde_json::Value> = params
         .messages
         .iter()
         .filter_map(|msg| match msg {
@@ -147,17 +147,13 @@ pub(crate) fn build_messages_request(
         .collect();
 
     // Convert system prompt parts into API format
-    let system = if params.system_prompt.is_empty() {
-        None
+    let (system, system_marker_count) = build_system_prompt_blocks(&params.system_prompt);
+    let message_marker_budget = 4usize.saturating_sub(system_marker_count).min(1);
+    if message_marker_budget == 0 {
+        prompt_cache_diagnostic("message cache marker omitted: marker budget exhausted by system");
     } else {
-        Some(
-            params
-                .system_prompt
-                .iter()
-                .map(|s| serde_json::json!({"type": "text", "text": s}))
-                .collect(),
-        )
-    };
+        add_message_cache_marker(&mut api_messages, params.skip_cache_write == Some(true));
+    }
 
     // Convert tools to API JSON format.
     let tools: Option<Vec<serde_json::Value>> = if params.tools.is_empty() {
@@ -222,6 +218,141 @@ pub(crate) fn build_messages_request(
     }
 }
 
+fn default_cache_marker() -> serde_json::Value {
+    cc_api::api::client::prompt_cache_marker_value(cc_api::api::client::PromptCachePolicy {
+        enabled: true,
+        ttl_1h: false,
+        global_scope: false,
+    })
+}
+
+fn build_system_prompt_blocks(parts: &[String]) -> (Option<Vec<serde_json::Value>>, usize) {
+    if parts.is_empty() {
+        return (None, 0);
+    }
+
+    let mut prefix = Vec::new();
+    let mut suffix = Vec::new();
+    let mut in_dynamic_suffix = false;
+    for part in parts {
+        if part == crate::prompt_sections::DYNAMIC_BOUNDARY {
+            in_dynamic_suffix = true;
+            continue;
+        }
+        if in_dynamic_suffix {
+            suffix.push(part.as_str());
+        } else {
+            prefix.push(part.as_str());
+        }
+    }
+
+    let mut blocks = Vec::new();
+    let mut marker_count = 0usize;
+    let prefix_text = prefix.join("\n\n");
+    if !prefix_text.is_empty() {
+        let mut block = serde_json::json!({"type": "text", "text": prefix_text});
+        block["cache_control"] = default_cache_marker();
+        marker_count = 1;
+        blocks.push(block);
+    }
+    let suffix_text = suffix.join("\n\n");
+    if !suffix_text.is_empty() {
+        blocks.push(serde_json::json!({"type": "text", "text": suffix_text}));
+    }
+    if blocks.is_empty() {
+        (None, marker_count)
+    } else {
+        (Some(blocks), marker_count)
+    }
+}
+
+fn add_message_cache_marker(messages: &mut [serde_json::Value], skip_cache_write: bool) {
+    let eligible: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, message)| {
+            (message.get("role").and_then(serde_json::Value::as_str) == Some("user")
+                && message_content_is_cache_eligible(message.get("content")))
+            .then_some(idx)
+        })
+        .collect();
+
+    let target = if skip_cache_write {
+        if eligible.len() < 2 {
+            prompt_cache_diagnostic(
+                "message cache marker omitted: skip_cache_write requires two eligible user messages",
+            );
+            return;
+        }
+        eligible[eligible.len() - 2]
+    } else {
+        match eligible.last().copied() {
+            Some(idx) => idx,
+            None => {
+                prompt_cache_diagnostic("message cache marker omitted: no eligible user message");
+                return;
+            }
+        }
+    };
+
+    if !add_cache_marker_to_message_content(&mut messages[target]) {
+        prompt_cache_diagnostic("message cache marker omitted: eligible message had no text block");
+    }
+}
+
+fn message_content_is_cache_eligible(content: Option<&serde_json::Value>) -> bool {
+    match content {
+        Some(serde_json::Value::String(text)) => !text.is_empty(),
+        Some(serde_json::Value::Array(blocks)) => blocks.iter().any(|block| {
+            block.get("type").and_then(serde_json::Value::as_str) == Some("text")
+                && block
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|text| !text.is_empty())
+                    .unwrap_or(false)
+        }),
+        _ => false,
+    }
+}
+
+fn add_cache_marker_to_message_content(message: &mut serde_json::Value) -> bool {
+    let Some(content) = message.get_mut("content") else {
+        return false;
+    };
+    match content {
+        serde_json::Value::String(text) => {
+            let text = std::mem::take(text);
+            *content = serde_json::Value::Array(vec![serde_json::json!({
+                "type": "text",
+                "text": text,
+                "cache_control": default_cache_marker(),
+            })]);
+            true
+        }
+        serde_json::Value::Array(blocks) => {
+            let Some(target) = blocks.iter_mut().rfind(|block| {
+                block.get("type").and_then(serde_json::Value::as_str) == Some("text")
+                    && block
+                        .get("text")
+                        .and_then(serde_json::Value::as_str)
+                        .map(|text| !text.is_empty())
+                        .unwrap_or(false)
+            }) else {
+                return false;
+            };
+            target["cache_control"] = default_cache_marker();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn prompt_cache_diagnostic(message: &'static str) {
+    if cc_api::api::client::is_env_truthy("CC_RUST_PROMPT_CACHE_BREAK_DETECTION") {
+        tracing::debug!(message, "prompt cache break detection");
+    }
+}
+
 /// Some OpenAI-compatible providers cap `max_tokens` below cc-rust's default
 /// 16384. Rather than rely on provider-side errors surfacing as a blown
 /// response, clamp at build time so the first request also succeeds.
@@ -269,8 +400,11 @@ mod clamp_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::message::{Attachment, AttachmentMessage, Message};
+    use crate::types::message::{
+        Attachment, AttachmentMessage, Message, MessageContent, UserMessage,
+    };
     use cc_engine::query::deps::ModelCallParams;
+    use uuid::Uuid;
 
     fn base_params() -> ModelCallParams {
         ModelCallParams {
@@ -284,6 +418,90 @@ mod tests {
             effort_value: None,
             advisor_model: None,
         }
+    }
+
+    fn user_text(text: &str) -> Message {
+        Message::User(UserMessage {
+            uuid: Uuid::nil(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text(text.to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })
+    }
+
+    fn marker_count(value: &serde_json::Value) -> usize {
+        match value {
+            serde_json::Value::Object(map) => {
+                usize::from(map.contains_key("cache_control"))
+                    + map.values().map(marker_count).sum::<usize>()
+            }
+            serde_json::Value::Array(values) => values.iter().map(marker_count).sum(),
+            _ => 0,
+        }
+    }
+
+    #[test]
+    fn system_prompt_split_marks_static_prefix_only() {
+        let mut p = base_params();
+        p.system_prompt = vec![
+            "static".into(),
+            crate::prompt_sections::DYNAMIC_BOUNDARY.into(),
+            "dynamic".into(),
+        ];
+        p.messages = vec![user_text("hello")];
+
+        let req = build_messages_request(&p);
+        let system = req.system.unwrap();
+        assert_eq!(system.len(), 2);
+        assert_eq!(system[0]["text"], "static");
+        assert_eq!(system[0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(system[1]["text"], "dynamic");
+        assert!(system[1].get("cache_control").is_none());
+    }
+
+    #[test]
+    fn skip_cache_write_marks_second_to_last_eligible_user_message() {
+        let mut p = base_params();
+        p.system_prompt.clear();
+        p.messages = vec![user_text("first"), user_text("second"), user_text("third")];
+        p.skip_cache_write = Some(true);
+
+        let req = build_messages_request(&p);
+        assert!(req.messages[0]["content"][0].get("cache_control").is_none());
+        assert_eq!(
+            req.messages[1]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        assert!(req.messages[2]["content"][0].get("cache_control").is_none());
+    }
+
+    #[test]
+    fn skip_cache_write_omits_message_marker_with_one_eligible_message() {
+        let mut p = base_params();
+        p.system_prompt.clear();
+        p.messages = vec![user_text("only")];
+        p.skip_cache_write = Some(true);
+
+        let req = build_messages_request(&p);
+        let body = serde_json::to_value(&req).unwrap();
+        assert_eq!(marker_count(&body), 0);
+    }
+
+    #[test]
+    fn marker_budget_stays_at_system_plus_one_message() {
+        let mut p = base_params();
+        p.system_prompt = vec![
+            "static".into(),
+            crate::prompt_sections::DYNAMIC_BOUNDARY.into(),
+            "dynamic".into(),
+        ];
+        p.messages = vec![user_text("first"), user_text("second")];
+
+        let body = serde_json::to_value(build_messages_request(&p)).unwrap();
+        assert_eq!(marker_count(&body), 2);
     }
 
     #[test]
@@ -382,8 +600,12 @@ mod tests {
         assert_eq!(req.messages[0]["role"], "user");
         assert_eq!(req.messages[0]["content"], "run this next");
         assert_eq!(
-            req.messages[1]["content"],
+            req.messages[1]["content"][0]["text"],
             "[Memory from CLAUDE.md]:\nremember this"
+        );
+        assert_eq!(
+            req.messages[1]["content"][0]["cache_control"]["type"],
+            "ephemeral"
         );
     }
 }

@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::api::client::MessagesRequest;
+use crate::api::client::{strip_anthropic_cache_fields, MessagesRequest};
 use cc_types::message::{ContentBlock, MessageDelta, StreamEvent, Usage};
 
 // ---------------------------------------------------------------------------
@@ -86,8 +86,11 @@ struct GeminiUsage {
 pub(crate) fn build_gemini_request(request: &MessagesRequest) -> Value {
     let mut contents: Vec<Value> = Vec::new();
     let mut tool_names_by_id = HashMap::<String, String>::new();
+    let mut messages = Value::Array(request.messages.clone());
+    strip_anthropic_cache_fields(&mut messages);
+    let messages = messages.as_array().cloned().unwrap_or_default();
 
-    for msg in &request.messages {
+    for msg in &messages {
         let role_str = msg.get("role").and_then(|v| v.as_str()).unwrap_or("user");
         let role = match role_str {
             "assistant" => "model",
@@ -138,7 +141,12 @@ pub(crate) fn build_gemini_request(request: &MessagesRequest) -> Value {
         body["generationConfig"]["thinkingConfig"] = thinking;
     }
 
-    if let Some(tools) = gemini_tools_from_anthropic(request.tools.as_deref()) {
+    let mut tools = request.tools.clone().map(Value::Array);
+    if let Some(value) = tools.as_mut() {
+        strip_anthropic_cache_fields(value);
+    }
+    let tools = tools.and_then(|value| value.as_array().cloned());
+    if let Some(tools) = gemini_tools_from_anthropic(tools.as_deref()) {
         body["tools"] = tools;
     }
 
@@ -149,7 +157,12 @@ pub(crate) fn build_gemini_request(request: &MessagesRequest) -> Value {
     }
 
     // System instruction
-    if let Some(system) = &request.system {
+    let mut system = request.system.clone().map(Value::Array);
+    if let Some(value) = system.as_mut() {
+        strip_anthropic_cache_fields(value);
+    }
+    let system = system.and_then(|value| value.as_array().cloned());
+    if let Some(system) = &system {
         let system_text: String = system
             .iter()
             .filter_map(|block| {
@@ -807,6 +820,38 @@ mod tests {
             body["system_instruction"]["parts"][0]["text"],
             "Be helpful."
         );
+    }
+
+    #[test]
+    fn test_build_gemini_request_strips_anthropic_cache_fields() {
+        let req = MessagesRequest {
+            model: "gemini-2.0-flash".to_string(),
+            messages: vec![json!({
+                "role": "user",
+                "content": [{
+                    "type": "text",
+                    "text": "Hello",
+                    "cache_control": {"type": "ephemeral"}
+                }]
+            })],
+            system: Some(vec![json!({
+                "type": "text",
+                "text": "Be helpful.",
+                "cache_control": {"type": "ephemeral"}
+            })]),
+            max_tokens: 1024,
+            tools: None,
+            stream: true,
+            thinking: None,
+            tool_choice: None,
+            advisor_model: None,
+        };
+        let body = build_gemini_request(&req);
+        assert!(serde_json::to_string(&body)
+            .unwrap()
+            .find("cache_")
+            .is_none());
+        assert_eq!(body["contents"][0]["parts"][0]["text"], "Hello");
     }
 
     #[test]

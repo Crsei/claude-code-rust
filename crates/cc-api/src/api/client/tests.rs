@@ -1513,14 +1513,14 @@ fn test_messages_request_serialization() {
 }
 
 #[test]
-#[ignore = "activated by phase 4: prompt-cache cache_control marker must be injected"]
-fn regression_prompt_cache_marker_currently_not_injected_into_anthropic_body() {
+fn regression_prompt_cache_marker_serializes_in_anthropic_body() {
     let req = MessagesRequest {
         model: "claude-sonnet-4-5-20250929".to_string(),
         messages: vec![serde_json::json!({"role": "user", "content": "Hello"})],
         system: Some(vec![serde_json::json!({
             "type": "text",
-            "text": "You are a coding assistant."
+            "text": "You are a coding assistant.",
+            "cache_control": {"type": "ephemeral"}
         })]),
         max_tokens: 1024,
         tools: None,
@@ -1533,9 +1533,93 @@ fn regression_prompt_cache_marker_currently_not_injected_into_anthropic_body() {
     let body = serde_json::to_value(&req).unwrap();
     let expected = fixture_json("prompt_cache_body_expected");
 
-    // Phase 0 risk: prompt-cache capability is advertised in headers, but the
-    // serialized body does not add cache_control markers by itself.
     assert_eq!(body, expected);
+}
+
+#[test]
+fn test_prompt_cache_policy_defaults_do_not_add_ttl_or_global() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let saved = save_env(&["CC_RUST_PROMPT_CACHE_TTL", "CC_RUST_PROMPT_CACHE_GLOBAL"]);
+    clear_env(&["CC_RUST_PROMPT_CACHE_TTL", "CC_RUST_PROMPT_CACHE_GLOBAL"]);
+
+    let mut body = serde_json::json!({
+        "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+    });
+    apply_prompt_cache_policy_to_body(
+        &mut body,
+        PromptCacheCapability {
+            explicit_markers: true,
+            ttl_1h: true,
+            global_scope: true,
+            direct_official_anthropic: true,
+        },
+    );
+
+    assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+    assert!(body["system"][0]["cache_control"].get("ttl").is_none());
+    assert!(body["system"][0]["cache_control"].get("scope").is_none());
+    restore_env(saved);
+}
+
+#[test]
+fn test_prompt_cache_policy_adds_ttl_and_global_only_when_capable() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let saved = save_env(&["CC_RUST_PROMPT_CACHE_TTL", "CC_RUST_PROMPT_CACHE_GLOBAL"]);
+    std::env::set_var("CC_RUST_PROMPT_CACHE_TTL", "1h");
+    std::env::set_var("CC_RUST_PROMPT_CACHE_GLOBAL", "1");
+
+    let mut body = serde_json::json!({
+        "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+    });
+    apply_prompt_cache_policy_to_body(
+        &mut body,
+        PromptCacheCapability {
+            explicit_markers: true,
+            ttl_1h: true,
+            global_scope: true,
+            direct_official_anthropic: true,
+        },
+    );
+    assert_eq!(body["system"][0]["cache_control"]["ttl"], "1h");
+    assert_eq!(body["system"][0]["cache_control"]["scope"], "global");
+
+    let mut body = serde_json::json!({
+        "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+    });
+    apply_prompt_cache_policy_to_body(
+        &mut body,
+        PromptCacheCapability {
+            explicit_markers: true,
+            ttl_1h: false,
+            global_scope: true,
+            direct_official_anthropic: false,
+        },
+    );
+    assert!(body["system"][0]["cache_control"].get("ttl").is_none());
+    assert!(body["system"][0]["cache_control"].get("scope").is_none());
+    restore_env(saved);
+}
+
+#[test]
+fn test_strip_anthropic_cache_fields_recursively() {
+    let mut body = serde_json::json!({
+        "messages": [{
+            "role": "user",
+            "content": [{
+                "type": "text",
+                "text": "hello",
+                "cache_control": {"type": "ephemeral"},
+                "cache_reference": "x"
+            }]
+        }],
+        "cache_edits": []
+    });
+    strip_anthropic_cache_fields(&mut body);
+    assert!(serde_json::to_string(&body)
+        .unwrap()
+        .find("cache_")
+        .is_none());
+    assert_eq!(body["messages"][0]["content"][0]["text"], "hello");
 }
 
 #[test]
@@ -1565,9 +1649,11 @@ fn test_anthropic_count_tokens_body_omits_generation_only_fields() {
     let req = MessagesRequest {
         model: "claude-sonnet-4-20250514".to_string(),
         messages: vec![serde_json::json!({"role": "user", "content": "Hello"})],
-        system: Some(vec![
-            serde_json::json!({"type": "text", "text": "Be brief."}),
-        ]),
+        system: Some(vec![serde_json::json!({
+            "type": "text",
+            "text": "Be brief.",
+            "cache_control": {"type": "ephemeral"}
+        })]),
         max_tokens: 1024,
         tools: Some(vec![serde_json::json!({
             "name": "Read",
@@ -1585,6 +1671,7 @@ fn test_anthropic_count_tokens_body_omits_generation_only_fields() {
     assert_eq!(body["model"], "claude-sonnet-4-20250514");
     assert_eq!(body["messages"][0]["content"], "Hello");
     assert_eq!(body["system"][0]["text"], "Be brief.");
+    assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
     assert!(body.get("tools").is_some());
     assert!(body.get("thinking").is_some());
     assert!(body.get("stream").is_none());

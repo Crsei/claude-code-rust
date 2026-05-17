@@ -42,6 +42,104 @@ const ANTHROPIC_DEFAULT_MODEL_ALIAS: &str = "MOTA";
 
 static ANTHROPIC_LEGACY_MODEL_ENV_WARNING: Once = Once::new();
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PromptCacheTtl {
+    #[serde(rename = "1h")]
+    OneHour,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PromptCacheScope {
+    Global,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CacheControl {
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl: Option<PromptCacheTtl>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<PromptCacheScope>,
+}
+
+impl CacheControl {
+    pub fn ephemeral() -> Self {
+        Self {
+            kind: "ephemeral".to_string(),
+            ttl: None,
+            scope: None,
+        }
+    }
+
+    pub fn with_ttl(mut self, ttl: PromptCacheTtl) -> Self {
+        self.ttl = Some(ttl);
+        self
+    }
+
+    pub fn with_scope(mut self, scope: PromptCacheScope) -> Self {
+        self.scope = Some(scope);
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PromptCacheCapability {
+    pub explicit_markers: bool,
+    pub ttl_1h: bool,
+    pub global_scope: bool,
+    pub direct_official_anthropic: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PromptCachePolicy {
+    pub enabled: bool,
+    pub ttl_1h: bool,
+    pub global_scope: bool,
+}
+
+impl PromptCachePolicy {
+    pub fn from_env(capability: PromptCacheCapability) -> Self {
+        if !capability.explicit_markers {
+            return Self::default();
+        }
+        Self {
+            enabled: true,
+            ttl_1h: capability.ttl_1h && is_env_value("CC_RUST_PROMPT_CACHE_TTL", "1h"),
+            global_scope: capability.global_scope
+                && capability.direct_official_anthropic
+                && is_env_truthy("CC_RUST_PROMPT_CACHE_GLOBAL"),
+        }
+    }
+
+    pub fn cache_control(self) -> CacheControl {
+        let mut cache = CacheControl::ephemeral();
+        if self.ttl_1h {
+            cache = cache.with_ttl(PromptCacheTtl::OneHour);
+        }
+        if self.global_scope {
+            cache = cache.with_scope(PromptCacheScope::Global);
+        }
+        cache
+    }
+}
+
+pub fn prompt_cache_marker_value(policy: PromptCachePolicy) -> Value {
+    serde_json::to_value(policy.cache_control()).unwrap_or_else(|_| {
+        serde_json::json!({
+            "type": "ephemeral"
+        })
+    })
+}
+
+fn is_env_value(name: &str, expected: &str) -> bool {
+    std::env::var(name)
+        .map(|value| value.trim().eq_ignore_ascii_case(expected))
+        .unwrap_or(false)
+}
+
 pub(crate) fn build_openai_compat_url(base_url: &str, provider_name: &str) -> String {
     let endpoint = if provider_name.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_NAME) {
         "/conversation"
@@ -134,19 +232,133 @@ pub(crate) fn build_anthropic_headers(
     auth: &AnthropicAuth,
     include_token_counting_beta: bool,
 ) -> Result<reqwest::header::HeaderMap> {
+    build_anthropic_headers_with_cache_betas(auth, include_token_counting_beta, true, false, false)
+}
+
+pub(crate) fn build_anthropic_headers_for_body(
+    auth: &AnthropicAuth,
+    include_token_counting_beta: bool,
+    body: &Value,
+) -> Result<reqwest::header::HeaderMap> {
+    build_anthropic_headers_with_cache_betas(
+        auth,
+        include_token_counting_beta,
+        body_contains_key(body, "cache_control"),
+        body_contains_cache_attr(body, "ttl"),
+        body_contains_cache_attr(body, "scope"),
+    )
+}
+
+fn build_anthropic_headers_with_cache_betas(
+    auth: &AnthropicAuth,
+    include_token_counting_beta: bool,
+    include_prompt_cache_beta: bool,
+    include_ttl_beta: bool,
+    include_global_scope_beta: bool,
+) -> Result<reqwest::header::HeaderMap> {
     use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
-    let beta = if include_token_counting_beta {
-        "interleaved-thinking-2025-05-14,prompt-caching-2024-07-16,token-counting-2024-11-01"
-    } else {
-        "interleaved-thinking-2025-05-14,prompt-caching-2024-07-16"
-    };
-    headers.insert("anthropic-beta", HeaderValue::from_static(beta));
+    let mut betas = vec!["interleaved-thinking-2025-05-14"];
+    if include_prompt_cache_beta {
+        betas.push("prompt-caching-2024-07-16");
+    }
+    if include_ttl_beta {
+        betas.push("extended-cache-ttl-2025-04-11");
+    }
+    if include_global_scope_beta {
+        betas.push("prompt-caching-scope-2026-01-05");
+    }
+    if include_token_counting_beta {
+        betas.push("token-counting-2024-11-01");
+    }
+    let beta =
+        HeaderValue::from_str(&betas.join(",")).context("failed to build anthropic-beta header")?;
+    headers.insert("anthropic-beta", beta);
     auth.insert_auth_header(&mut headers)?;
     Ok(headers)
+}
+
+fn body_contains_key(value: &Value, key: &str) -> bool {
+    match value {
+        Value::Object(map) => {
+            map.contains_key(key) || map.values().any(|v| body_contains_key(v, key))
+        }
+        Value::Array(values) => values.iter().any(|v| body_contains_key(v, key)),
+        _ => false,
+    }
+}
+
+fn body_contains_cache_attr(value: &Value, attr: &str) -> bool {
+    match value {
+        Value::Object(map) => {
+            map.get("cache_control")
+                .and_then(Value::as_object)
+                .and_then(|cache| cache.get(attr))
+                .is_some()
+                || map.values().any(|v| body_contains_cache_attr(v, attr))
+        }
+        Value::Array(values) => values.iter().any(|v| body_contains_cache_attr(v, attr)),
+        _ => false,
+    }
+}
+
+pub(crate) fn strip_anthropic_cache_fields(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("cache_control");
+            map.remove("cache_reference");
+            map.remove("cache_edits");
+            for value in map.values_mut() {
+                strip_anthropic_cache_fields(value);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                strip_anthropic_cache_fields(value);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn apply_prompt_cache_policy_to_body(
+    body: &mut Value,
+    capability: PromptCacheCapability,
+) {
+    let policy = PromptCachePolicy::from_env(capability);
+    if !policy.enabled {
+        return;
+    }
+    let cache_control = prompt_cache_marker_value(policy);
+    replace_cache_control_markers(body, &cache_control);
+}
+
+fn replace_cache_control_markers(value: &mut Value, cache_control: &Value) {
+    match value {
+        Value::Object(map) => {
+            if map.contains_key("cache_control") {
+                map.insert("cache_control".to_string(), cache_control.clone());
+            }
+            for value in map.values_mut() {
+                replace_cache_control_markers(value, cache_control);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                replace_cache_control_markers(value, cache_control);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn is_official_anthropic_base_url(base_url: &str) -> bool {
+    crate::api::providers::base_url_host(base_url)
+        .map(|host| host.eq_ignore_ascii_case("api.anthropic.com"))
+        .unwrap_or(false)
 }
 
 fn extend_header_string_map(
@@ -758,9 +970,18 @@ impl ApiClient {
             "{}/v1/messages/count_tokens",
             base_url.trim_end_matches('/')
         );
-        let headers = build_anthropic_headers(auth, true)?;
-
-        let body = build_anthropic_count_tokens_body(request);
+        let mut body = build_anthropic_count_tokens_body(request);
+        let direct_official_anthropic = is_official_anthropic_base_url(base_url);
+        apply_prompt_cache_policy_to_body(
+            &mut body,
+            PromptCacheCapability {
+                explicit_markers: true,
+                ttl_1h: direct_official_anthropic,
+                global_scope: direct_official_anthropic,
+                direct_official_anthropic,
+            },
+        );
+        let headers = build_anthropic_headers_for_body(auth, true, &body)?;
         let response = self
             .http
             .post(&url)
