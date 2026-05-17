@@ -8,7 +8,7 @@ static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn anthropic_config() -> ApiClientConfig {
     ApiClientConfig {
         provider: ApiProvider::Anthropic {
-            api_key: "sk-test-key-123".to_string(),
+            auth: AnthropicAuth::ApiKey("sk-test-key-123".to_string()),
             base_url: None,
         },
         default_model: "claude-sonnet-4-20250514".to_string(),
@@ -20,7 +20,7 @@ fn anthropic_config() -> ApiClientConfig {
 fn anthropic_config_custom_url() -> ApiClientConfig {
     ApiClientConfig {
         provider: ApiProvider::Anthropic {
-            api_key: "sk-test-key-456".to_string(),
+            auth: AnthropicAuth::ApiKey("sk-test-key-456".to_string()),
             base_url: Some("https://custom.api.example.com".to_string()),
         },
         default_model: "claude-sonnet-4-20250514".to_string(),
@@ -108,7 +108,7 @@ fn test_build_url_anthropic_custom_base() {
 fn test_build_url_anthropic_trailing_slash() {
     let config = ApiClientConfig {
         provider: ApiProvider::Anthropic {
-            api_key: "key".to_string(),
+            auth: AnthropicAuth::ApiKey("key".to_string()),
             base_url: Some("https://example.com/".to_string()),
         },
         default_model: "model".to_string(),
@@ -411,8 +411,7 @@ fn test_build_headers_bedrock_no_api_key() {
 }
 
 #[test]
-#[ignore = "activated by phase 1: Anthropic auth-token requests must use Authorization bearer"]
-fn regression_anthropic_auth_token_currently_sent_as_x_api_key() {
+fn regression_anthropic_auth_token_uses_authorization_bearer() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let saved = save_env(&[
         "ANTHROPIC_AUTH_TOKEN",
@@ -436,8 +435,6 @@ fn regression_anthropic_auth_token_currently_sent_as_x_api_key() {
         .expect("auth token should build a client");
     let headers = client.build_headers_map();
 
-    // Phase 0 risk: ANTHROPIC_AUTH_TOKEN is currently flattened into
-    // x-api-key, which breaks Anthropic-compatible endpoints expecting bearer.
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
         fixture["authorization"].as_str()
@@ -584,8 +581,8 @@ fn test_from_env_with_anthropic_key() {
 
     let client = client.unwrap();
     match &client.config().provider {
-        ApiProvider::Anthropic { api_key, .. } => {
-            assert_eq!(api_key, key);
+        ApiProvider::Anthropic { auth, .. } => {
+            assert_eq!(auth, &AnthropicAuth::ApiKey(key.to_string()));
         }
         other => panic!("expected Anthropic provider, got {:?}", other),
     }
@@ -1435,7 +1432,7 @@ fn test_messages_request_advisor_model_serializes_when_set() {
 fn test_provider_supports_advisor_matrix() {
     use crate::api::client::{provider_supports_advisor, ApiProvider};
     assert!(provider_supports_advisor(&ApiProvider::Anthropic {
-        api_key: "k".into(),
+        auth: AnthropicAuth::ApiKey("k".into()),
         base_url: None,
     }));
     assert!(provider_supports_advisor(&ApiProvider::Azure {

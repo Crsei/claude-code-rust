@@ -42,7 +42,7 @@ pub(crate) fn build_openai_compat_url(base_url: &str, provider_name: &str) -> St
 pub enum ApiProvider {
     /// Direct Anthropic API (native Messages API)
     Anthropic {
-        api_key: String,
+        auth: AnthropicAuth,
         base_url: Option<String>,
     },
     /// Azure Foundry (Anthropic-compatible)
@@ -70,6 +70,84 @@ pub enum ApiProvider {
         region: String,
         access_token: crate::api::vertex::VertexAccessToken,
     },
+}
+
+/// Authentication method for Anthropic-format native requests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnthropicAuth {
+    ApiKey(String),
+    BearerToken(String),
+}
+
+impl AnthropicAuth {
+    fn secret(&self) -> &str {
+        match self {
+            Self::ApiKey(value) | Self::BearerToken(value) => value,
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            Self::ApiKey(_) => "Anthropic API key",
+            Self::BearerToken(_) => "Anthropic bearer token",
+        }
+    }
+
+    fn insert_auth_header(&self, headers: &mut reqwest::header::HeaderMap) -> Result<()> {
+        use reqwest::header::HeaderValue;
+
+        match self {
+            Self::ApiKey(value) => {
+                let value = HeaderValue::from_str(value).with_context(|| {
+                    format!("{} is not a valid HTTP header value", self.label())
+                })?;
+                headers.insert("x-api-key", value);
+            }
+            Self::BearerToken(value) => {
+                let bearer = format!("Bearer {value}");
+                let value = HeaderValue::from_str(&bearer).with_context(|| {
+                    format!("{} is not a valid HTTP header value", self.label())
+                })?;
+                headers.insert("Authorization", value);
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn build_anthropic_headers(
+    auth: &AnthropicAuth,
+    include_token_counting_beta: bool,
+) -> Result<reqwest::header::HeaderMap> {
+    use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+    let beta = if include_token_counting_beta {
+        "interleaved-thinking-2025-05-14,prompt-caching-2024-07-16,token-counting-2024-11-01"
+    } else {
+        "interleaved-thinking-2025-05-14,prompt-caching-2024-07-16"
+    };
+    headers.insert("anthropic-beta", HeaderValue::from_static(beta));
+    auth.insert_auth_header(&mut headers)?;
+    Ok(headers)
+}
+
+fn extend_header_string_map(
+    map: &mut std::collections::HashMap<String, String>,
+    headers: &reqwest::header::HeaderMap,
+) {
+    for (name, value) in headers {
+        if let Ok(value) = value.to_str() {
+            let name = if name == reqwest::header::AUTHORIZATION {
+                "Authorization"
+            } else {
+                name.as_str()
+            };
+            map.insert(name.to_string(), value.to_string());
+        }
+    }
 }
 
 impl ApiProvider {
@@ -216,14 +294,14 @@ fn make_stream_provider(
             api_key: api_key.clone(),
             base_url: base_url.clone(),
         }),
-        ApiProvider::Anthropic { api_key, base_url } => Box::new(AnthropicStreamProvider {
-            api_key: api_key.clone(),
+        ApiProvider::Anthropic { auth, base_url } => Box::new(AnthropicStreamProvider {
+            auth: auth.clone(),
             base_url: base_url
                 .clone()
                 .unwrap_or_else(|| "https://api.anthropic.com".to_string()),
         }),
         ApiProvider::Azure { api_key, endpoint } => Box::new(AnthropicStreamProvider {
-            api_key: api_key.clone(),
+            auth: AnthropicAuth::ApiKey(api_key.clone()),
             base_url: endpoint.clone(),
         }),
         ApiProvider::Bedrock {
@@ -277,8 +355,10 @@ fn validate_provider_config(provider: &ApiProvider) -> Result<()> {
     }
 
     match provider {
-        ApiProvider::Anthropic { api_key, base_url } => {
-            require_non_empty(api_key, "ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN")?;
+        ApiProvider::Anthropic { auth, base_url } => {
+            require_non_empty(auth.secret(), auth.label())?;
+            let mut headers = reqwest::header::HeaderMap::new();
+            auth.insert_auth_header(&mut headers)?;
             if let Some(base_url) = base_url {
                 validate_base_url(base_url, "ANTHROPIC_BASE_URL")?;
             }
@@ -396,9 +476,9 @@ impl ApiClient {
         request: &MessagesRequest,
     ) -> Result<ExactTokenCount> {
         match &self.config.provider {
-            ApiProvider::Anthropic { api_key, base_url } => {
+            ApiProvider::Anthropic { auth, base_url } => {
                 self.count_anthropic_input_tokens(
-                    api_key,
+                    auth,
                     base_url.as_deref().unwrap_or("https://api.anthropic.com"),
                     request,
                     "anthropic",
@@ -406,7 +486,8 @@ impl ApiClient {
                 .await
             }
             ApiProvider::Azure { endpoint, api_key } => {
-                self.count_anthropic_input_tokens(api_key, endpoint, request, "azure")
+                let auth = AnthropicAuth::ApiKey(api_key.clone());
+                self.count_anthropic_input_tokens(&auth, endpoint, request, "azure")
                     .await
             }
             ApiProvider::Google { api_key, base_url } => {
@@ -477,13 +558,11 @@ impl ApiClient {
 
     async fn count_anthropic_input_tokens(
         &self,
-        api_key: &str,
+        auth: &AnthropicAuth,
         base_url: &str,
         request: &MessagesRequest,
         provider: &str,
     ) -> Result<ExactTokenCount> {
-        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
-
         #[derive(serde::Deserialize)]
         struct CountTokensResponse {
             input_tokens: u64,
@@ -493,16 +572,7 @@ impl ApiClient {
             "{}/v1/messages/count_tokens",
             base_url.trim_end_matches('/')
         );
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
-        headers.insert(
-            "anthropic-beta",
-            HeaderValue::from_static("interleaved-thinking-2025-05-14,prompt-caching-2024-07-16,token-counting-2024-11-01"),
-        );
-        if let Ok(val) = HeaderValue::from_str(api_key) {
-            headers.insert("x-api-key", val);
-        }
+        let headers = build_anthropic_headers(auth, true)?;
 
         let body = build_anthropic_count_tokens_body(request);
         let response = self
@@ -582,7 +652,7 @@ impl ApiClient {
     pub fn from_provider_info(info: &ProviderInfo, api_key: &str) -> Self {
         let provider = match info.protocol {
             ProviderProtocol::Anthropic => ApiProvider::Anthropic {
-                api_key: api_key.to_string(),
+                auth: AnthropicAuth::ApiKey(api_key.to_string()),
                 base_url: Some(info.base_url.to_string()),
             },
             ProviderProtocol::OpenAiCompat => ApiProvider::OpenAiCompat {
@@ -869,16 +939,17 @@ impl ApiClient {
 
         // 2. Fall back to auth resolution (keychain, external token, OAuth)
         let auth = cc_auth::try_resolve_auth()?;
-        let Some(api_key) = auth
-            .api_key()
-            .or_else(|| auth.bearer_token())
-            .map(|s| s.to_string())
-        else {
-            return Ok(None);
+        let auth = match auth {
+            cc_auth::AuthMethod::ApiKey(api_key) => AnthropicAuth::ApiKey(api_key),
+            cc_auth::AuthMethod::ExternalToken(token) => AnthropicAuth::BearerToken(token),
+            cc_auth::AuthMethod::OAuthToken { access_token, .. } => {
+                AnthropicAuth::BearerToken(access_token)
+            }
+            cc_auth::AuthMethod::None => return Ok(None),
         };
         let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
         Self::try_new(ApiClientConfig {
-            provider: ApiProvider::Anthropic { api_key, base_url },
+            provider: ApiProvider::Anthropic { auth, base_url },
             default_model: "claude-sonnet-4-20250514".to_string(),
             max_retries: 3,
             timeout_secs: 120,
@@ -904,16 +975,14 @@ impl ApiClient {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
         match &self.config.provider {
-            ApiProvider::Anthropic { api_key, .. } | ApiProvider::Azure { api_key, .. } => {
-                headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
-                headers.insert(
-                    "anthropic-beta",
-                    HeaderValue::from_static(
-                        "interleaved-thinking-2025-05-14,prompt-caching-2024-07-16",
-                    ),
-                );
-                if let Ok(val) = HeaderValue::from_str(api_key) {
-                    headers.insert("x-api-key", val);
+            ApiProvider::Anthropic { auth, .. } => match build_anthropic_headers(auth, false) {
+                Ok(provider_headers) => headers.extend(provider_headers),
+                Err(error) => tracing::warn!(%error, "failed to build Anthropic headers"),
+            },
+            ApiProvider::Azure { api_key, .. } => {
+                match build_anthropic_headers(&AnthropicAuth::ApiKey(api_key.clone()), false) {
+                    Ok(provider_headers) => headers.extend(provider_headers),
+                    Err(error) => tracing::warn!(%error, "failed to build Azure Anthropic headers"),
                 }
             }
             ApiProvider::OpenAiCompat { api_key, .. } => {
@@ -937,13 +1006,17 @@ impl ApiClient {
         map.insert("content-type".to_string(), "application/json".to_string());
 
         match &self.config.provider {
-            ApiProvider::Anthropic { api_key, .. } | ApiProvider::Azure { api_key, .. } => {
-                map.insert("anthropic-version".to_string(), "2023-06-01".to_string());
-                map.insert(
-                    "anthropic-beta".to_string(),
-                    "interleaved-thinking-2025-05-14,prompt-caching-2024-07-16".to_string(),
-                );
-                map.insert("x-api-key".to_string(), api_key.clone());
+            ApiProvider::Anthropic { auth, .. } => {
+                if let Ok(headers) = build_anthropic_headers(auth, false) {
+                    extend_header_string_map(&mut map, &headers);
+                }
+            }
+            ApiProvider::Azure { api_key, .. } => {
+                if let Ok(headers) =
+                    build_anthropic_headers(&AnthropicAuth::ApiKey(api_key.clone()), false)
+                {
+                    extend_header_string_map(&mut map, &headers);
+                }
             }
             ApiProvider::OpenAiCompat { api_key, .. } => {
                 map.insert("Authorization".to_string(), format!("Bearer {}", api_key));

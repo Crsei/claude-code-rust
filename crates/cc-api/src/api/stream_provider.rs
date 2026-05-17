@@ -9,7 +9,9 @@ use std::pin::Pin;
 use anyhow::{Context, Result};
 use futures::Stream;
 
-use crate::api::client::{parse_sse_byte_stream, MessagesRequest};
+use crate::api::client::{
+    build_anthropic_headers, parse_sse_byte_stream, AnthropicAuth, MessagesRequest,
+};
 use crate::api::retry::categorize_api_error;
 use cc_types::message::StreamEvent;
 
@@ -29,7 +31,7 @@ pub trait StreamProvider: Send + Sync {
 // ---------------------------------------------------------------------------
 
 pub struct AnthropicStreamProvider {
-    pub api_key: String,
+    pub auth: AnthropicAuth,
     pub base_url: String,
 }
 
@@ -40,20 +42,9 @@ impl StreamProvider for AnthropicStreamProvider {
         http: &reqwest::Client,
         request: &MessagesRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
-
         let url = format!("{}/v1/messages", self.base_url.trim_end_matches('/'));
 
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
-        headers.insert(
-            "anthropic-beta",
-            HeaderValue::from_static("interleaved-thinking-2025-05-14,prompt-caching-2024-07-16"),
-        );
-        if let Ok(val) = HeaderValue::from_str(&self.api_key) {
-            headers.insert("x-api-key", val);
-        }
+        let headers = build_anthropic_headers(&self.auth, false)?;
 
         let mut req_body = request.clone();
         req_body.stream = true;
