@@ -5,6 +5,15 @@ use ratatui::text::{Line, Span};
 use std::collections::HashMap;
 
 use crate::ui::markdown::markdown_to_lines;
+use crate::ui::messages::assistant_text_message::{
+    classify_assistant_text, render_api_error,
+};
+use crate::ui::messages::assistant_tool_use_message::{
+    render_assistant_tool_use_message, ToolUseState,
+};
+use crate::ui::messages::attachment_message::render_attachment_message as render_attachment_helper;
+use crate::ui::messages::system_text_message::render_system_text_message;
+use crate::ui::messages::user_text_message::render_user_text_message;
 use crate::ui::messages::user_bash_output_message::{
     render_user_bash_output_message_with_options, ShellOutputRenderOptions,
 };
@@ -390,6 +399,15 @@ fn render_user_message<'a>(
         ))];
     }
 
+    let routed = render_user_text_message(&content_text, theme);
+    if routed.is_empty() {
+        return Vec::new();
+    }
+    let content_text = routed
+        .strip_prefix("You: ")
+        .unwrap_or(routed.as_str())
+        .to_string();
+
     // First line includes the "You: " prefix.
     let content_lines: Vec<&str> = content_text.lines().collect();
     if content_lines.is_empty() {
@@ -545,6 +563,23 @@ fn styled_text_lines<'a>(text: &str, style: Style) -> Vec<Line<'a>> {
         .collect()
 }
 
+fn plain_text_to_lines<'a>(text: &str, style: Style) -> Vec<Line<'a>> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    text.lines()
+        .map(|line| Line::from(Span::styled(line.to_string(), style)))
+        .collect()
+}
+
+fn api_error_display_text(text: &str) -> String {
+    if let Some(error) = classify_assistant_text(text) {
+        render_api_error(&error)
+    } else {
+        format!("Error occurred: {text}")
+    }
+}
+
 // ── Assistant messages ──────────────────────────────────────────────────
 
 fn render_assistant_message<'a>(
@@ -560,6 +595,24 @@ fn render_assistant_message<'a>(
     for block in &msg.content {
         match block {
             ContentBlock::Text { text } => {
+                // If this is an API error message, use error classification
+                // instead of standard markdown rendering.
+                if msg.is_api_error_message {
+                    let error_text = api_error_display_text(text);
+                    let style = theme.error;
+                    if first_block {
+                        let mut spans = vec![prefix.clone()];
+                        spans.push(Span::styled(error_text, style));
+                        lines.push(Line::from(spans));
+                    } else {
+                        lines.push(Line::from(vec![
+                            Span::raw("        "),
+                            Span::styled(error_text, style),
+                        ]));
+                    }
+                    first_block = false;
+                    continue;
+                }
                 let md_lines = markdown_to_lines(text, theme);
                 if md_lines.is_empty() {
                     if first_block {
@@ -606,25 +659,38 @@ fn render_assistant_message<'a>(
             }
 
             ContentBlock::ToolUse { id: _, name, input } => {
-                // Show tool invocation: tool name + primary path/query when available.
-                let input_summary = tool_input_summary(name, input, 80);
-                let tool_line = Line::from(vec![
-                    Span::raw(if first_block { "" } else { "        " }),
-                    Span::styled(format!("[{}] ", name), theme.tool_name),
-                    Span::styled(input_summary, theme.dim),
-                ]);
-                lines.push(tool_line);
+                let input_json = serde_json::to_string(input).unwrap_or_else(|_| input.to_string());
+                let rendered = render_assistant_tool_use_message(
+                    name,
+                    &input_json,
+                    ToolUseState::InProgress,
+                    false,
+                    theme,
+                );
+                for (i, line) in rendered.lines().enumerate() {
+                    lines.push(Line::from(vec![
+                        Span::raw(if first_block && i == 0 { "" } else { "        " }),
+                        Span::styled(line.to_string(), theme.tool_name),
+                    ]));
+                }
                 first_block = false;
             }
 
             ContentBlock::ServerToolUse { id: _, name, input } => {
-                let input_summary = tool_input_summary(name, input, 80);
-                let tool_line = Line::from(vec![
-                    Span::raw(if first_block { "" } else { "        " }),
-                    Span::styled(format!("[server:{}] ", name), theme.tool_name),
-                    Span::styled(input_summary, theme.dim),
-                ]);
-                lines.push(tool_line);
+                let input_json = serde_json::to_string(input).unwrap_or_else(|_| input.to_string());
+                let rendered = render_assistant_tool_use_message(
+                    name,
+                    &input_json,
+                    ToolUseState::InProgress,
+                    false,
+                    theme,
+                );
+                for (i, line) in rendered.lines().enumerate() {
+                    lines.push(Line::from(vec![
+                        Span::raw(if first_block && i == 0 { "" } else { "        " }),
+                        Span::styled(format!("server: {line}"), theme.tool_name),
+                    ]));
+                }
                 first_block = false;
             }
 
@@ -756,10 +822,7 @@ fn render_system_message<'a>(
     let (prefix, style) = match &msg.subtype {
         SystemSubtype::CompactBoundary { .. } => ("context compacted", theme.dim),
         SystemSubtype::MicrocompactBoundary { .. } => ("context microcompacted", theme.dim),
-        SystemSubtype::ApiError { error, .. } => {
-            let _ = error;
-            ("API Error: ", theme.error)
-        }
+        SystemSubtype::ApiError { .. } => ("", theme.error),
         SystemSubtype::Informational { level } => match level {
             InfoLevel::Info => ("Info: ", theme.info),
             InfoLevel::Warning => ("Warning: ", theme.warning),
@@ -768,6 +831,30 @@ fn render_system_message<'a>(
         SystemSubtype::LocalCommand { .. } => ("$ ", theme.system_name),
         SystemSubtype::Warning => ("Warning: ", theme.warning),
     };
+
+    if let SystemSubtype::ApiError {
+        retry_attempt,
+        max_retries: _,
+        retry_in_ms,
+        error,
+    } = &msg.subtype
+    {
+        let detail = if msg.content.trim().is_empty() {
+            error.message.as_str()
+        } else {
+            msg.content.trim()
+        };
+        let rendered = if *retry_in_ms > 0 {
+            render_system_text_message(
+                "api_error",
+                &format!("retry_attempt={} {}", retry_attempt, detail),
+                theme,
+            )
+        } else {
+            render_system_text_message("api_error", detail, theme)
+        };
+        return plain_text_to_lines(&rendered, theme.error);
+    }
 
     if matches!(
         &msg.subtype,
@@ -827,15 +914,21 @@ fn render_attachment_message<'a>(
     use cc_types::message::Attachment;
     let text = match &msg.attachment {
         Attachment::EditedTextFile { path } => format!("[edited: {}]", path),
-        Attachment::QueuedCommand { prompt, .. } => format!("[queued: {}]", prompt),
+        Attachment::QueuedCommand { prompt, .. } => {
+            render_attachment_helper("queued_command", &serde_json::json!({ "prompt": prompt }).to_string(), theme)
+        }
         Attachment::MaxTurnsReached {
             max_turns,
             turn_count,
         } => format!("[max turns reached: {}/{}]", turn_count, max_turns),
         Attachment::StructuredOutput { .. } => "[structured output]".to_string(),
         Attachment::HookStoppedContinuation => "[hook stopped continuation]".to_string(),
-        Attachment::NestedMemory { path, .. } => format!("[memory: {}]", path),
-        Attachment::SkillDiscovery { skills } => format!("[skills: {}]", skills.join(", ")),
+        Attachment::NestedMemory { path, .. } => render_attachment_helper("nested_memory", path, theme),
+        Attachment::SkillDiscovery { skills } => render_attachment_helper(
+            "skill_discovery",
+            &serde_json::to_string(skills).unwrap_or_else(|_| "[]".to_string()),
+            theme,
+        ),
     };
     vec![Line::from(Span::styled(text, theme.dim))]
 }
@@ -1011,8 +1104,8 @@ mod tests {
     use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
     use crate::ui::theme::Theme;
     use cc_types::message::{
-        AssistantMessage, CompactMetadata, ContentBlock, ImageSource, Message, MessageContent,
-        SystemMessage, SystemSubtype, ToolResultContent, UserMessage,
+        ApiErrorInfo, AssistantMessage, CompactMetadata, ContentBlock, ImageSource, Message,
+        MessageContent, SystemMessage, SystemSubtype, ToolResultContent, UserMessage,
     };
     use serde_json::json;
 
@@ -1127,6 +1220,55 @@ mod tests {
         assert_eq!(
             lines_to_text(render_single_message(&interrupted, &theme)),
             "Interrupted by user"
+        );
+    }
+
+    #[test]
+    fn assistant_api_error_runtime_path_uses_error_occurred_prefix() {
+        let message = Message::Assistant(AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![ContentBlock::Text {
+                text: "API error: Provider openrouter error (HTTP 429): rate limit exceeded"
+                    .to_string(),
+            }],
+            usage: None,
+            stop_reason: Some("error".to_string()),
+            is_api_error_message: true,
+            api_error: Some("Provider openrouter error (HTTP 429): rate limit exceeded".to_string()),
+            cost_usd: 0.0,
+        });
+
+        let rendered = lines_to_text(render_single_message(&message, &Theme::default()));
+
+        assert!(rendered.contains(
+            "Claude: Error occurred: API error: Provider openrouter error (HTTP 429): rate limit exceeded"
+        ));
+    }
+
+    #[test]
+    fn system_api_error_runtime_path_uses_error_occurred_prefix() {
+        let message = Message::System(SystemMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            subtype: SystemSubtype::ApiError {
+                retry_attempt: 1,
+                max_retries: 3,
+                retry_in_ms: 0,
+                error: ApiErrorInfo {
+                    status: Some(403),
+                    message: "Provider proxy error (HTTP 403): forbidden".to_string(),
+                },
+            },
+            content: String::new(),
+        });
+
+        let rendered = lines_to_text(render_single_message(&message, &Theme::default()));
+
+        assert_eq!(
+            rendered,
+            "Error occurred: Provider proxy error (HTTP 403): forbidden"
         );
     }
 

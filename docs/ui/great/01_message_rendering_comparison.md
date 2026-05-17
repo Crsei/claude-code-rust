@@ -770,22 +770,22 @@ pub fn render_highlighted_thinking_text(thinking: &str, _theme: &Theme) -> Strin
 
 ## 汇总表
 
-| # | 组件 | Rust 评级 | TS 行数 | Rust 行数 | 关键程度 | 差距描述 |
-|---|-----------|:-----------:|:--------:|:----------:|:-----------:|-----------------|
-| 1 | `render.rs`（调度器） | 4/5 | 不适用（分散） | 1146 | 高 | 无错误边界、无 spinner、无工具加载状态机 |
-| 2 | `wrap.rs`（行换行） | 4/5 | 内置 | 49 | 低 | 无单词边界换行 |
-| 3 | `user_bash_output_message.rs` | 5/5 | 约 200 | 229 | 无 | 功能完备，支持 ANSI 剥离、JSON 格式化、截断、页脚 |
-| 4 | `user_tool_result_message/` | 3/5 | 约 400 | 约 300 | 中 | 死代码门控，未接入主渲染路径，无工具查找 |
-| 5 | `user_text_message.rs` | 1/5 | 275 | 12 | **关键** | TS 调度器路由 15+ 种消息类型；Rust 只是一个简单的 format!() |
-| 6 | `user_prompt_message.rs` | 1/5 | 80 | 12 | 高 | 缺失 10K 截断、简要模式、选择背景 |
-| 7 | `assistant_text_message.rs` | 1/5 | 270 | 11 | **关键** | 缺失 10+ 种带用户指导的 API 错误状态 |
-| 8 | `assistant_tool_use_message.rs` | 1/5 | 368 | 9 | **关键** | 缺失完整的状态机（进度/队列/加载器/spinner） |
-| 9 | `system_text_message.rs` | 1/5 | 827 | 19 | **关键** | 缺失 15+ 种消息子类型 |
-| 10 | `system_api_error_message.rs` | 1/5 | 约 40 | 12 | 中 | 缺失状态码着色、重试提示 |
-| 11 | `rate_limit_message.rs` | 1/5 | 约 30 | 12 | 中 | 缺失警告样式、速率限制上下文 |
-| 12 | `compact_boundary_message.rs` | 1/5 | 约 30 | 11 | 低 | 被 render.rs 的压缩处理重复 |
-| 13 | `attachment_message.rs` | 1/5 | 536 | 12 | 高 | 缺失 25+ 种类型特定的渲染器 |
-| 14 | `shutdown_message.rs` | 2/5 | 约 20 | 11 | 低 | 缺失警告样式 |
+| # | 组件 | Rust 评级 | TS 行数 | Rust 行数 | 关键程度 | 差距描述 | 计划章节 |
+|---|-----------|:-----------:|:--------:|:----------:|:-----------:|-----------------|:--------:|
+| 1 | `render.rs`（调度器） | 4/5 | 不适用（分散） | 1146 | 高 | 无错误边界、无 spinner、无工具加载状态机 | — |
+| 2 | `wrap.rs`（行换行） | 4/5 | 内置 | 49 | 低 | 无单词边界换行 | — |
+| 3 | `user_bash_output_message.rs` | 5/5 | 约 200 | 229 | 无 | 功能完备，支持 ANSI 剥离、JSON 格式化、截断、页脚 | — |
+| 4 | `user_tool_result_message/` | 3/5 | 约 400 | 约 300 | 中 | 死代码门控，未接入主渲染路径，无工具查找 | — |
+| 5 | `user_text_message.rs` | 1/5 | 275 | 12 | **关键** | TS 调度器路由 15+ 种消息类型；Rust 只是一个简单的 format!() | §4 |
+| 6 | `user_prompt_message.rs` | 1/5 | 80 | 12 | 高 | 缺失 10K 截断、简要模式、选择背景 | — |
+| 7 | `assistant_text_message.rs` | 1/5 | 270 | 11 | **关键** | 缺失 10+ 种带用户指导的 API 错误状态 | §1 |
+| 8 | `assistant_tool_use_message.rs` | 1/5 | 368 | 9 | **关键** | 缺失完整的状态机（进度/队列/加载器/spinner） | §2 |
+| 9 | `system_text_message.rs` | 1/5 | 827 | 19 | **关键** | 缺失 15+ 种消息子类型 | §3 |
+| 10 | `system_api_error_message.rs` | 1/5 | 约 40 | 12 | 中 | 缺失状态码着色、重试提示 | — |
+| 11 | `rate_limit_message.rs` | 1/5 | 约 30 | 12 | 中 | 缺失警告样式、速率限制上下文 | — |
+| 12 | `compact_boundary_message.rs` | 1/5 | 约 30 | 11 | 低 | 被 render.rs 的压缩处理重复 | — |
+| 13 | `attachment_message.rs` | 1/5 | 536 | 12 | 高 | 缺失 25+ 种类型特定的渲染器 | §5 |
+| 14 | `shutdown_message.rs` | 2/5 | 约 20 | 11 | 低 | 缺失警告样式 | — |
 | 15 | `user_plan_message.rs` | 1/5 | 约 30 | 11 | 中 | 缺失计划格式化 |
 | 16 | `user_bash_input_message.rs` | 2/5 | 约 30 | 11 | 低 | 基本的 Shell 提示符显示 |
 | 17 | `user_command_message.rs` | 1/5 | 约 25 | 12 | 低 | 缺失 cwd 样式、CtrlOToExpand |
@@ -833,8 +833,8 @@ pub fn render_highlighted_thinking_text(thinking: &str, _theme: &Theme) -> Strin
 主调度器全面处理了用户消息（带工具结果）、助手消息（带所有 ContentBlock 变体）、系统消息（带子类型）、进度消息和附件消息，但没有 TS 组件的丰富交互性。
 
 ### 2. 关键差距
-- **`assistant_text_message.rs`**：TS 版本处理 10+ 种带用户指导的 API 错误状态（无效密钥、速率限制、信用余额等）。Rust 版本完全没有这些。用户将看到无帮助的错误消息。
-- **`assistant_tool_use_message.rs`**：TS 版本具有完整的状态机。Rust 版本只有一行代码。用户将看不到工具加载/进度状态。
+- **`assistant_text_message.rs`**：TS 版本处理 10+ 种带用户指导的 API 错误状态（无效密钥、速率限制、信用余额等）。Rust 版本完全没有这些。用户将看到无帮助的错误消息。→ 执行计划 §1
+- **`assistant_tool_use_message.rs`**：TS 版本具有完整的状态机。Rust 版本只有一行代码。用户将看不到工具加载/进度状态。→ 执行计划 §2
 - **`system_text_message.rs`**：TS 版本有 15+ 种子类型。Rust 版本只有通用格式。
 - **`user_text_message.rs`**：TS 版本是通过标签分析路由 15+ 种消息类型的中央调度器。Rust 版本是一个简单的字符串格式化器。
 - **`attachment_message.rs`**：TS 版本有 25+ 种附件类型渲染器。Rust 版本只有 7 个简单变体。
@@ -858,15 +858,17 @@ TS 使用 `useContext(MessageActionsSelectedContext)` 进行选择高亮。Rust 
 
 ## 建议优先级
 
-| 优先级 | 组件 | 工作量 | 影响 |
-|----------|-----------|--------|--------|
-| P0 | `assistant_text_message.rs` -> API 错误状态 | 中 | **关键**——用户会看到错误 |
-| P0 | `assistant_tool_use_message.rs` -> 工具状态机 | 中 | **关键**——用户看不到进度 |
-| P0 | `system_text_message.rs` -> 15+ 种子类型 | 高 | **关键**——系统消息缺失 |
-| P1 | `attachment_message.rs` -> 25+ 种类型渲染器 | 高 | 高——丰富的附件支持 |
-| P1 | `user_text_message.rs` -> 基于标签的路由 | 高 | 高——调度器桩 |
-| P2 | 将 `user_tool_result_message/` 接入主渲染路径 | 低 | 中——已编写，只需要集成 |
-| P2 | `hook_progress_message.rs` -> spinner + 时间显示 | 低 | 中——hook 面向用户 |
-| P3 | 去重 `render.rs`/`metadata.rs` 公共函数 | 低 | 低——维护卫生 |
-| P3 | 向渲染调度器添加错误边界 | 低 | 低——韧性 |
-| P3 | 所有其他 1 星骨架文件 | 低 | 低——特性门控或重复 |
+参考执行计划: `docs/ui/great/plans/plan-01-message-rendering.md`
+
+| 优先级 | 组件 | 工作量 | 影响 | 执行计划章节 |
+|----------|-----------|--------|--------|:----------:|
+| P0 | `assistant_text_message.rs` -> API 错误状态 | 中 | **关键**——用户会看到错误 | §1 |
+| P0 | `assistant_tool_use_message.rs` -> 工具状态机 | 中 | **关键**——用户看不到进度 | §2 |
+| P0 | `system_text_message.rs` -> 15+ 种子类型 | 高 | **关键**——系统消息缺失 | §3 |
+| P1 | `attachment_message.rs` -> 25+ 种类型渲染器 | 高 | 高——丰富的附件支持 | §5 |
+| P1 | `user_text_message.rs` -> 基于标签的路由 | 高 | 高——调度器桩 | §4 |
+| P2 | 将 `user_tool_result_message/` 接入主渲染路径 | 低 | 中——已编写，只需要集成 | — |
+| P2 | `hook_progress_message.rs` -> spinner + 时间显示 | 低 | 中——hook 面向用户 | §2.7 |
+| P3 | 去重 `render.rs`/`metadata.rs` 公共函数 | 低 | 低——维护卫生 | — |
+| P3 | 向渲染调度器添加错误边界 | 低 | 低——韧性 | — |
+| P3 | 所有其他 1 星骨架文件 | 低 | 低——特性门控或重复 | — |

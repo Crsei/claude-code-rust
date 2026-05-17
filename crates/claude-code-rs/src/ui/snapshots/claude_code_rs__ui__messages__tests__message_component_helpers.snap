@@ -1,6 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/messages.rs
-assertion_line: 346
+assertion_line: 349
 expression: rendered
 ---
 ## advisor
@@ -17,7 +17,7 @@ Assistant: Hello
 Assistant thinking: I will inspect the files
 
 ## assistant-tool-use
-Assistant used Read(path=src/main.rs)
+● read_file(path=src/main.rs)
 
 ## attachment
 Attachment: log -> appended

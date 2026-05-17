@@ -6,16 +6,13 @@ pub mod advisor_message;
 #[allow(dead_code)]
 #[path = "messages/assistant_redacted_thinking_message.rs"]
 pub mod assistant_redacted_thinking_message;
-#[allow(dead_code)]
 #[path = "messages/assistant_text_message.rs"]
 pub mod assistant_text_message;
 #[allow(dead_code)]
 #[path = "messages/assistant_thinking_message.rs"]
 pub mod assistant_thinking_message;
-#[allow(dead_code)]
 #[path = "messages/assistant_tool_use_message.rs"]
 pub mod assistant_tool_use_message;
-#[allow(dead_code)]
 #[path = "messages/attachment_message.rs"]
 pub mod attachment_message;
 #[allow(dead_code)]
@@ -51,7 +48,6 @@ pub mod shutdown_message;
 #[allow(dead_code)]
 #[path = "messages/system_api_error_message.rs"]
 pub mod system_api_error_message;
-#[allow(dead_code)]
 #[path = "messages/system_text_message.rs"]
 pub mod system_text_message;
 #[allow(dead_code)]
@@ -99,7 +95,6 @@ pub mod user_resource_update_message;
 #[allow(dead_code)]
 #[path = "messages/user_teammate_message.rs"]
 pub mod user_teammate_message;
-#[allow(dead_code)]
 #[path = "messages/user_text_message.rs"]
 pub mod user_text_message;
 #[allow(dead_code)]
@@ -124,7 +119,7 @@ mod tests {
     use super::assistant_redacted_thinking_message::render_assistant_redacted_thinking_message;
     use super::assistant_text_message::render_assistant_text_message;
     use super::assistant_thinking_message::render_assistant_thinking_message;
-    use super::assistant_tool_use_message::render_assistant_tool_use_message;
+    use super::assistant_tool_use_message::{render_assistant_tool_use_message, ToolUseState};
     use super::attachment_message::render_attachment_message;
     use super::collapsed_read_search_content::render_collapsed_read_search_content;
     use super::compact_boundary_message::render_compact_boundary_message;
@@ -190,7 +185,7 @@ mod tests {
             ),
             section(
                 "assistant-tool-use",
-                render_assistant_tool_use_message("read_file", "path=src/main.rs", &theme),
+                render_assistant_tool_use_message("read_file", "path=src/main.rs", ToolUseState::Resolved, false, &theme),
             ),
             section(
                 "attachment",

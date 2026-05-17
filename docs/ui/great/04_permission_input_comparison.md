@@ -242,6 +242,13 @@ TS 有 40+ 个对话框组件，涵盖系统配置、任务管理、MCP 设置�
 
 ### Rust 完成度：2/5
 
+> **补齐计划**: 见 `docs/ui/great/plans/plan-03-input-editor.md`（6 项缺失功能，共 ~2000 行估算工作量）
+>
+> 计划分 3 阶段：
+> - Phase 1（独立、无阻塞）：撤销/重做（#3）+ 图片粘贴接线（#4）
+> - Phase 2（渲染核心改造）：多行输入（#1）+ 文本高亮（#2）
+> - Phase 3（集成功能）：输入建议（#5）+ ChatComposer Widget（#6）
+
 ### 当前状态
 
 Rust 的 `PromptInput` 是一个简洁的单行文本输入（397 行），支持：
@@ -570,6 +577,51 @@ Rust 命令面板是最完整的 UI 子系统。它具有：
 Rust 代码库部分实现了这些：命令面板约完成 80%（缺少左/右标签页布局），
 审批面板约完成 40%（基本的 PermissionDialog 和 ApprovalOverlay 存在但缺少按工具变体），
 选择器界面约完成 30%（SelectionSurface 存在但缺少标签页+详情结构）。
+
+---
+
+## 执行计划
+
+### 权限系统接线计划（plan-07）
+
+已创建：`docs/ui/great/plans/plan-07-permissions-wiring.md`
+
+**目标**：将 20+ 工具专用权限变体从 `#[cfg(test)]` 提升为主渲染管道的一部分。
+
+| Phase | 描述 | 工作量 |
+|-------|------|:------:|
+| 1 | PermissionRequestRouter + app.rs 集成 | 2-3 天 |
+| 2 | 权限反馈输入（Tab 展开） | 3-4 天 |
+| 3 | IDE diff 配置交互 | 1-2 天 |
+| 4 | BypassPermissionsModeDialog | 0.5-1 天 |
+| 5 | 移除所有 `#[allow(dead_code)]` | 0.5 天 |
+| 6 | 分析集成 | 1-2 天 |
+
+### 死代码清理计划（plan-08）
+
+已创建：`docs/ui/great/plans/plan-08-dead-code-cleanup.md`
+
+**目标**：移除 50+ 处 `#[allow(dead_code)]`，删除 `metadata.rs` 中 175 行完全冗余的代码。
+
+| Phase | 描述 | 工作量 | 并行性 |
+|-------|------|:------:|:------:|
+| 1 | 权限系统死代码（与 plan-07 同步） | — | 阻塞于 plan-07 |
+| 2 | agent_navigation.rs 接线 | 0.5-1 天 | 独立 |
+| 3 | messages.rs 子模块死代码 | 1-2 天 | 独立 |
+| 4 | metadata.rs 去重（13 个冗余函数，175 行） | 0.5 天 | 独立 |
+| 5 | mod.rs 模块级清理（35 处） | 2-3 天 | 依赖 Phase 2/3/4 |
+
+### 依赖关系
+
+```
+死代码清理 Phase 2/3/4 (并行)
+       │
+       ▼
+死代码清理 Phase 5 (mod.rs)
+       │
+       ▼
+权限接线 Phase 1-6
+```
 
 ---
 

@@ -326,10 +326,13 @@ Rust 差异子系统是最完整的渲染领域，有多个反映 TS 组件结�
 
 ### Rust 文件
 - **未实现**（未找到文件）
+- `crates/claude-code-rs/Cargo.toml` — `syntect` 和 `tree-sitter` 声明为 optional 依赖，**零使用**
+- `crates/claude-code-rs/src/ui/rendering/markdown.rs` — `Tag::CodeBlock(_)` 使用 `_` 丢弃 `info_string`
 
 ### TS 文件
 - `F:\AIclassmanager\cc\src\utils\cliHighlight.ts`（WASM Shiki 加载器）
 - `F:\AIclassmanager\cc\src\components\Markdown.tsx`（Suspense + use(highlight)）
+- `F:\AIclassmanager\cc\src\utils\markdown.ts`（formatToken 高亮集成）
 
 ### Rust 完成度：0/5
 
@@ -342,6 +345,16 @@ TS 实现通过 WASM 加载 Shiki（`cliHighlight.ts`），使用 `Suspense` 进
 - **Markdown 或差异视图中代码块没有任何类型的语法高亮**。
 - **无从围栏代码块信息字符串进行语言检测**。
 - **无回退机制**（TS 回退到纯文本）。
+
+### 补齐计划
+详见 `docs/ui/great/plans/plan-06-syntax-highlighting.md`：
+- 阶段 1: syntect 集成基础设施（`SyntaxHighlighter` 结构体 + 颜色转换 + Theme 集成）
+- 阶段 2: 从 `Tag::CodeBlock(CodeBlockKind::Fenced(lang))` 提取语言标识符
+- 阶段 3: 令牌级着色（syntect tokens → ratatui Spans，LRU 缓存）
+- 阶段 4: 差异视图语法高亮（行级 +/- 着色叠加令牌高亮）
+- 阶段 5: 语言选择器 UI（模糊匹配 + 覆盖层下拉选择）
+- 阶段 6: 流式代码块增量高亮（逐行 `HighlightLines::highlight()`）
+- 估算: ~600 行新代码（`#[cfg(feature = "syntect")]` 编译门控）
 
 ### 影响
 这是最大的单一渲染差距。Markdown 输出和差异代码块中的代码显示为纯单色文本。对于一个代码是主要内容的开发者工具来说，这显著降低了阅读体验。习惯了 TS 版本彩色代码的用户会发现 Rust 版本明显平淡。

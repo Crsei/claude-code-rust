@@ -180,6 +180,16 @@ RATATUI_UI_PARITY.md 文档确认 Rust 已对等实现了 AgentsList、AgentDeta
 - **代理进度行**（TS：`AgentProgressLine.tsx`）
 - **队友视图标题**（TS：`TeammateViewHeader.tsx`）
 
+### 补齐计划
+详见 `docs/ui/great/plans/plan-05-agent-navigation.md`：
+- 阶段 1: 将 `AgentNavigationState` 接入 `App` 结构体（移除 `#[allow(dead_code)]`）
+- 阶段 2: 代理导航页脚渲染（多代理模式下的状态栏行）
+- 阶段 3: 代理树面板覆盖层（↑↓ 选择，Enter 切换线程）
+- 阶段 4: 代理列表视图（ratatui 样式化现有纯文本输出）
+- 阶段 5: 协调器/队友状态面板
+- 阶段 6: 移除死代码 + 测试（`agents/mod.rs` 设备路径清理）
+- 估算: ~610 行新代码（主要工作是将已有代码接线和样式化）
+
 ### 影响
 高。代理导航是多代理会话的核心功能。Rust ratatui 后端拥有数据模型，但尚未将其接入渲染管线。多代理模式下的用户无法通过 Rust TUI 查看代理列表、在代理之间切换或管理代理配置。这是应用外壳中最显著的差距。
 
@@ -268,6 +278,15 @@ RATATUI_UI_PARITY.md 文档指出 `StatusNotices.tsx`、`SubsystemStatus.tsx`、
 - **LSP 初始化通知** — 无 ratatui 等效实现
 - **MCP 连接状态** — 无 ratatui 等效实现
 - **速率限制警告** — 无 ratatui 等效实现
+
+### 补齐计划
+详见 `docs/ui/great/plans/plan-04-notification.md`：
+- 阶段 1: 核心 `NotificationQueue` 数据结构（优先级/超时/折叠/失效）
+- 阶段 2: 集成到 `App` 结构体（`notifications: NotificationState` 字段）
+- 阶段 3: 通知渲染布局（状态栏上方 1-2 行横幅区域）
+- 阶段 4: 6-8 个通知钩子（IDE 状态、Token 警告、API Key、内存使用等）
+- 阶段 5: 自动更新通知
+- 估算: ~750 行新代码
 
 ### 影响
 高。终端内通知系统是关键的用户体验元素，用于展示重要的系统状态（IDE 连接、内存压力、token 警告、API 密钥问题等）。没有它，用户会错过关于系统状态的关键反馈。这是 Rust ratatui 后端最大的 UI 差距之一。
@@ -458,30 +477,30 @@ Rust 拥有显式且设计良好的帧调度系统。`FrameRequester` 支持合�
 
 以下功能/组件存在于 TypeScript 应用外壳中，但在 Rust ratatui 后端中**没有**等效实现：
 
-| 功能 | TS 位置 | 类型 | 优先级 |
-|------|---------|------|:------:|
-| 终端内通知队列 | `PromptInput/Notifications.tsx` | 系统状态显示 | P1 |
-| IDE 状态指示器 | `IdeStatusIndicator.tsx` | 系统状态 | P1 |
-| 代理管理 UI（列表/详情/编辑器） | `components/agents/`（40+ 文件） | 核心交互 | P1 |
-| 代理导航页脚（已接入） | `agents/AgentNavigationFooter.tsx` | 导航 | P1 |
-| 代理树面板 | `AgentTreePanel.tsx` | 导航 | P2 |
-| 协调器代理状态 | `CoordinatorAgentStatus.tsx` | 系统状态 | P2 |
-| 代理进度行 | `AgentProgressLine.tsx` | 系统状态 | P2 |
-| 队友视图标题 | `TeammateViewHeader.tsx` | 协作 | P2 |
-| 内存使用指示器 | `MemoryUsageIndicator.tsx` | 系统状态 | P2 |
-| Token 警告 | `TokenWarning.tsx` | 系统状态 | P2 |
-| 速率限制进度条含倒计时 | `BuiltinStatusLine.tsx` | 信息显示 | P2 |
-| 上下文使用百分比显示 | `BuiltinStatusLine.tsx` | 信息显示 | P2 |
-| 成本阈值对话框 | `CostThresholdDialog.tsx` | UX 对话框 | P2 |
-| 空闲返回对话框 | `IdleReturnDialog.tsx` | UX 对话框 | P2 |
-| 退出确认流程 | `ExitFlow.tsx` | UX 对话框 | P3 |
-| 会话后台提示 | `SessionBackgroundHint.tsx` | UX 提示 | P3 |
-| 会话预览 | `SessionPreview.tsx` | UX 对话框 | P3 |
-| Logo V2 动画（有意省略） | `LogoV2/`（18 个文件） | 装饰 | P3（不修复） |
-| 引导流程（有意省略） | `Onboarding.tsx` | 首次运行 UX | P3（不修复） |
-| 隐身模式提示 | `UndercoverAutoCallout.tsx` | 状态指示器 | P3 |
-| 全局搜索对话框 | `GlobalSearchDialog.tsx` | 导航 | P3 |
-| 快速打开对话框（Ctrl+P） | `QuickOpenDialog.tsx` | 导航 | P3 |
+| 功能 | TS 位置 | 类型 | 优先级 | 补齐计划 |
+|------|---------|------|:------:|:--------:|
+| 终端内通知队列 | `PromptInput/Notifications.tsx` | 系统状态显示 | P1 | `plans/plan-04-notification.md` |
+| IDE 状态指示器 | `IdeStatusIndicator.tsx` | 系统状态 | P1 | `plans/plan-04-notification.md` |
+| 代理管理 UI（列表/详情/编辑器） | `components/agents/`（40+ 文件） | 核心交互 | P1 | `plans/plan-05-agent-navigation.md` |
+| 代理导航页脚（已接入） | `agents/AgentNavigationFooter.tsx` | 导航 | P1 | `plans/plan-05-agent-navigation.md` |
+| 代理树面板 | `AgentTreePanel.tsx` | 导航 | P2 | `plans/plan-05-agent-navigation.md` |
+| 协调器代理状态 | `CoordinatorAgentStatus.tsx` | 系统状态 | P2 | `plans/plan-05-agent-navigation.md` |
+| 代理进度行 | `AgentProgressLine.tsx` | 系统状态 | P2 | — |
+| 队友视图标题 | `TeammateViewHeader.tsx` | 协作 | P2 | — |
+| 内存使用指示器 | `MemoryUsageIndicator.tsx` | 系统状态 | P2 | `plans/plan-04-notification.md` |
+| Token 警告 | `TokenWarning.tsx` | 系统状态 | P2 | `plans/plan-04-notification.md` |
+| 速率限制进度条含倒计时 | `BuiltinStatusLine.tsx` | 信息显示 | P2 | — |
+| 上下文使用百分比显示 | `BuiltinStatusLine.tsx` | 信息显示 | P2 | — |
+| 成本阈值对话框 | `CostThresholdDialog.tsx` | UX 对话框 | P2 | — |
+| 空闲返回对话框 | `IdleReturnDialog.tsx` | UX 对话框 | P2 | — |
+| 退出确认流程 | `ExitFlow.tsx` | UX 对话框 | P3 | — |
+| 会话后台提示 | `SessionBackgroundHint.tsx` | UX 提示 | P3 | — |
+| 会话预览 | `SessionPreview.tsx` | UX 对话框 | P3 | — |
+| Logo V2 动画（有意省略） | `LogoV2/`（18 个文件） | 装饰 | P3（不修复）| — |
+| 引导流程（有意省略） | `Onboarding.tsx` | 首次运行 UX | P3（不修复）| — |
+| 隐身模式提示 | `UndercoverAutoCallout.tsx` | 状态指示器 | P3 | — |
+| 全局搜索对话框 | `GlobalSearchDialog.tsx` | 导航 | P3 | — |
+| 快速打开对话框（Ctrl+P） | `QuickOpenDialog.tsx` | 导航 | P3 | — |
 
 ---
 

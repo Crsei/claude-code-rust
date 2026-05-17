@@ -5,6 +5,13 @@
 >
 > 生成日期: 2026-05-17
 
+## Logo 相关（不做）
+
+以下 Logo 相关内容确认 **不做**，不在补齐范围内：
+- **Logo V2 动画**（TS `LogoV2/` 18 个文件）— 动画 ASCII 艺术标志，ratatui 不支持动画，无对等实现必要
+- **ASCII 艺术大字标志**（OpenTUI `WelcomeScreen.tsx` 中的 "Claude Code" ASCII 艺术字）— 已存在的装饰性元素，无需进一步开发或与 TS 对等
+- 欢迎屏幕保持简洁信息展示（版本、模型、会话 ID、CWD），不做动画标志、扫描线效果等装饰性增强
+
 ## 文档索引
 
 | # | 文档 | 行数 | 覆盖范围 |
@@ -31,6 +38,8 @@
 2. **Markdown 表格 (2/5)** — LLM 频繁输出表格，Rust 无表格渲染（宽度计算、对齐、ANSI-aware 换行）
 3. **Dialog/Overlay 系统 (1/5)** — TS 有 40+ 对话框组件，Rust 只有一个 permission overlay
 4. **设计系统组件 (1/5)** — ThemedBox、ThemedText、Dialog、Pane 等基础原子组件全部缺失
+   - 补齐计划: [`plans/plan-02-design-system.md`](plans/plan-02-design-system.md) — 16 个组件 / 3 个冲刺 / ~17-21 天
+   - 依赖: ThemeProvider 基础设施 → 原子组件 → 复合组件
 5. **骨架消息渲染器 (1/5)** — 31 个 `render_*` 函数仅输出 `format!("{type}: {content}")`，未使用 theme 参数
 6. **多行输入 (2/5)** — Rust PromptInput 仅单行，TS 约 3000 行支持多行/图片粘贴/撤销/高亮/补全
 7. **按工具分类的权限弹窗 (2/5)** — Rust 一个通用弹窗 vs TS 15+ 工具专用权限请求组件
