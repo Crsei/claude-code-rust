@@ -1,0 +1,20 @@
+{
+  "model": "claude-sonnet-4-5-20250929",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello"
+    }
+  ],
+  "system": [
+    {
+      "type": "text",
+      "text": "You are a coding assistant.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "max_tokens": 1024,
+  "stream": true
+}

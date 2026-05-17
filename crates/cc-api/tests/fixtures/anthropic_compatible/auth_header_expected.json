@@ -1,0 +1,4 @@
+{
+  "authorization": "Bearer anthropic-compatible-token",
+  "absent": ["x-api-key"]
+}

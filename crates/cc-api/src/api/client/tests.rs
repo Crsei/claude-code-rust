@@ -50,6 +50,42 @@ fn clear_env(keys: &[&str]) {
     }
 }
 
+fn fixture_json(name: &str) -> serde_json::Value {
+    let raw = match name {
+        "auth_header_expected" => {
+            include_str!("../../../tests/fixtures/anthropic_compatible/auth_header_expected.json")
+        }
+        "base_url_expected" => {
+            include_str!("../../../tests/fixtures/anthropic_compatible/base_url_expected.json")
+        }
+        "model_alias_expected" => {
+            include_str!("../../../tests/fixtures/anthropic_compatible/model_alias_expected.json")
+        }
+        "prompt_cache_body_expected" => include_str!(
+            "../../../tests/fixtures/anthropic_compatible/prompt_cache_body_expected.json"
+        ),
+        other => panic!("unknown fixture: {other}"),
+    };
+    serde_json::from_str(raw).expect("fixture must be valid JSON")
+}
+
+fn save_and_clear_provider_keys() -> Vec<(&'static str, String)> {
+    let saved: Vec<_> = crate::api::providers::PROVIDERS
+        .iter()
+        .filter_map(|p| std::env::var(p.env_key).ok().map(|v| (p.env_key, v)))
+        .collect();
+    for p in crate::api::providers::PROVIDERS {
+        std::env::remove_var(p.env_key);
+    }
+    saved
+}
+
+fn restore_provider_keys(saved: Vec<(&'static str, String)>) {
+    for (key, value) in saved {
+        std::env::set_var(key, value);
+    }
+}
+
 // -----------------------------------------------------------------------
 // URL building
 // -----------------------------------------------------------------------
@@ -372,6 +408,116 @@ fn test_build_headers_bedrock_no_api_key() {
     assert!(!headers.contains_key("x-api-key"));
     assert!(!headers.contains_key("authorization"));
     assert_eq!(headers.get("content-type").unwrap(), "application/json");
+}
+
+#[test]
+#[ignore = "activated by phase 1: Anthropic auth-token requests must use Authorization bearer"]
+fn regression_anthropic_auth_token_currently_sent_as_x_api_key() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let saved_keys = save_and_clear_provider_keys();
+    clear_env(&[
+        "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    std::env::set_var("ANTHROPIC_AUTH_TOKEN", "anthropic-compatible-token");
+
+    let fixture = fixture_json("auth_header_expected");
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("auth token should build a client");
+    let headers = client.build_headers_map();
+
+    // Phase 0 risk: ANTHROPIC_AUTH_TOKEN is currently flattened into
+    // x-api-key, which breaks Anthropic-compatible endpoints expecting bearer.
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        fixture["authorization"].as_str()
+    );
+    for absent in fixture["absent"].as_array().unwrap() {
+        assert!(!headers.contains_key(absent.as_str().unwrap()));
+    }
+
+    restore_provider_keys(saved_keys);
+    restore_env(saved);
+}
+
+#[test]
+#[ignore = "activated by phase 2: compatible Anthropic routing must honor ANTHROPIC_BASE_URL"]
+fn regression_anthropic_base_url_env_currently_loses_compatible_routing() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let saved_keys = save_and_clear_provider_keys();
+    clear_env(&[
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let fixture = fixture_json("base_url_expected");
+    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-compatible-routing-test");
+    std::env::set_var("ANTHROPIC_BASE_URL", fixture["base_url"].as_str().unwrap());
+
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("API key should build a client");
+
+    // Phase 0 risk: env-provider detection currently routes through provider
+    // metadata and drops ANTHROPIC_BASE_URL for compatible endpoints.
+    assert_eq!(
+        client.build_url(),
+        fixture["messages_url"].as_str().unwrap()
+    );
+
+    restore_provider_keys(saved_keys);
+    restore_env(saved);
+}
+
+#[test]
+#[ignore = "activated by phase 3: Anthropic model aliases must resolve before request dispatch"]
+fn regression_anthropic_model_alias_currently_not_resolved_for_wire_model() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_MODEL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let saved_keys = save_and_clear_provider_keys();
+    clear_env(&[
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let fixture = fixture_json("model_alias_expected");
+    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-model-alias-test");
+    std::env::set_var("ANTHROPIC_MODEL", fixture["alias"].as_str().unwrap());
+
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("API key should build a client");
+
+    assert_eq!(
+        client.config().default_model,
+        fixture["wire_model"].as_str().unwrap()
+    );
+
+    restore_provider_keys(saved_keys);
+    restore_env(saved);
 }
 
 // -----------------------------------------------------------------------
@@ -883,6 +1029,18 @@ fn test_sse_line_parsing_empty_text() {
     assert!(events.is_empty());
 }
 
+#[test]
+#[ignore = "activated by phase 5: Anthropic stream error SSE events must become actionable errors"]
+fn regression_anthropic_stream_error_event_currently_ignored() {
+    let sse_text =
+        include_str!("../../../tests/fixtures/anthropic_compatible/stream_error_event.sse");
+
+    // Phase 0 risk: event:error is currently discarded, so overload/auth
+    // failures can disappear from the stream parser instead of surfacing.
+    let err = parse_sse_text(sse_text).expect_err("error event should not be ignored");
+    assert!(err.to_string().contains("overloaded_error"));
+}
+
 struct FlakyStreamProvider {
     calls: Arc<AtomicUsize>,
     fail_times: usize,
@@ -1095,6 +1253,32 @@ fn test_messages_request_serialization() {
     assert!(json.get("thinking").is_none());
     assert!(json.get("tool_choice").is_none());
     assert!(json.get("advisor_model").is_none());
+}
+
+#[test]
+#[ignore = "activated by phase 4: prompt-cache cache_control marker must be injected"]
+fn regression_prompt_cache_marker_currently_not_injected_into_anthropic_body() {
+    let req = MessagesRequest {
+        model: "claude-sonnet-4-5-20250929".to_string(),
+        messages: vec![serde_json::json!({"role": "user", "content": "Hello"})],
+        system: Some(vec![serde_json::json!({
+            "type": "text",
+            "text": "You are a coding assistant."
+        })]),
+        max_tokens: 1024,
+        tools: None,
+        stream: true,
+        thinking: None,
+        tool_choice: None,
+        advisor_model: None,
+    };
+
+    let body = serde_json::to_value(&req).unwrap();
+    let expected = fixture_json("prompt_cache_body_expected");
+
+    // Phase 0 risk: prompt-cache capability is advertised in headers, but the
+    // serialized body does not add cache_control markers by itself.
+    assert_eq!(body, expected);
 }
 
 #[test]

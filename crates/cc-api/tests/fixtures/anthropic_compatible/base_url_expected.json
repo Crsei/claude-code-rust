@@ -1,0 +1,4 @@
+{
+  "base_url": "https://compatible.example.com/anthropic",
+  "messages_url": "https://compatible.example.com/anthropic/v1/messages"
+}
