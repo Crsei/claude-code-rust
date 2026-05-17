@@ -10,6 +10,7 @@ fn anthropic_config() -> ApiClientConfig {
         provider: ApiProvider::Anthropic {
             auth: AnthropicAuth::ApiKey("sk-test-key-123".to_string()),
             base_url: None,
+            endpoint_kind: AnthropicEndpointKind::DirectAnthropic,
         },
         default_model: "claude-sonnet-4-20250514".to_string(),
         max_retries: 3,
@@ -22,6 +23,7 @@ fn anthropic_config_custom_url() -> ApiClientConfig {
         provider: ApiProvider::Anthropic {
             auth: AnthropicAuth::ApiKey("sk-test-key-456".to_string()),
             base_url: Some("https://custom.api.example.com".to_string()),
+            endpoint_kind: AnthropicEndpointKind::CompatibleAnthropic,
         },
         default_model: "claude-sonnet-4-20250514".to_string(),
         max_retries: 2,
@@ -110,6 +112,7 @@ fn test_build_url_anthropic_trailing_slash() {
         provider: ApiProvider::Anthropic {
             auth: AnthropicAuth::ApiKey("key".to_string()),
             base_url: Some("https://example.com/".to_string()),
+            endpoint_kind: AnthropicEndpointKind::CompatibleAnthropic,
         },
         default_model: "model".to_string(),
         max_retries: 1,
@@ -448,7 +451,6 @@ fn regression_anthropic_auth_token_uses_authorization_bearer() {
 }
 
 #[test]
-#[ignore = "activated by phase 2: compatible Anthropic routing must honor ANTHROPIC_BASE_URL"]
 fn regression_anthropic_base_url_env_currently_loses_compatible_routing() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let saved = save_env(&[
@@ -478,9 +480,90 @@ fn regression_anthropic_base_url_env_currently_loses_compatible_routing() {
         client.build_url(),
         fixture["messages_url"].as_str().unwrap()
     );
+    assert_eq!(
+        client.config().provider.endpoint_kind(),
+        Some(AnthropicEndpointKind::CompatibleAnthropic)
+    );
 
     restore_provider_keys(saved_keys);
     restore_env(saved);
+}
+
+#[test]
+fn anthropic_auth_token_with_non_official_base_url_selects_compatible_messages_endpoint() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let saved_keys = save_and_clear_provider_keys();
+    clear_env(&[
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let fixture = fixture_json("base_url_expected");
+    std::env::set_var("ANTHROPIC_AUTH_TOKEN", "compatible-secret-token");
+    std::env::set_var("ANTHROPIC_BASE_URL", fixture["base_url"].as_str().unwrap());
+
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("auth token should build a client");
+
+    assert_eq!(
+        client.build_url(),
+        fixture["messages_url"].as_str().unwrap()
+    );
+    assert_eq!(
+        client.config().provider.endpoint_kind(),
+        Some(AnthropicEndpointKind::CompatibleAnthropic)
+    );
+    assert!(matches!(
+        client.config().provider,
+        ApiProvider::Anthropic {
+            auth: AnthropicAuth::BearerToken(_),
+            ..
+        }
+    ));
+    let headers = client.build_headers_map();
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer compatible-secret-token")
+    );
+    assert!(!headers.contains_key("x-api-key"));
+
+    restore_provider_keys(saved_keys);
+    restore_env(saved);
+}
+
+#[test]
+fn provider_diagnostic_includes_endpoint_kind_and_host_without_secret() {
+    let config = ApiClientConfig {
+        provider: ApiProvider::Anthropic {
+            auth: AnthropicAuth::BearerToken("secret-token-must-not-leak".to_string()),
+            base_url: Some("https://compatible.example.com/anthropic".to_string()),
+            endpoint_kind: AnthropicEndpointKind::CompatibleAnthropic,
+        },
+        default_model: "claude-sonnet-4-20250514".to_string(),
+        max_retries: 1,
+        timeout_secs: 30,
+    };
+    let client = ApiClient::new(config);
+    let diagnostic = client.provider_diagnostic();
+
+    assert_eq!(
+        diagnostic.endpoint_kind,
+        Some(AnthropicEndpointKind::CompatibleAnthropic)
+    );
+    assert_eq!(
+        diagnostic.base_url_host.as_deref(),
+        Some("compatible.example.com")
+    );
+    let serialized = serde_json::to_string(&diagnostic).unwrap();
+    assert!(!serialized.contains("secret-token-must-not-leak"));
 }
 
 #[test]
@@ -566,8 +649,16 @@ fn test_from_provider_info_google() {
 #[test]
 fn test_from_env_with_anthropic_key() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
-    let saved_flags = save_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
-    clear_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+    let saved_flags = save_env(&[
+        "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+    ]);
+    clear_env(&[
+        "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+    ]);
 
     // Temporarily set the env var for this test
     let key = "sk-ant-api03-test-from-env-key";
@@ -581,8 +672,13 @@ fn test_from_env_with_anthropic_key() {
 
     let client = client.unwrap();
     match &client.config().provider {
-        ApiProvider::Anthropic { auth, .. } => {
+        ApiProvider::Anthropic {
+            auth,
+            endpoint_kind,
+            ..
+        } => {
             assert_eq!(auth, &AnthropicAuth::ApiKey(key.to_string()));
+            assert_eq!(endpoint_kind, &AnthropicEndpointKind::DirectAnthropic);
         }
         other => panic!("expected Anthropic provider, got {:?}", other),
     }
@@ -1337,6 +1433,18 @@ fn test_exact_token_count_support_matrix() {
     let anthropic = ApiClient::new(anthropic_config());
     assert!(anthropic.supports_exact_token_count());
 
+    let compatible_anthropic = ApiClient::new(ApiClientConfig {
+        provider: ApiProvider::Anthropic {
+            auth: AnthropicAuth::BearerToken("compatible-token".to_string()),
+            base_url: Some("https://compatible.example.com/anthropic".to_string()),
+            endpoint_kind: AnthropicEndpointKind::CompatibleAnthropic,
+        },
+        default_model: "claude-sonnet-4-20250514".to_string(),
+        max_retries: 3,
+        timeout_secs: 60,
+    });
+    assert!(!compatible_anthropic.supports_exact_token_count());
+
     let azure = ApiClient::new(ApiClientConfig {
         provider: ApiProvider::Azure {
             endpoint: "https://azure.example.com".to_string(),
@@ -1434,6 +1542,7 @@ fn test_provider_supports_advisor_matrix() {
     assert!(provider_supports_advisor(&ApiProvider::Anthropic {
         auth: AnthropicAuth::ApiKey("k".into()),
         base_url: None,
+        endpoint_kind: AnthropicEndpointKind::DirectAnthropic,
     }));
     assert!(provider_supports_advisor(&ApiProvider::Azure {
         endpoint: "e".into(),

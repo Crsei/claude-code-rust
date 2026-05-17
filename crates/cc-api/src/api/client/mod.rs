@@ -12,7 +12,7 @@ use crate::api::retry::{categorize_stream_start_error, retry_delay, RetryConfig}
 use cc_types::message::{AssistantMessage, StreamEvent};
 
 // Re-export siblings for convenience within this module's tests.
-use crate::api::providers::{ProviderInfo, ProviderProtocol};
+use crate::api::providers::{AnthropicEndpointKind, ProviderInfo, ProviderProtocol};
 use crate::api::streaming::StreamAccumulator;
 
 mod stream;
@@ -44,6 +44,7 @@ pub enum ApiProvider {
     Anthropic {
         auth: AnthropicAuth,
         base_url: Option<String>,
+        endpoint_kind: AnthropicEndpointKind,
     },
     /// Azure Foundry (Anthropic-compatible)
     Azure { endpoint: String, api_key: String },
@@ -151,6 +152,41 @@ fn extend_header_string_map(
 }
 
 impl ApiProvider {
+    pub fn endpoint_kind(&self) -> Option<AnthropicEndpointKind> {
+        match self {
+            ApiProvider::Anthropic { endpoint_kind, .. } => Some(*endpoint_kind),
+            ApiProvider::Azure { .. }
+            | ApiProvider::Bedrock { .. }
+            | ApiProvider::Vertex { .. } => Some(AnthropicEndpointKind::DirectAnthropic),
+            ApiProvider::OpenAiCompat { .. } | ApiProvider::Google { .. } => None,
+        }
+    }
+
+    pub fn base_url_host(&self) -> Option<String> {
+        match self {
+            ApiProvider::Anthropic { base_url, .. } => {
+                let base_url = base_url.as_deref().unwrap_or("https://api.anthropic.com");
+                crate::api::providers::base_url_host(base_url)
+            }
+            ApiProvider::Azure { endpoint, .. } => crate::api::providers::base_url_host(endpoint),
+            ApiProvider::OpenAiCompat { base_url, .. } => {
+                crate::api::providers::base_url_host(base_url)
+            }
+            ApiProvider::Google { base_url, .. } => crate::api::providers::base_url_host(base_url),
+            ApiProvider::Bedrock {
+                base_url_override, ..
+            } => {
+                let base_url = base_url_override
+                    .as_deref()
+                    .unwrap_or("https://bedrock-runtime.amazonaws.com");
+                crate::api::providers::base_url_host(base_url)
+            }
+            ApiProvider::Vertex { region, .. } => {
+                Some(format!("{region}-aiplatform.googleapis.com"))
+            }
+        }
+    }
+
     pub fn langfuse_provider_name(&self) -> &str {
         match self {
             ApiProvider::Anthropic { .. } => "anthropic",
@@ -172,9 +208,13 @@ impl ApiProvider {
 
     pub fn capabilities(&self) -> crate::api::providers::ProviderCapabilities {
         match self {
-            ApiProvider::Anthropic { .. } => {
-                crate::api::providers::capabilities_for_provider_name("anthropic")
-                    .expect("anthropic capability matrix entry must exist")
+            ApiProvider::Anthropic { endpoint_kind, .. } => {
+                if *endpoint_kind == AnthropicEndpointKind::CompatibleAnthropic {
+                    crate::api::providers::compatible_anthropic_capabilities()
+                } else {
+                    crate::api::providers::capabilities_for_provider_name("anthropic")
+                        .expect("anthropic capability matrix entry must exist")
+                }
             }
             ApiProvider::Azure { .. } => {
                 crate::api::providers::capabilities_for_provider_name("azure")
@@ -251,11 +291,20 @@ pub(crate) fn build_anthropic_count_tokens_body(request: &MessagesRequest) -> Va
 pub fn provider_supports_advisor(provider: &ApiProvider) -> bool {
     matches!(
         provider,
-        ApiProvider::Anthropic { .. }
-            | ApiProvider::Azure { .. }
+        ApiProvider::Anthropic {
+            endpoint_kind: AnthropicEndpointKind::DirectAnthropic,
+            ..
+        } | ApiProvider::Azure { .. }
             | ApiProvider::Bedrock { .. }
             | ApiProvider::Vertex { .. }
     )
+}
+
+fn anthropic_base_url_from_env() -> Option<String> {
+    std::env::var("ANTHROPIC_BASE_URL")
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
 }
 
 /// API client configuration
@@ -294,7 +343,7 @@ fn make_stream_provider(
             api_key: api_key.clone(),
             base_url: base_url.clone(),
         }),
-        ApiProvider::Anthropic { auth, base_url } => Box::new(AnthropicStreamProvider {
+        ApiProvider::Anthropic { auth, base_url, .. } => Box::new(AnthropicStreamProvider {
             auth: auth.clone(),
             base_url: base_url
                 .clone()
@@ -355,7 +404,7 @@ fn validate_provider_config(provider: &ApiProvider) -> Result<()> {
     }
 
     match provider {
-        ApiProvider::Anthropic { auth, base_url } => {
+        ApiProvider::Anthropic { auth, base_url, .. } => {
             require_non_empty(auth.secret(), auth.label())?;
             let mut headers = reqwest::header::HeaderMap::new();
             auth.insert_auth_header(&mut headers)?;
@@ -459,8 +508,10 @@ impl ApiClient {
     pub fn supports_exact_token_count(&self) -> bool {
         matches!(
             self.config.provider,
-            ApiProvider::Anthropic { .. }
-                | ApiProvider::Azure { .. }
+            ApiProvider::Anthropic {
+                endpoint_kind: AnthropicEndpointKind::DirectAnthropic,
+                ..
+            } | ApiProvider::Azure { .. }
                 | ApiProvider::Google { .. }
                 | ApiProvider::Bedrock { .. }
                 | ApiProvider::Vertex { .. }
@@ -476,7 +527,11 @@ impl ApiClient {
         request: &MessagesRequest,
     ) -> Result<ExactTokenCount> {
         match &self.config.provider {
-            ApiProvider::Anthropic { auth, base_url } => {
+            ApiProvider::Anthropic {
+                auth,
+                base_url,
+                endpoint_kind,
+            } if *endpoint_kind == AnthropicEndpointKind::DirectAnthropic => {
                 self.count_anthropic_input_tokens(
                     auth,
                     base_url.as_deref().unwrap_or("https://api.anthropic.com"),
@@ -654,6 +709,7 @@ impl ApiClient {
             ProviderProtocol::Anthropic => ApiProvider::Anthropic {
                 auth: AnthropicAuth::ApiKey(api_key.to_string()),
                 base_url: Some(info.base_url.to_string()),
+                endpoint_kind: AnthropicEndpointKind::DirectAnthropic,
             },
             ProviderProtocol::OpenAiCompat => ApiProvider::OpenAiCompat {
                 name: info.name.to_string(),
@@ -757,6 +813,24 @@ impl ApiClient {
             };
             return Self::try_new(ApiClientConfig {
                 provider,
+                default_model,
+                max_retries: 3,
+                timeout_secs: 120,
+            })
+            .map(Some);
+        }
+
+        if info.name == "anthropic" {
+            let base_url = anthropic_base_url_from_env();
+            let endpoint_kind =
+                crate::api::providers::anthropic_endpoint_kind_for_base_url(base_url.as_deref());
+            let default_model = info.default_model.to_string();
+            return Self::try_new(ApiClientConfig {
+                provider: ApiProvider::Anthropic {
+                    auth: AnthropicAuth::ApiKey(api_key),
+                    base_url,
+                    endpoint_kind,
+                },
                 default_model,
                 max_retries: 3,
                 timeout_secs: 120,
@@ -947,9 +1021,15 @@ impl ApiClient {
             }
             cc_auth::AuthMethod::None => return Ok(None),
         };
-        let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+        let base_url = anthropic_base_url_from_env();
+        let endpoint_kind =
+            crate::api::providers::anthropic_endpoint_kind_for_base_url(base_url.as_deref());
         Self::try_new(ApiClientConfig {
-            provider: ApiProvider::Anthropic { auth, base_url },
+            provider: ApiProvider::Anthropic {
+                auth,
+                base_url,
+                endpoint_kind,
+            },
             default_model: "claude-sonnet-4-20250514".to_string(),
             max_retries: 3,
             timeout_secs: 120,
@@ -1125,6 +1205,18 @@ impl ApiClient {
 
     pub fn langfuse_provider_name(&self) -> &str {
         self.config.provider.langfuse_provider_name()
+    }
+
+    pub fn provider_diagnostic(&self) -> crate::api::providers::ProviderDiagnostic {
+        crate::api::providers::ProviderDiagnostic {
+            code: "provider_selected",
+            message: format!(
+                "Using provider `{}`",
+                self.config.provider.langfuse_provider_name()
+            ),
+            endpoint_kind: self.config.provider.endpoint_kind(),
+            base_url_host: self.config.provider.base_url_host(),
+        }
     }
 }
 

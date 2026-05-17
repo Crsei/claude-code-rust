@@ -22,6 +22,14 @@ pub enum ProviderProtocol {
     Google,
 }
 
+/// Anthropic Messages endpoint class used for diagnostics and capability gates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnthropicEndpointKind {
+    DirectAnthropic,
+    CompatibleAnthropic,
+}
+
 /// Whether a provider has a native server-side streaming implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -57,10 +65,15 @@ pub struct ProviderCapabilities {
     pub name: &'static str,
     pub auth_sources: &'static [&'static str],
     pub protocol: ProviderProtocol,
+    pub endpoint_kind: Option<AnthropicEndpointKind>,
     pub streaming: StreamingSupport,
     pub tool_use: bool,
     pub thinking: bool,
     pub prompt_cache: bool,
+    pub prompt_cache_marker: bool,
+    pub prompt_cache_ttl_1h: bool,
+    pub prompt_cache_global_scope: bool,
+    pub anthropic_beta_header: bool,
     pub advisor: bool,
     pub status: ProviderSupportStatus,
 }
@@ -76,6 +89,8 @@ impl ProviderCapabilities {
 pub struct ProviderDiagnostic {
     pub code: &'static str,
     pub message: String,
+    pub endpoint_kind: Option<AnthropicEndpointKind>,
+    pub base_url_host: Option<String>,
 }
 
 /// Serializable validation DTO shared by startup, `/model`, login flows, and
@@ -106,6 +121,8 @@ impl ProviderValidationResult {
             diagnostics: vec![ProviderDiagnostic {
                 code: "provider_unsupported",
                 message: reason.to_string(),
+                endpoint_kind: capabilities.endpoint_kind,
+                base_url_host: None,
             }],
         }
     }
@@ -118,8 +135,69 @@ impl ProviderValidationResult {
             diagnostics: vec![ProviderDiagnostic {
                 code: "provider_unknown",
                 message: format!("Unknown API provider `{provider}`"),
+                endpoint_kind: None,
+                base_url_host: None,
             }],
         }
+    }
+}
+
+pub fn base_url_host(base_url: &str) -> Option<String> {
+    url::Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+}
+
+pub fn is_official_anthropic_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("api.anthropic.com")
+}
+
+pub fn anthropic_endpoint_kind_for_base_url(base_url: Option<&str>) -> AnthropicEndpointKind {
+    let Some(base_url) = base_url else {
+        return AnthropicEndpointKind::DirectAnthropic;
+    };
+    match base_url_host(base_url) {
+        Some(host) if is_official_anthropic_host(&host) => AnthropicEndpointKind::DirectAnthropic,
+        Some(_) => AnthropicEndpointKind::CompatibleAnthropic,
+        None => AnthropicEndpointKind::DirectAnthropic,
+    }
+}
+
+pub fn direct_anthropic_capabilities(name: &'static str) -> ProviderCapabilities {
+    ProviderCapabilities {
+        name,
+        auth_sources: AUTH_ANTHROPIC,
+        protocol: ProviderProtocol::Anthropic,
+        endpoint_kind: Some(AnthropicEndpointKind::DirectAnthropic),
+        streaming: StreamingSupport::Native,
+        tool_use: true,
+        thinking: true,
+        prompt_cache: true,
+        prompt_cache_marker: true,
+        prompt_cache_ttl_1h: true,
+        prompt_cache_global_scope: true,
+        anthropic_beta_header: true,
+        advisor: true,
+        status: ProviderSupportStatus::Supported,
+    }
+}
+
+pub fn compatible_anthropic_capabilities() -> ProviderCapabilities {
+    ProviderCapabilities {
+        name: "anthropic-compatible",
+        auth_sources: AUTH_ANTHROPIC,
+        protocol: ProviderProtocol::Anthropic,
+        endpoint_kind: Some(AnthropicEndpointKind::CompatibleAnthropic),
+        streaming: StreamingSupport::Native,
+        tool_use: true,
+        thinking: false,
+        prompt_cache: true,
+        prompt_cache_marker: true,
+        prompt_cache_ttl_1h: false,
+        prompt_cache_global_scope: false,
+        anthropic_beta_header: true,
+        advisor: false,
+        status: ProviderSupportStatus::Supported,
     }
 }
 
@@ -327,10 +405,15 @@ pub fn capabilities_for_provider_info(info: &ProviderInfo) -> ProviderCapabiliti
             name: info.name,
             auth_sources,
             protocol: info.protocol,
+            endpoint_kind: Some(AnthropicEndpointKind::DirectAnthropic),
             streaming: StreamingSupport::Native,
             tool_use: true,
             thinking: true,
             prompt_cache: true,
+            prompt_cache_marker: true,
+            prompt_cache_ttl_1h: true,
+            prompt_cache_global_scope: true,
+            anthropic_beta_header: true,
             advisor: true,
             status: ProviderSupportStatus::Supported,
         },
@@ -338,10 +421,15 @@ pub fn capabilities_for_provider_info(info: &ProviderInfo) -> ProviderCapabiliti
             name: info.name,
             auth_sources,
             protocol: info.protocol,
+            endpoint_kind: None,
             streaming: StreamingSupport::Native,
             tool_use: true,
             thinking: false,
             prompt_cache: false,
+            prompt_cache_marker: false,
+            prompt_cache_ttl_1h: false,
+            prompt_cache_global_scope: false,
+            anthropic_beta_header: false,
             advisor: false,
             status: ProviderSupportStatus::Supported,
         },
@@ -349,10 +437,15 @@ pub fn capabilities_for_provider_info(info: &ProviderInfo) -> ProviderCapabiliti
             name: info.name,
             auth_sources,
             protocol: info.protocol,
+            endpoint_kind: None,
             streaming: StreamingSupport::Native,
             tool_use: true,
             thinking: true,
             prompt_cache: false,
+            prompt_cache_marker: false,
+            prompt_cache_ttl_1h: false,
+            prompt_cache_global_scope: false,
+            anthropic_beta_header: false,
             advisor: false,
             status: ProviderSupportStatus::Supported,
         },
@@ -369,10 +462,15 @@ pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities
             name: "bedrock",
             auth_sources: AUTH_BEDROCK,
             protocol: ProviderProtocol::Anthropic,
+            endpoint_kind: Some(AnthropicEndpointKind::DirectAnthropic),
             streaming: StreamingSupport::Native,
             tool_use: true,
             thinking: true,
             prompt_cache: true,
+            prompt_cache_marker: true,
+            prompt_cache_ttl_1h: true,
+            prompt_cache_global_scope: true,
+            anthropic_beta_header: true,
             advisor: true,
             status: ProviderSupportStatus::Supported,
         }),
@@ -380,10 +478,15 @@ pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities
             name: "vertex",
             auth_sources: AUTH_VERTEX,
             protocol: ProviderProtocol::Anthropic,
+            endpoint_kind: Some(AnthropicEndpointKind::DirectAnthropic),
             streaming: StreamingSupport::Native,
             tool_use: true,
             thinking: true,
             prompt_cache: true,
+            prompt_cache_marker: true,
+            prompt_cache_ttl_1h: true,
+            prompt_cache_global_scope: true,
+            anthropic_beta_header: true,
             advisor: true,
             status: ProviderSupportStatus::Supported,
         }),
@@ -391,10 +494,15 @@ pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities
             name: "azure-foundry",
             auth_sources: AUTH_FOUNDRY,
             protocol: ProviderProtocol::Anthropic,
+            endpoint_kind: None,
             streaming: StreamingSupport::None,
             tool_use: false,
             thinking: false,
             prompt_cache: false,
+            prompt_cache_marker: false,
+            prompt_cache_ttl_1h: false,
+            prompt_cache_global_scope: false,
+            anthropic_beta_header: false,
             advisor: false,
             status: ProviderSupportStatus::Unsupported {
                 reason: FOUNDRY_UNSUPPORTED_REASON,
@@ -507,11 +615,39 @@ mod tests {
     #[test]
     fn test_capabilities_for_anthropic() {
         let caps = capabilities_for_provider_name("anthropic").unwrap();
+        assert_eq!(
+            caps.endpoint_kind,
+            Some(AnthropicEndpointKind::DirectAnthropic)
+        );
         assert_eq!(caps.streaming, StreamingSupport::Native);
         assert!(caps.tool_use);
         assert!(caps.thinking);
         assert!(caps.prompt_cache);
+        assert!(caps.prompt_cache_marker);
+        assert!(caps.prompt_cache_ttl_1h);
+        assert!(caps.prompt_cache_global_scope);
+        assert!(caps.anthropic_beta_header);
         assert!(caps.advisor);
+        assert!(caps.is_usable());
+    }
+
+    #[test]
+    fn test_capabilities_for_compatible_anthropic_are_conservative() {
+        let caps = compatible_anthropic_capabilities();
+        assert_eq!(
+            caps.endpoint_kind,
+            Some(AnthropicEndpointKind::CompatibleAnthropic)
+        );
+        assert_eq!(caps.protocol, ProviderProtocol::Anthropic);
+        assert_eq!(caps.streaming, StreamingSupport::Native);
+        assert!(caps.tool_use);
+        assert!(caps.prompt_cache);
+        assert!(caps.prompt_cache_marker);
+        assert!(!caps.prompt_cache_ttl_1h);
+        assert!(!caps.prompt_cache_global_scope);
+        assert!(caps.anthropic_beta_header);
+        assert!(!caps.thinking);
+        assert!(!caps.advisor);
         assert!(caps.is_usable());
     }
 
@@ -523,7 +659,25 @@ mod tests {
         assert!(caps.tool_use);
         assert!(!caps.thinking);
         assert!(!caps.prompt_cache);
+        assert!(!caps.prompt_cache_marker);
+        assert!(!caps.anthropic_beta_header);
         assert!(caps.is_usable());
+    }
+
+    #[test]
+    fn test_anthropic_endpoint_kind_detection_uses_official_host_only() {
+        assert_eq!(
+            anthropic_endpoint_kind_for_base_url(None),
+            AnthropicEndpointKind::DirectAnthropic
+        );
+        assert_eq!(
+            anthropic_endpoint_kind_for_base_url(Some("https://api.anthropic.com")),
+            AnthropicEndpointKind::DirectAnthropic
+        );
+        assert_eq!(
+            anthropic_endpoint_kind_for_base_url(Some("https://compatible.example.com/anthropic")),
+            AnthropicEndpointKind::CompatibleAnthropic
+        );
     }
 
     #[test]
