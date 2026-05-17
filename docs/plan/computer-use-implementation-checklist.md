@@ -6,7 +6,7 @@
 
 - 主动调用桌面控制相关工具
 - 获取截图并将截图继续回喂给模型
-- 在同一轮 agent loop 中完成“看屏幕 -> 决策 -> 点击/输入 -> 再看屏幕”
+- 在同一轮 agent loop 中完成"看屏幕 -> 决策 -> 点击/输入 -> 再看屏幕"
 - 在 macOS / Windows / Linux 上逐步具备可验证能力
 
 本清单以 Full Build 代码结构为准，不假设要一比一复制 TypeScript 版本的内部实现。
@@ -39,22 +39,22 @@
 
 推荐分两步走：
 
-1. **先做“外置 Computer Use MCP + Rust 侧图像保真传输” MVP**
-2. **再决定是否需要“内置 `--computer-use-mcp` + 原生平台 backend”**
+1. **先做"外置 Computer Use MCP + Rust 侧图像保真传输" MVP**
+2. **再决定是否需要"内置 `--computer-use-mcp` + 原生平台 backend"**
 
 原因：
 
 - Rust 侧已经有 MCP client，最短路径不是重写一整套 darwin/win32/linux backend，而是先把现成 `computer-use-mcp` 接进来。
-- 真正的关键门槛不是“有没有 MCP”，而是“截图能不能作为图片 tool_result 继续进入下一轮模型上下文”。
+- 真正的关键门槛不是"有没有 MCP"，而是"截图能不能作为图片 tool_result 继续进入下一轮模型上下文"。
 - 如果这条图像链路没打通，即使接上外部 Computer Use MCP，模型也只能收到字符串占位符，无法完成闭环。
 
 ## 4. 落地清单
 
 ### Phase 0：打通多模态工具结果链路
 
-这是 **第一优先级**。不完成这一层，Computer Use 只能“调用工具”，不能“看见截图”。
+这是 **第一优先级**。不完成这一层，Computer Use 只能"调用工具"，不能"看见截图"。
 
-- [x] 在 [src/mcp/tools.rs](../src/mcp/tools.rs) 中新增”结构化 MCP 结果转换”逻辑。
+- [x] 在 [src/mcp/tools.rs](../src/mcp/tools.rs) 中新增"结构化 MCP 结果转换"逻辑。
   - 目标：把 `ToolCallContent::Image { data, mime_type }` 转成 `ContentBlock::Image { source }`
   - 不再只通过 `format_tool_call_result()` 返回字符串
 - [x] 改造 [src/types/tool.rs](../src/types/tool.rs) 的 `ToolResult`
@@ -82,7 +82,7 @@
 
 ### Phase 1：接通外置 Computer Use MCP MVP
 
-这一阶段不追求内置 server，对标“先可用”。
+这一阶段不追求内置 server，对标"先可用"。
 
 - [x] 增加一份 Rust 侧 Computer Use MCP 接入文档
   - 推荐新增 `docs/reference/computer-use-mcp-config.md`
@@ -105,7 +105,7 @@
 
 ### Phase 2：权限模型补齐
 
-Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独加一层“桌面控制授权”。
+Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独加一层"桌面控制授权"。
 
 - [x] 扩展 [src/permissions/decision.rs](../src/permissions/decision.rs) 的 matcher
   - 支持 `mcp__computer-use__screenshot`
@@ -118,17 +118,17 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
   - 截图：中风险
   - 点击/输入/快捷键：高风险
   - 打开应用、切换窗口、剪贴板读写：高风险
-- [x] 在 [src/types/tool.rs](../src/types/tool.rs) / permission context 中增加”会话级授权”概念
+- [x] 在 [src/types/tool.rs](../src/types/tool.rs) / permission context 中增加"会话级授权"概念
   - 避免每次点击都弹权限框
   - 建议首次调用 `request_access` 后缓存到 session 级
-- [ ] 新增 OS 能力检查模块
-  - 建议路径：`src/computer_use/host_adapter.rs`
+- [x] 新增 OS 能力检查模块
+  - 建议路径：`crates/cc-computer-use/src/host_adapter.rs`
   - macOS：检查 Accessibility / Screen Recording
   - Windows：先允许，但要检测必要 API/PowerShell 可用性
   - Linux：检查 `xdotool` / `scrot` / `xclip` / `wmctrl`
 - [x] 权限 UI 文案要单独写
-  - 不能只显示”允许调用工具”
-  - 应明确说明”允许读取屏幕并控制键盘鼠标”
+  - 不能只显示"允许调用工具"
+  - 应明确说明"允许读取屏幕并控制键盘鼠标"
 
 **Phase 2 验收标准**
 
@@ -142,8 +142,8 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
 
 原因：
 
-- 当前 Rust 项目已有 MCP client，但没有 TypeScript 那种现成的“内置 MCP server 快速路径”
-- 这一步会把范围从“接入能力”扩大到“宿主能力 + server 生命周期管理”
+- 当前 Rust 项目已有 MCP client，但没有 TypeScript 那种现成的"内置 MCP server 快速路径"
+- 这一步会把范围从"接入能力"扩大到"宿主能力 + server 生命周期管理"
 
 - [x] 在 [src/main.rs](../src/main.rs) 增加 `--computer-use` fast path
   - 改用原生 Tool trait 注册而非 MCP server 进程, 性能更优
@@ -154,8 +154,8 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
 
 **是否必须做**
 
-- 如果目标只是“Rust CLI 可以使用 Computer Use”，这一步不是必须
-- 如果目标是“与 TS 版功能入口一致”，这一步是必须
+- 如果目标只是"Rust CLI 可以使用 Computer Use"，这一步不是必须
+- 如果目标是"与 TS 版功能入口一致"，这一步是必须
 
 ### Phase 4：原生平台 backend（可选，成本最高）
 
@@ -167,35 +167,46 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
 
 建议新增模块：
 
-- [x] `src/computer_use/mod.rs`
-- [x] `src/computer_use/input/mod.rs`
-- [x] `src/computer_use/input/darwin.rs`
-- [x] `src/computer_use/input/win32.rs`
-- [x] `src/computer_use/input/linux.rs`
-- [x] `src/computer_use/screenshot/mod.rs`
-- [x] `src/computer_use/screenshot/darwin.rs`
-- [x] `src/computer_use/screenshot/win32.rs`
-- [x] `src/computer_use/screenshot/linux.rs`
-- [ ] `src/computer_use/executor.rs`
-- [ ] `src/computer_use/drain_run_loop.rs`
-- [ ] `src/computer_use/esc_hotkey.rs`
+- [x] `crates/cc-computer-use/src/lib.rs`
+- [x] `crates/cc-computer-use/src/input/mod.rs` (含 darwin/win32/linux)
+- [x] `crates/cc-computer-use/src/screenshot/mod.rs` (含 darwin/win32/linux)
+- [x] `crates/cc-computer-use/src/lock.rs` — 并发锁
+- [x] `crates/cc-computer-use/src/esc_hotkey.rs` — 退出热键
+- [x] `crates/cc-computer-use/src/app_names.rs` — 应用名映射
+- [x] `crates/cc-computer-use/src/host_adapter.rs` — 主机适配器
+- [x] `crates/cc-computer-use/src/drain_run_loop.rs` — 事件循环 drain
+- [x] `crates/cc-computer-use/src/executor.rs` — 执行器编排
+- [x] `crates/cc-computer-use/src/input_loader.rs` — 输入加载器
+- [x] `crates/cc-computer-use/src/swift_loader.rs` — Swift 加载器
+- [x] `crates/cc-computer-use/src/win32/mod.rs`
+- [x] `crates/cc-computer-use/src/win32/com_word.rs` — Word COM 自动化
+- [x] `crates/cc-computer-use/src/win32/com_excel.rs` — Excel COM 自动化
+- [x] `crates/cc-computer-use/src/win32/ui_automation.rs` — UI 自动化
+- [x] `crates/cc-computer-use/src/win32/virtual_cursor.rs` — 虚拟光标
+- [x] `crates/cc-computer-use/src/win32/window_border.rs` — 窗口边框
+- [x] `crates/cc-computer-use/src/win32/shared.rs` — Win32 共享工具
+- [x] `crates/cc-computer-use/src/win32/input_indicator.rs` — 输入指示器
 
-平台建议：
+平台实现情况：
 
 - macOS
-  - 输入：`CGEvent` / `osascript`
-  - 截图：`screencapture`
-  - 权限：TCC
+  - 输入：`cliclick` / `osascript` ✅
+  - 截图：`screencapture` ✅
+  - 权限：TCC (host_adapter + swift_loader) ✅
+  - 事件 drain: CGEvent via Swift ✅
 - Windows
-  - 输入：WinAPI / PowerShell fallback
-  - 截图：GDI / PowerShell
-  - 应用管理：EnumWindows / SetForegroundWindow
+  - 输入：PowerShell + WinAPI ✅
+  - 截图：PowerShell + System.Drawing ✅
+  - 应用管理：PowerShell + WinAPI (shared.rs) ✅
+  - COM 自动化 (Word/Excel) ✅
+  - UI 自动化 (UIAutomationClient) ✅
+  - 虚拟光标 ✅
+  - 窗口边框管理 ✅
+  - 输入指示器 ✅
 - Linux
-  - 输入：`xdotool`
-  - 截图：`scrot` 或 `grim`
-  - 窗口管理：`wmctrl`
-  - 剪贴板：`xclip`
-  - 初期先支持 X11，Wayland 单列 todo
+  - 输入：`xdotool` ✅
+  - 截图：`scrot` (X11) / `grim` (Wayland) ✅
+  - 窗口管理：`xdotool` / `wmctrl` ✅
 
 ### Phase 5：会话、导出、前端体验补齐
 
@@ -209,7 +220,7 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
   - 区分截图、点击、输入、权限请求、失败重试
 - [ ] 如果有独立前端 `ui/`
   - 增加图片型 tool result 的展示占位
-  - 至少能在历史中看出“本轮看到了哪张图”
+  - 至少能在历史中看出"本轮看到了哪张图"
 
 ### Phase 6：测试清单
 
@@ -271,12 +282,23 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
 - [x] `--computer-use` CLI flag (原生 Tool trait 注册)
 - [x] 动态注册 (`setup::register_cu_tools()`)
 - [x] 原生平台 backend (Windows/macOS/Linux, 10 个工具)
+- [x] 并发锁 (lock.rs)
+- [x] 退出热键 (esc_hotkey.rs)
+- [x] 应用名映射 (app_names.rs)
+- [x] 主机适配器 (host_adapter.rs)
+- [x] 事件循环 drain (drain_run_loop.rs)
+- [x] 执行器编排 (executor.rs)
+- [x] 输入加载器 & Swift 加载器
+- [x] Win32 COM 自动化 (Word/Excel)
+- [x] Win32 UI 自动化
+- [x] 虚拟光标
+- [x] 窗口边框 & 输入指示器
 
 ## 7. 不建议一开始做的事
 
 - 不要一上来重写完整 darwin/win32/linux backend
 - 不要先做复杂前端渲染，再补模型图像链路
-- 不要把 MCP 图片继续压成文本占位后再做“Computer Use 验证”
+- 不要把 MCP 图片继续压成文本占位后再做"Computer Use 验证"
 - 不要把权限复用成普通 Bash 权限，这会导致风险边界不清
 
 ## 8. MVP 定义
@@ -295,4 +317,4 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
 
 ## 9. 一句话决策
 
-**先补“图片型 tool_result 贯通”再接外置 Computer Use MCP；内置 `--computer-use-mcp` 和原生平台 backend 放在第二阶段。**
+**先补"图片型 tool_result 贯通"再接外置 Computer Use MCP；内置 `--computer-use-mcp` 和原生平台 backend 放在第二阶段。**

@@ -26,6 +26,8 @@
 | Telegram/Lark gateway adapter connectivity | outbound 完成，inbound 裁剪 | 第一版支持连接、健康检查、provider-neutral 状态诊断和 allowlisted test-message 发送；不做 inbound conversation、完整远程会话控制或绕过 gateway runner 触发模型。 |
 | Local `/remote` and TUI remote surface | 基础完成，验证残留 | `/remote` slash command、`RemoteSurface`、remote status indicator 已存在并读取 local gateway status/adapters/runs/events。剩余工作是完整 release gate 验证和真实运维证据。 |
 | Remote/teleport command surfaces | teleport deferred | `/channels` is intentionally limited to gateway-backed outbound adapter status for now. Inbound channel sessions and any `/teleport` command remain deferred until a product/runtime contract exists; do not present placeholders as real remote-control capability. |
+| Computer Use parity | 核心安全/执行路径已补，Windows deep integration 待验证 | `mcp__computer-use__*` 工具名、Executor 串行化、真实 lock、截图安全临时文件、Linux Wayland capability 误报已修。剩余缺口：Win32 COM/UI Automation/virtual cursor/window border/input indicator 仍主要是模块级能力，尚未完整接入工具/executor 可达路径；Wayland `ydotool` 输入 backend 未实现；真实 Windows/macOS/Linux 桌面 smoke 证据待补。 |
+| Hook runtime parity | command/http 基线已接，prompt/agent/file watcher 仍缺 | `PreToolUse updated_input` 重校验、critical 非零退出 fail-closed、HTTP hook + SSRF guard、hook events/async registry/session hooks 基线已接。剩余缺口：prompt/agent hook 仍未接真实 LLM/runtime 执行，当前显式报错；FileChanged watcher、hooksConfigSnapshot/变更检测、skill improvement LLM 写回和 malformed hook config 结构化诊断仍待补。 |
 
 ## 2. 活跃方案文档
 
