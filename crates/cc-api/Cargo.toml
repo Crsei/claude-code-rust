@@ -11,6 +11,7 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 cc-auth = { workspace = true }
+cc-config = { workspace = true }
 cc-models = { workspace = true }
 cc-types = { workspace = true }
 cc-utils = { workspace = true }

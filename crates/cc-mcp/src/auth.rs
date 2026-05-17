@@ -19,8 +19,6 @@ use sha2::{Digest, Sha256};
 use tracing::warn;
 use url::Url;
 
-use cc_types::mcp::{CLIENT_NAME, CLIENT_VERSION};
-
 use super::{McpOAuthConfig, McpServerConfig};
 
 const DEFAULT_CLIENT_ID: &str = "cc-rust";
@@ -378,7 +376,7 @@ async fn fetch_protected_resource_metadata(
     validate_oauth_endpoint_url(url, "OAuth protected-resource metadata URL")?;
     let response = http_client
         .get(url.clone())
-        .header("User-Agent", format!("{CLIENT_NAME}/{CLIENT_VERSION}"))
+        .header("User-Agent", cc_config::user_agent::mcp_user_agent())
         .send()
         .await
         .with_context(|| format!("failed to fetch MCP OAuth resource metadata from {}", url))?;
@@ -402,7 +400,7 @@ async fn fetch_auth_server_metadata(
     validate_oauth_endpoint_url(url, "OAuth authorization-server metadata URL")?;
     let response = http_client
         .get(url.clone())
-        .header("User-Agent", format!("{CLIENT_NAME}/{CLIENT_VERSION}"))
+        .header("User-Agent", cc_config::user_agent::mcp_user_agent())
         .send()
         .await
         .with_context(|| {
@@ -508,7 +506,7 @@ async fn post_token_form(
         .post(token_endpoint.clone())
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("Accept", "application/json")
-        .header("User-Agent", format!("{CLIENT_NAME}/{CLIENT_VERSION}"))
+        .header("User-Agent", cc_config::user_agent::mcp_user_agent())
         .body(body)
         .send()
         .await

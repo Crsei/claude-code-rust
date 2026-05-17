@@ -311,6 +311,10 @@ fn test_build_headers_has_required() {
     let headers = client.build_headers_map();
 
     assert_eq!(headers.get("content-type").unwrap(), "application/json");
+    assert_eq!(
+        headers.get("user-agent").unwrap(),
+        &cc_config::user_agent::api_user_agent()
+    );
     assert_eq!(headers.get("anthropic-version").unwrap(), "2023-06-01");
     assert_eq!(headers.get("x-api-key").unwrap(), "sk-test-key-123");
     assert!(headers
@@ -339,6 +343,14 @@ fn test_build_headers_raw_header_map_has_required() {
     assert_eq!(
         headers.get("anthropic-version").unwrap().to_str().unwrap(),
         "2023-06-01"
+    );
+    assert_eq!(
+        headers
+            .get(reqwest::header::USER_AGENT)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        cc_config::user_agent::api_user_agent()
     );
     assert_eq!(
         headers.get("x-api-key").unwrap().to_str().unwrap(),

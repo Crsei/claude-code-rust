@@ -594,7 +594,7 @@ impl Tool for WebFetchTool {
         let client = reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
             .redirect(reqwest::redirect::Policy::none())
-            .user_agent("ClaudeCode/0.1 (Rust)");
+            .user_agent(cc_config::user_agent::web_fetch_user_agent());
         let client = apply_proxy_from_env(client, &url)?
             .build()
             .context("Failed to build HTTP client")?;

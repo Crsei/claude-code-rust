@@ -1047,7 +1047,7 @@ impl StreamableHttpSender {
                 reqwest::header::HeaderName::from_static(HEADER_MCP_PROTOCOL_VERSION),
                 protocol_version,
             )
-            .header(USER_AGENT, format!("{CLIENT_NAME}/{CLIENT_VERSION}"));
+            .header(USER_AGENT, cc_config::user_agent::mcp_user_agent());
         if let Some(content_type) = content_type {
             request = request.header(CONTENT_TYPE, content_type);
         }
@@ -1523,7 +1523,7 @@ async fn connect_remote_https_sse_stream(
         .get(target.url.clone())
         .header(ACCEPT, "text/event-stream")
         .header(CACHE_CONTROL, "no-cache")
-        .header(USER_AGENT, format!("{CLIENT_NAME}/{CLIENT_VERSION}"))
+        .header(USER_AGENT, cc_config::user_agent::mcp_user_agent())
         .headers(reqwest_header_map(headers)?)
         .send()
         .await

@@ -256,10 +256,15 @@ fn build_anthropic_headers_with_cache_betas(
     include_ttl_beta: bool,
     include_global_scope_beta: bool,
 ) -> Result<reqwest::header::HeaderMap> {
-    use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+    use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
 
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_str(&cc_config::user_agent::api_user_agent())
+            .context("failed to build User-Agent header")?,
+    );
     headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
     let mut betas = vec!["interleaved-thinking-2025-05-14"];
     if include_prompt_cache_beta {
@@ -830,7 +835,8 @@ impl ApiClient {
         Ok(Self {
             http: {
                 let mut builder = reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(config.timeout_secs));
+                    .timeout(std::time::Duration::from_secs(config.timeout_secs))
+                    .user_agent(cc_config::user_agent::api_user_agent());
 
                 // Honor HTTPS_PROXY/HTTP_PROXY/ALL_PROXY explicitly so the
                 // client works under TUN/fake-ip DNS hijacking (e.g. Clash TUN)
@@ -1426,10 +1432,13 @@ impl ApiClient {
 
     /// Build the required HTTP headers for Anthropic-format providers.
     pub fn build_headers(&self) -> reqwest::header::HeaderMap {
-        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
 
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        if let Ok(value) = HeaderValue::from_str(&cc_config::user_agent::api_user_agent()) {
+            headers.insert(USER_AGENT, value);
+        }
 
         match &self.config.provider {
             ApiProvider::Anthropic { auth, .. } => match build_anthropic_headers(auth, false) {

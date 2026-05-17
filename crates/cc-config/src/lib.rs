@@ -18,4 +18,5 @@ pub mod features;
 pub mod paths;
 pub mod runtime_settings;
 pub mod settings;
+pub mod user_agent;
 pub mod validation;

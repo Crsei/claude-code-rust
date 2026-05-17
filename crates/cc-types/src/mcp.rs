@@ -7,7 +7,7 @@ pub const PROTOCOL_VERSION: &str = "2024-11-05";
 pub const CLIENT_NAME: &str = "claude-code-rs";
 
 /// Client version advertised by cc-rust MCP clients.
-pub const CLIENT_VERSION: &str = "0.1.0";
+pub const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Default connection and initialization timeout in seconds.
 pub const CONNECT_TIMEOUT_SECS: u64 = 30;
