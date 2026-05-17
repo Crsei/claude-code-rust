@@ -486,6 +486,13 @@ pub enum CommandResult {
     Output(String),
     /// Messages to add to the conversation and then send to the model.
     Query(Vec<Message>),
+    /// Switch the active runtime session to `session_id` with the provided
+    /// visible/runtime transcript and display `notice` to the user.
+    SwitchSession {
+        session_id: SessionId,
+        messages: Vec<Message>,
+        notice: String,
+    },
     /// Clear the visible conversation by starting a fresh session.
     Clear,
     /// Exit the REPL with a goodbye message.
@@ -1063,6 +1070,15 @@ impl command_runtime::CommandExecutor for EngineCommandExecutor {
         Ok(match result {
             CommandResult::Output(text) => command_runtime::CommandResult::Output(text),
             CommandResult::Query(messages) => command_runtime::CommandResult::Query(messages),
+            CommandResult::SwitchSession {
+                session_id,
+                messages,
+                notice,
+            } => command_runtime::CommandResult::SwitchSession {
+                session_id,
+                messages,
+                notice,
+            },
             CommandResult::Clear => command_runtime::CommandResult::Clear,
             CommandResult::Exit(text) => command_runtime::CommandResult::Exit(text),
             CommandResult::None => command_runtime::CommandResult::None,

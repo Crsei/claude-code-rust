@@ -7,15 +7,15 @@ use uuid::Uuid;
 fn test_resolve_model_alias() {
     assert_eq!(
         resolve_model_alias("SOTA", "fallback").unwrap(),
-        "claude-opus-4-20250514"
+        cc_models::SOTA_MODEL_ID
     );
     assert_eq!(
         resolve_model_alias("MOTA", "fallback").unwrap(),
-        "claude-sonnet-4-20250514"
+        cc_models::MOTA_MODEL_ID
     );
     assert_eq!(
         resolve_model_alias("FOTA", "fallback").unwrap(),
-        "claude-haiku-3-5-20241022"
+        cc_models::FOTA_MODEL_ID
     );
     assert!(resolve_model_alias("opus", "fallback").is_err());
     assert_eq!(

@@ -42,7 +42,7 @@
 | R0: 范围冻结 | 固定最终发布支持面，逐项重评历史 Deferred。 | 所有未跟随上游的能力都进入 intentional crop，或进入后续阶段任务。 |
 | R1: 阻塞缺陷清零 | 先修构建、测试、权限、安全、上下文和模型路由阻塞。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) 中高危项关闭或降级并有证据。 |
 | R2: 核心能力补齐 | 收束 API、PlanMode、TaskTools、Team Memory、WebFetch、Daemon、Session Export、Computer Use。 | 每条核心链路有目标测试，真实 provider/daemon/browser 路径有 e2e 或明确裁剪。 |
-| R3: 产品体验补齐 | 收束 Ratatui UI、Web UI、Browser MCP、插件/配置/设置面和命令面。 | 用户可见主路径无“占位可用但实际不可用”的状态。 |
+| R3: 产品体验补齐 | 收束 Ratatui UI、Browser MCP、插件/配置/设置面和命令面；Web UI 不纳入本轮 P2。 | 用户可见主路径无“占位可用但实际不可用”的状态。 |
 | R4: 可观测与运维 | 补 traceable logging、audit/session export、daemon soak、发布包和路径隔离复核。 | 发布后问题能定位、导出、复现和回滚。 |
 | R5: 发布候选 | 完整门禁、安装/升级/回滚验证、文档冻结。 | 生成 release candidate，发布说明列出已支持能力、裁剪项、已知残余风险。 |
 
@@ -94,7 +94,7 @@ cargo test -p claude-code-rs query::loop_helpers
 
 ### G4 UI 与运行时门禁
 
-- Ratatui 主交互路径、headless IPC、Web UI、MCP 面板、权限对话框、配置面板必须能完成真实工作流。
+- Ratatui 主交互路径、headless IPC、MCP 面板、权限对话框、配置面板必须能完成真实工作流。
 - UI snapshot、message suite、关键 e2e 覆盖 shell output、file edit、permission、task、MCP、history/search、resize。
 - Browser MCP 与 Computer Use 至少有一条真实或 fake-server e2e，证明图片/tool result 不丢失。
 
@@ -127,7 +127,7 @@ cargo test -p claude-code-rs query::loop_helpers
 | Daemon ownership | `/api/submit` 与 `/api/abort` 已只投递 `cc-daemon` command，assistant worker 执行 submit/abort 并写 event log；permission response 已 durable ack。resize/history 仍是 residual。 | submit/abort/permission/resize/history 由 worker/scheduler 模型拥有，HTTP route 不再承担兼容执行路径。 | [reference/DAEMON_OPERATIONS.md](reference/DAEMON_OPERATIONS.md), [plan/daemon-usability-plan.md](plan/daemon-usability-plan.md) |
 | Session export | Schema v2 已加入 raw transcript、api view summary、`ApiRequestSnapshot`、custom title 与图片块可读占位；context collapse、mode/tag 来源和完整 apiView 投影仍是 residual。 | 导出包可审计、可回放、能说明模型实际看到的上下文和裁剪历史。 | [plan/session-export-implementation-guide.md](plan/session-export-implementation-guide.md); 验证: `cargo test -p cc-session request_snapshot`, `cargo test -p cc-session session_export`, `cargo test -p cc-commands session_export`, `cargo test -p cc-engine lifecycle` |
 | Computer Use | 外置 MCP 和图片链路多数完成；session export 现在保留图片块 metadata 占位并避免 base64 丢失/膨胀。fake-server 与 session save/restore 回归仍需补齐。 | screenshot 图片块在工具结果、下一轮模型请求、session 保存/恢复、导出中不丢失。 | [plan/computer-use-implementation-checklist.md](plan/computer-use-implementation-checklist.md); 验证: `cargo test -p cc-session session_export` |
-| Browser MCP | 配置/提示/渲染基础存在，真实第三方 server 截图、console、network 端到端未验证。 | fake-server 与真实 browser MCP server 都有可重复验证；权限文案清楚。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-004` |
+| Browser MCP | `--chrome-native-host`、Chrome MCP bridge 和 Browser MCP 配置 smoke/e2e 已存在；真实第三方 Browser MCP server 仍需手动 release evidence。 | fake bridge/native-host 路径可重复验证；缺少真实第三方 server 证据时不声称 live server 已验证。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-004` |
 | Crate / IPC ownership closeout | Engine + IPC owner migration 已落地，root `engine/**` / `ipc/**` source 已删除；IPC envelope version/min-compat 策略和 roundtrip tests 已补。thin-binary guard 仍有 path shims、root-style imports、allow attributes 与 Codex compatibility path hits。 | 关闭 source guard，固定 IPC 协议版本策略；crate migration 从活跃计划迁入 archive/completed-full。 | [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md), [plan/crate-migration-phase-plan-2026-05-14.md](plan/crate-migration-phase-plan-2026-05-14.md), [reference/CRATE_MIGRATION_PHASE0_OWNER_GUARD_MATRIX.md](reference/CRATE_MIGRATION_PHASE0_OWNER_GUARD_MATRIX.md); 验证: `cargo test -p cc-ipc-protocol envelope` |
 | Plugin diagnostics | `/reload_plugins` 已通过 `cc-plugins::ReloadReport` / command runtime 输出 global metadata/cache/manifest diagnostics；后续只保留测试隔离 residual。 | plugin metadata/cache/manifest 错误对用户可见，不再表现为“没有插件”。 | [TECH_DEBT.md](TECH_DEBT.md) Remaining P1 follow-ups |
 | Auth compatibility | `resolve_auth()` / `resolve_codex_auth_token()` 已委托 `try_*` diagnostic API 并在兼容 wrapper 中记录 warning；坏凭据/keychain/token 读取失败不再被 diagnostic API 表现为 unauthenticated。 | 外部调用迁移到 diagnostic API；兼容 wrapper 不吞掉关键凭据错误。 | [TECH_DEBT.md](TECH_DEBT.md) Remaining P1 follow-ups |
@@ -137,16 +137,16 @@ cargo test -p claude-code-rs query::loop_helpers
 | 范围 | 当前状态 | 预期发布效果 | 证据入口 |
 | --- | --- | --- | --- |
 | Ratatui UI polish baseline | P0/P1 基础与美化已完成：共享 primitives、settings/safety、message/composer、agent/team/task/search/integration surfaces 以及 snapshot 更新已收口。 | 发布前保持 snapshot gate；新增 UI 只能作为真实 surface 接入，不再引入空占位。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md) `Ratatui UI parity OMX closeout`, [archive/ratatui-ui-parity-omx-execution-report-2026-05-08.md](archive/ratatui-ui-parity-omx-execution-report-2026-05-08.md) |
-| Ratatui shell output residual | renderer 支持 expanded/detail，最新 shell 输出自动展开未接 runtime context。 | 长输出默认策略符合上游体验，用户能快速展开、折叠、查看细节。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-002` |
-| Ratatui history residual | Ctrl+R 已有当前 session 搜索和可用 backend 数据下的 persistent-history reader wiring；跨会话质量仍依赖 durable reader 覆盖。 | 跨会话 prompt history 结果稳定带来源和时间；缺少后端数据时给出清晰空状态。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-003` |
-| Ratatui backend-gated surfaces | LSP/IDE/Chrome/channel/Claude Desktop MCP 等 UI surface 已有状态入口或 snapshot 覆盖，但真实后端数据与第三方 server 路径未全部验证。 | live backend 不可用时显示诊断；可用时有真实 e2e 或 fake-server 证据。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-004` |
-| Remote channels | `/channels` 和远程 channel 仍是阶段性 stub；schedule remote triggers 未实现。 | Telegram/Lark 等远程入口要么可连接/测试/显示状态，要么作为后续路线写入 crop/roadmap。 | [plan/remote-channel-phase1-telegram-lark-plan-2026-05-08.md](plan/remote-channel-phase1-telegram-lark-plan-2026-05-08.md) |
-| Voice | audio/STT 后端当前是明确 unsupported-build stub。 | 若纳入发布支持面，需真实 audio/STT backend；否则 UI/CLI 明确显示不可用原因。 | `crates/claude-code-rs/src/voice/**` |
-| Browser native host | `cc-browser` native host binary mode 仍是后续阶段。 | Chrome/native-host 路线若纳入发布，需真实 connect/reconnect/install 验证；否则保持外置 MCP 路线。 | `crates/cc-browser/src/session.rs`, `crates/cc-browser/src/setup.rs` |
-| LSP transport | workspace/configuration request response handling 在当前 transport 未实现。 | LSP server 请求处理有响应策略，不再只记录未实现诊断。 | `crates/claude-code-rs/src/lsp_service/client.rs` |
-| Branch command | `/branch` 尚未自动切换 engine session pointer。 | 新分支会话切换后，后续消息进入正确 session。 | `crates/claude-code-rs/src/commands/branch.rs` |
-| Terminal setup | 部分 terminal setup env 输出仍是 diagnostic-only。 | 支持面内的 terminal setup 能真正修改/指导用户环境；不支持项明确说明。 | `crates/claude-code-rs/src/commands/terminal_setup.rs` |
-| Documentation debt | 多处文档仍有历史 Lite wording、mojibake、旧路径和旧完成度。 | 顶层 docs 只反映 Full Build 当前事实；历史内容迁入 archive。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `DOC-003`, [TECH_DEBT.md](TECH_DEBT.md) |
+| Ratatui shell output residual | 最新 Bash/PowerShell tool result 已由 runtime context 自动展开；历史 shell 长输出默认折叠，选中后可展开/折叠查看 detail。 | 长输出默认策略符合上游体验，用户能快速展开、折叠、查看细节。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-002` |
+| Ratatui history residual | Ctrl+R 按当前 workspace 读取跨会话持久 prompt history，条目带 session/title/cwd 来源与时间；空态明确。 | 跨会话 prompt history 结果稳定带来源和时间；缺少后端数据时给出清晰空状态。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-003` |
+| Ratatui backend-gated surfaces | LSP/IDE/Chrome/channel/Claude Desktop MCP 等 UI surface 已有状态入口或 snapshot 覆盖；Browser/Chrome fake e2e 存在，真实第三方 Browser MCP 证据仍待 release 手动补充。 | live backend 不可用时显示诊断；可用时有真实 e2e 或 fake-server 证据。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-004` |
+| Remote channels | `/channels` 明确只展示 gateway-backed outbound adapter status/control；Telegram/Lark adapter 支持 HTTP connect/test-message。Inbound conversation、remote triggers 写入 roadmap/crop。 | Telegram/Lark 等远程入口可连接、测试、显示状态；不把 inbound channel sessions 当成本轮能力。 | [reference/REMOTE_CONTROL_GATEWAY.md](reference/REMOTE_CONTROL_GATEWAY.md) |
+| Voice | `/voice`、`voiceEnabled`、keybinding 和 language normalization 保留为兼容面；audio/STT 后端是明确 unsupported-build crop。 | UI/CLI 明确显示不可用原因，不声称真实录音或转写支持。 | [claude-code-configuration/voice-dictation.md](claude-code-configuration/voice-dictation.md) |
+| Browser native host | `--chrome-native-host`、Chrome MCP bridge 和 smoke tests 已存在；真实 Chrome extension/第三方 server 验证作为 release evidence。 | fake bridge/native-host 端到端证据可重复；真实 server 缺失时不声称已验证。 | `crates/claude-code-rs/tests/e2e_chrome_native_host.rs`, `crates/claude-code-rs/tests/e2e_chrome_mcp_bridge.rs` |
+| LSP transport | `workspace/configuration` request 返回 per-item `null` 数组；notification 明确诊断为无 id、不可响应。 | LSP server 请求处理有响应策略，不再只记录未实现诊断。 | `crates/cc-lsp-service/src/client.rs` |
+| Branch command | `/branch` fork 成功后通过 `SwitchSession` 切换 engine/TUI/headless/daemon/web active session pointer。 | 新分支会话切换后，后续消息进入正确 session。 | `crates/cc-commands/src/branch.rs` |
+| Terminal setup | `/terminal-setup` 只描述当前 runtime 真实支持的 sync update、mouse capture、scroll speed；Shift+Enter/editor 等仍标为 manual setup。 | 支持面内的 terminal setup 明确当前 runtime 行为；不可自动修改用户 terminal 配置的项不再暗示自动配置。 | `crates/cc-commands/src/terminal_setup.rs` |
+| Documentation debt | 活跃顶层 docs 改为 Full Build 当前事实；历史 Lite 口径仅保留在历史说明或 archive。 | 顶层 docs 只反映 Full Build 当前事实；历史内容迁入 archive。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `DOC-003`, [TECH_DEBT.md](TECH_DEBT.md) |
 
 ### P3: 发布后增强或已裁剪
 
@@ -161,7 +161,7 @@ cargo test -p claude-code-rs query::loop_helpers
 
 1. 重验 P0 闭环：`TEST-001`、CONTEXT、MODEL、critical hook 保持已关闭状态，活跃问题入口不再列为发布阻塞。
 2. 收 P1 核心链路：API provider e2e、PlanMode、TaskTools、Team Memory、Daemon ownership、Session Export、Computer Use、Browser MCP。
-3. 收 P2 用户体验：Ratatui runtime residuals、Web UI、remote channel 决策、voice/browser/LSP/branch/terminal setup。
+3. 收 P2 用户体验：Ratatui runtime residuals、remote channel 决策、voice/browser/LSP/branch/terminal setup。
 4. 做全仓文档收口：迁移完成历史到 archive，清理 Lite/mojibake，补最终发布说明草稿。
 5. 跑 release candidate 门禁：完整 cargo gate、真实 provider smoke、daemon soak、TUI snapshot、headless/Web/Brower MCP e2e。
 
@@ -175,7 +175,7 @@ cargo test -p claude-code-rs query::loop_helpers
 | Session / compact / export | 用户能导出原始 transcript、API view、compact/microcompact 记录和 request snapshot。 |
 | Daemon | 后台 supervisor/worker/scheduler 有清晰 ownership；HTTP/SSE 只是控制面，不隐藏执行失败。 |
 | MCP / Browser / Computer Use | 外部 server 可发现、可授权、可调用；图片和结构化结果能进入模型上下文与保存层。 |
-| Ratatui / Web UI | 主路径可完成真实工作，缺失功能不会以空 UI 或占位结果伪装成可用。 |
+| Ratatui / headless | 主路径可完成真实工作，缺失功能不会以空 UI 或占位结果伪装成可用。 |
 | Docs / release notes | 用户知道能用什么、不能用什么、为什么不能用、如何验证和回滚。 |
 
 ## 7. 发布说明草稿要求
@@ -184,7 +184,7 @@ cargo test -p claude-code-rs query::loop_helpers
 
 - 支持平台和已验证环境。
 - provider 支持矩阵和需要的环境变量/凭据。
-- 命令、工具、MCP、TUI、daemon、Web UI 支持矩阵。
+- 命令、工具、MCP、TUI、daemon 支持矩阵。
 - intentional crop 列表和复审触发条件。
 - 从历史 `rust-lite` 配置迁移到 Full Build 的注意事项。
 - 发布门禁命令及通过摘要。

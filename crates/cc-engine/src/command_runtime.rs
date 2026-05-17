@@ -20,6 +20,11 @@ pub struct CommandContext {
 pub enum CommandResult {
     Output(String),
     Query(Vec<Message>),
+    SwitchSession {
+        session_id: SessionId,
+        messages: Vec<Message>,
+        notice: String,
+    },
     Clear,
     Exit(String),
     None,

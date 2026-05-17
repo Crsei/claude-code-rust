@@ -453,6 +453,20 @@ async fn handle_slash_command(
                     level: "info".to_string(),
                 });
             }
+            CommandResult::SwitchSession {
+                session_id,
+                messages,
+                notice,
+            } => {
+                engine.set_current_session_id(session_id);
+                engine.replace_messages(messages.clone());
+                send_conversation_replaced(&messages, sink);
+                send_ready_snapshot(engine, sink);
+                let _ = sink.send(&BackendMessage::SystemInfo {
+                    text: notice,
+                    level: "info".to_string(),
+                });
+            }
             CommandResult::Clear => {
                 engine.start_new_session();
                 send_conversation_replaced(&[], sink);

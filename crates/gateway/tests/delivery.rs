@@ -53,9 +53,11 @@ impl CallbackDeliverySink for RecordingCallbackSink {
     }
 }
 
+type RecordedChannelDeliveries = Arc<Mutex<Vec<(AdapterProvider, String, Option<String>)>>>;
+
 #[derive(Clone, Default)]
 struct RecordingChannelSink {
-    deliveries: Arc<Mutex<Vec<(AdapterProvider, String, Option<String>)>>>,
+    deliveries: RecordedChannelDeliveries,
     fail: bool,
 }
 

@@ -135,11 +135,13 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    type ToolProgressCallback = Arc<dyn Fn(ToolProgress) + Send + Sync>;
+
     #[derive(Default)]
     struct MockHost {
         permission: Mutex<Option<PermissionCallback>>,
         ask_user: Mutex<Option<AskUserCallback>>,
-        tool_progress: Mutex<Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>>,
+        tool_progress: Mutex<Option<ToolProgressCallback>>,
     }
 
     impl CallbackHost for MockHost {

@@ -1,5 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/command_surface/tests.rs
+assertion_line: 377
 expression: "rendered.join(\"\\n\\n\")"
 ---
 -- status --
@@ -26,7 +27,7 @@ expression: "rendered.join(\"\\n\\n\")"
 |   Status               Current effort: medium (10240 tokens)                         |
 | > Model                Model / Filter...                                             |
 |   Theme                > custom-model - configured; current; effort=medium           |
-|   Usage                  SOTA (claude-opus-4-20250514) - configured; effort=medium   |
+|   Usage                  SOTA (gpt-5.5) - configured; effort=medium                  |
 |   Output                                                                             |
 |   Language                                                                           |
 |   Thinking                                                                           |

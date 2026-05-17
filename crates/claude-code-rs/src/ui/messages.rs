@@ -113,7 +113,10 @@ mod render;
 mod wrap;
 
 pub use render::render_messages;
-pub(super) use render::{message_copy_text, message_primary_reference, render_single_message};
+pub(super) use render::{
+    build_message_render_context, message_copy_text, message_primary_reference,
+    render_single_message_for_layout, MessageRenderContext,
+};
 
 #[cfg(test)]
 mod tests {

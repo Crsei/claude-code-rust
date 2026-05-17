@@ -180,22 +180,6 @@ fn assistant_message_text(message: &AssistantMessage) -> String {
         .join("\n")
 }
 
-#[cfg(test)]
-mod model_assisted_memory_recall_tests {
-    use super::*;
-
-    #[test]
-    fn truthy_model_assisted_memory_recall_values_are_explicit() {
-        for value in ["1", "true", "TRUE", " yes ", "on"] {
-            assert!(is_truthy_model_assisted_memory_recall_value(value));
-        }
-
-        for value in ["", "0", "false", "off", "enabled"] {
-            assert!(!is_truthy_model_assisted_memory_recall_value(value));
-        }
-    }
-}
-
 struct SubmitTurnState {
     started_at: Instant,
     last_stop_reason: Option<String>,
@@ -280,6 +264,23 @@ async fn handle_parsed_command(
             processed.should_query = true;
             processed.result_text = None;
         }
+        Ok(CommandResult::SwitchSession {
+            session_id,
+            messages,
+            notice,
+        }) => {
+            switch_command_session(
+                state_ref,
+                active_session_id_ref,
+                session_id.clone(),
+                messages,
+                ctx,
+            );
+            outcome.session_id = session_id;
+            processed.result_text = Some(notice);
+            processed.should_query = false;
+            processed.messages.clear();
+        }
         Ok(CommandResult::Clear) => {
             outcome.session_id =
                 clear_command_session(state_ref, active_session_id_ref, config, ctx);
@@ -317,6 +318,22 @@ fn apply_command_state(
     let mut state = state_ref.write();
     state.messages = ctx.messages;
     state.app_state = ctx.app_state;
+}
+
+fn switch_command_session(
+    state_ref: &Arc<parking_lot::RwLock<super::QueryEngineState>>,
+    active_session_id_ref: &Arc<parking_lot::RwLock<crate::bootstrap::SessionId>>,
+    session_id: crate::bootstrap::SessionId,
+    messages: Vec<Message>,
+    ctx: CommandContext,
+) {
+    {
+        let mut state = state_ref.write();
+        state.messages = messages;
+        state.app_state = ctx.app_state;
+    }
+    *active_session_id_ref.write() = session_id.clone();
+    crate::bootstrap::PROCESS_STATE.write().session_id = session_id;
 }
 
 fn clear_command_session(
@@ -728,7 +745,7 @@ impl QueryEngine {
                     .collect(),
                 model: model_name.clone(),
                 permission_mode: format!("{:?}", perm_mode),
-                session_id: session_id.to_string(),
+                session_id: local_command.session_id.to_string(),
                 uuid: Uuid::new_v4(),
             });
 
@@ -1410,4 +1427,20 @@ fn recent_tool_names(messages: &[Message], limit: usize) -> Vec<String> {
         }
     }
     names
+}
+
+#[cfg(test)]
+mod model_assisted_memory_recall_tests {
+    use super::*;
+
+    #[test]
+    fn truthy_model_assisted_memory_recall_values_are_explicit() {
+        for value in ["1", "true", "TRUE", " yes ", "on"] {
+            assert!(is_truthy_model_assisted_memory_recall_value(value));
+        }
+
+        for value in ["", "0", "false", "off", "enabled"] {
+            assert!(!is_truthy_model_assisted_memory_recall_value(value));
+        }
+    }
 }

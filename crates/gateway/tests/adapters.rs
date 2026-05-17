@@ -4,7 +4,11 @@ use gateway::{
     AdapterProvider, AdapterRegistry, AdapterState, AdapterTestMessage, GatewayError, RemoteAdapter,
 };
 use serde_json::{json, Value};
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 #[derive(Clone)]
 struct RecordingTelegramTransport {
@@ -41,6 +45,69 @@ fn telegram_config(token: Option<&str>) -> gateway::config::TelegramAdapterConfi
         bot_token: token.map(str::to_string),
         test_chat_allowlist: vec!["chat-1".to_string()],
         ..Default::default()
+    }
+}
+
+struct FakeHttpServer {
+    base_url: String,
+    requests: Arc<Mutex<Vec<String>>>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+impl FakeHttpServer {
+    fn start(responses: Vec<Value>) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = requests.clone();
+        let handle = thread::spawn(move || {
+            for response in responses {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                            if Instant::now() >= deadline {
+                                return;
+                            }
+                            thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(_) => return,
+                    }
+                };
+                let mut buf = [0_u8; 8192];
+                let len = stream.read(&mut buf).unwrap_or(0);
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&buf[..len]).to_string());
+                let body = serde_json::to_string(&response).unwrap();
+                let http = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(http.as_bytes()).unwrap();
+            }
+        });
+        Self {
+            base_url,
+            requests,
+            handle: Some(handle),
+        }
+    }
+
+    fn requests(&self) -> Vec<String> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+impl Drop for FakeHttpServer {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.join().unwrap();
+        }
     }
 }
 
@@ -236,6 +303,26 @@ fn telegram_api_failure_diagnostic_is_redacted() {
 }
 
 #[test]
+fn telegram_default_http_transport_uses_bot_api() {
+    let server = FakeHttpServer::start(vec![json!({ "ok": true })]);
+    let adapter = TelegramAdapter::new(gateway::config::TelegramAdapterConfig {
+        enabled: true,
+        api_base_url: server.base_url.clone(),
+        bot_token: Some("123456:raw-secret-token".to_string()),
+        ..telegram_config(Some("123456:raw-secret-token"))
+    });
+
+    let status = adapter.connect().unwrap();
+
+    assert_eq!(status.state, AdapterState::ConnectedOutboundOnly);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].starts_with("POST /bot123456:raw-secret-token/getMe "));
+    let json = serde_json::to_string(&status).unwrap();
+    assert!(!json.contains("raw-secret-token"));
+}
+
+#[test]
 fn lark_missing_credentials_returns_blocked_reason() {
     let adapter = LarkAdapter::with_transport(
         gateway::config::LarkAdapterConfig {
@@ -351,4 +438,39 @@ fn lark_api_failure_diagnostic_is_redacted() {
     assert!(json.contains("lark_code=99991663"));
     assert!(!json.contains("raw-lark-secret"));
     assert!(!json.contains("cli_a_raw_app_id"));
+}
+
+#[test]
+fn lark_default_http_transport_sends_app_message() {
+    let server = FakeHttpServer::start(vec![
+        json!({ "code": 0, "tenant_access_token": "tenant-raw-token" }),
+        json!({ "code": 0 }),
+    ]);
+    let adapter = LarkAdapter::new(gateway::config::LarkAdapterConfig {
+        enabled: true,
+        api_base_url: server.base_url.clone(),
+        app_id: Some("cli_a_raw_app_id".to_string()),
+        app_secret: Some("raw-lark-secret".to_string()),
+        test_target_allowlist: vec!["chat-1".to_string()],
+        ..Default::default()
+    });
+
+    let status = adapter
+        .test_message(AdapterTestMessage {
+            target: "chat-1".to_string(),
+            text: "gateway smoke".to_string(),
+        })
+        .unwrap();
+
+    assert_eq!(status.state, AdapterState::ConnectedOutboundOnly);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].starts_with("POST /open-apis/auth/v3/tenant_access_token/internal "));
+    assert!(requests[1].starts_with("POST /open-apis/im/v1/messages?receive_id_type=chat_id "));
+    assert!(requests[1]
+        .to_ascii_lowercase()
+        .contains("authorization: bearer tenant-raw-token"));
+    let json = serde_json::to_string(&status).unwrap();
+    assert!(!json.contains("raw-lark-secret"));
+    assert!(!json.contains("tenant-raw-token"));
 }

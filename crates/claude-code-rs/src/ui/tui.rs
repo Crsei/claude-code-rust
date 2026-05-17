@@ -178,7 +178,9 @@ pub async fn run_tui(
     app.set_backend_name(engine.app_state().main_loop_backend.clone());
     app.set_session_id(engine.current_session_id().to_string());
     app.set_cwd(engine.cwd().to_string());
-    match super::persistent_history::load_persistent_history() {
+    match super::persistent_history::load_persistent_history_for_workspace(std::path::Path::new(
+        engine.cwd(),
+    )) {
         Ok(entries) if !entries.is_empty() => app.seed_persistent_history(entries),
         Ok(_) => {}
         Err(error) => {

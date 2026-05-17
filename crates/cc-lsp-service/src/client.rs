@@ -544,7 +544,7 @@ impl LspClient {
             }
             "workspace/configuration" => {
                 debug!(
-                    "received workspace/configuration request; response handling is not implemented on this transport"
+                    "received workspace/configuration notification without an id; no JSON-RPC response can be sent"
                 );
             }
             _ => {
@@ -557,15 +557,7 @@ impl LspClient {
         let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("?");
         let id = msg.get("id").cloned().unwrap_or(Value::Null);
         let result = match method {
-            "workspace/configuration" => {
-                let len = msg
-                    .get("params")
-                    .and_then(|p| p.get("items"))
-                    .and_then(|items| items.as_array())
-                    .map(|items| items.len())
-                    .unwrap_or(0);
-                Value::Array(vec![Value::Null; len])
-            }
+            "workspace/configuration" => workspace_configuration_result(msg),
             "client/registerCapability" | "client/unregisterCapability" => Value::Null,
             _ => {
                 debug!(method, "replying null to unsupported LSP server request");
@@ -640,6 +632,16 @@ impl LspClient {
 
         Ok(())
     }
+}
+
+fn workspace_configuration_result(msg: &serde_json::Value) -> Value {
+    let len = msg
+        .get("params")
+        .and_then(|p| p.get("items"))
+        .and_then(|items| items.as_array())
+        .map(|items| items.len())
+        .unwrap_or(0);
+    Value::Array(vec![Value::Null; len])
 }
 
 impl Drop for LspClient {
@@ -1041,6 +1043,38 @@ mod tests {
             }
             _ => panic!("expected DiagnosticsPublished"),
         }
+    }
+
+    #[test]
+    fn workspace_configuration_request_returns_null_array_per_item() {
+        let msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "workspace/configuration",
+            "params": {
+                "items": [
+                    {"section": "rust-analyzer"},
+                    {"section": "typescript"}
+                ]
+            }
+        });
+
+        assert_eq!(
+            workspace_configuration_result(&msg),
+            serde_json::json!([null, null])
+        );
+    }
+
+    #[test]
+    fn workspace_configuration_request_without_items_returns_empty_array() {
+        let msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "workspace/configuration",
+            "params": {}
+        });
+
+        assert_eq!(workspace_configuration_result(&msg), serde_json::json!([]));
     }
 
     #[test]

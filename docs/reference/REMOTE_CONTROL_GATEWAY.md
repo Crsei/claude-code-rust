@@ -230,7 +230,7 @@ curl -X POST -H "x-cc-rust-daemon-token: $TOKEN" \
   http://127.0.0.1:19836/remote-control/v1/adapters/telegram/connect
 ```
 
-Provider can be `telegram` or `lark`. Common errors: `adapter_unsupported` 400, `telegram_transport_unavailable` 501, `lark_transport_unavailable` 501, provider-specific blocked/failed diagnostics.
+Provider can be `telegram` or `lark`. Common errors: `adapter_unsupported` 400, `telegram_http_failed`, `lark_http_failed`, provider-specific blocked/failed diagnostics.
 
 ### `POST /remote-control/v1/adapters/{provider}/test-message`
 

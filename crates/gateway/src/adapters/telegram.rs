@@ -16,7 +16,10 @@ pub struct TelegramAdapter {
 
 impl TelegramAdapter {
     pub fn new(config: TelegramAdapterConfig) -> Self {
-        Self::with_transport(config, DisabledTelegramTransport)
+        Self::with_transport(
+            config.clone(),
+            HttpTelegramTransport::new(config.api_base_url.clone()),
+        )
     }
 
     pub fn with_transport<T>(config: TelegramAdapterConfig, transport: T) -> Self
@@ -134,20 +137,74 @@ pub trait TelegramTransport: Send + Sync {
     fn call(&self, token: &str, method: &str, body: Value) -> Result<Value, GatewayError>;
 }
 
-struct DisabledTelegramTransport;
+struct HttpTelegramTransport {
+    api_base_url: String,
+    client: reqwest::blocking::Client,
+}
 
-impl TelegramTransport for DisabledTelegramTransport {
-    fn call(&self, _token: &str, method: &str, _body: Value) -> Result<Value, GatewayError> {
-        Err(GatewayError::new(
-            adapter_diagnostic(
-                TELEGRAM_PROVIDER,
-                "telegram_transport_unavailable",
-                "Telegram HTTP transport is not wired in this gateway layer yet.",
-                "Inject a Telegram transport from the daemon/API layer before connecting.",
-            )
-            .with_context(format!("provider=telegram, method={method}")),
-        ))
+impl HttpTelegramTransport {
+    fn new(api_base_url: String) -> Self {
+        Self {
+            api_base_url: api_base_url.trim_end_matches('/').to_string(),
+            client: http_client_for_base_url(&api_base_url),
+        }
     }
+}
+
+impl TelegramTransport for HttpTelegramTransport {
+    fn call(&self, token: &str, method: &str, body: Value) -> Result<Value, GatewayError> {
+        let url = format!("{}/bot{}/{}", self.api_base_url, token, method);
+        let response = self
+            .client
+            .post(url)
+            .json(&body)
+            .send()
+            .map_err(|_| telegram_http_error(method, None))?;
+        let status = response.status();
+        let value = response
+            .json::<Value>()
+            .map_err(|_| telegram_http_error(method, Some(status.as_u16())))?;
+        if !status.is_success() {
+            return Err(telegram_http_error(method, Some(status.as_u16())));
+        }
+        Ok(value)
+    }
+}
+
+fn telegram_http_error(method: &str, status: Option<u16>) -> GatewayError {
+    let status_context = status
+        .map(|status| format!(", http_status={status}"))
+        .unwrap_or_default();
+    GatewayError::new(
+        telegram_diagnostic(
+            "telegram_http_failed",
+            "Telegram adapter HTTP request failed.",
+            "Verify network access, Telegram API availability, and adapter credentials.",
+            method,
+        )
+        .with_context(format!(
+            "provider=telegram, method={method}{status_context}"
+        )),
+    )
+}
+
+fn http_client_for_base_url(api_base_url: &str) -> reqwest::blocking::Client {
+    let builder = reqwest::blocking::Client::builder();
+    let builder = if is_loopback_base_url(api_base_url) {
+        builder.no_proxy()
+    } else {
+        builder
+    };
+    builder
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new())
+}
+
+fn is_loopback_base_url(api_base_url: &str) -> bool {
+    reqwest::Url::parse(api_base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .is_some_and(|host| matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1"))
 }
 
 fn ensure_ok(method: &'static str, response: Value) -> Result<(), GatewayError> {

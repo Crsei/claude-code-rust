@@ -989,9 +989,19 @@ fn main() {
             .await
             .unwrap();
 
-        let mut permissions = std::fs::metadata(&file_path).unwrap().permissions();
-        permissions.set_readonly(false);
-        std::fs::set_permissions(&file_path, permissions).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&file_path).unwrap().permissions();
+            permissions.set_mode(0o600);
+            std::fs::set_permissions(&file_path, permissions).unwrap();
+        }
+        #[cfg(not(unix))]
+        {
+            let mut permissions = std::fs::metadata(&file_path).unwrap().permissions();
+            permissions.set_readonly(false);
+            std::fs::set_permissions(&file_path, permissions).unwrap();
+        }
 
         assert!(result.data["error"]
             .as_str()

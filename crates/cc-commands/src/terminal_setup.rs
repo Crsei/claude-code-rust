@@ -4,7 +4,7 @@
 //! Output covers:
 //! - detected shell / terminal program / multiplexer
 //! - status of the `CLAUDE_CODE_*` env toggles
-//! - tips for Shift+Enter support across common terminals
+//! - manual setup tips for Shift+Enter support across common terminals
 //! - tmux passthrough advice when `$TMUX` is set
 //! - transcript-export expectations for `$VISUAL` / `$EDITOR`
 //! - notification / bell guidance
@@ -301,9 +301,12 @@ fn render_tips(p: &EnvProbe) -> String {
     let mut out = String::new();
     out.push_str("Tips\n");
     out.push_str("----\n");
+    out.push_str(
+        "Manual setup only: /terminal-setup is read-only and cannot edit terminal, tmux, shell, or editor configuration files.\n\n",
+    );
 
     out.push_str(&format!(
-        "Shift+Enter ({}):\n  - {}\n\n",
+        "Manual Shift+Enter setup ({}):\n  - {}\n\n",
         label.as_str(),
         label.shift_enter_tip()
     ));
@@ -311,10 +314,10 @@ fn render_tips(p: &EnvProbe) -> String {
     if p.tmux.is_some() {
         out.push_str("tmux detected:\n");
         out.push_str(
-            "  - Add `set -g extended-keys on` + `set -as terminal-features ',xterm*:extkeys'` for Shift+Enter passthrough.\n",
+            "  - Manual setup: add `set -g extended-keys on` + `set -as terminal-features ',xterm*:extkeys'` for Shift+Enter passthrough.\n",
         );
         out.push_str(
-            "  - Use `set -g allow-passthrough on` (tmux >= 3.3) so Claude Code can emit notifications / OSC sequences.\n\n",
+            "  - Manual setup: use `set -g allow-passthrough on` (tmux >= 3.3) so Claude Code can emit notifications / OSC sequences.\n\n",
         );
     }
 

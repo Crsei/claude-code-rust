@@ -76,6 +76,19 @@ pub(super) async fn try_execute_command(
                 add_system_info(app, &text);
                 Some(CmdAction::Handled)
             }
+            CommandResult::SwitchSession {
+                session_id,
+                messages,
+                notice,
+            } => {
+                engine.set_current_session_id(session_id.clone());
+                engine.replace_messages(messages.clone());
+                replace_app_messages(app, &messages);
+                app.set_session_id(session_id.to_string());
+                sync_app_runtime_from_state(engine, app, &ctx.app_state);
+                add_system_info(app, &notice);
+                Some(CmdAction::Handled)
+            }
             CommandResult::Clear => {
                 let new_session_id = engine.start_new_session();
                 app.clear_messages();

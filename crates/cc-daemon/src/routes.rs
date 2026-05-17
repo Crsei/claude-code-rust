@@ -395,6 +395,26 @@ async fn command(
                         "plan_workflow": state.engine.app_state().plan_workflow,
                     }))
                 }
+                CommandResult::SwitchSession {
+                    session_id,
+                    messages,
+                    notice,
+                } => {
+                    state.engine.set_current_session_id(session_id.clone());
+                    state.engine.replace_messages(messages);
+                    state.broadcast(SseEvent {
+                        id: String::new(),
+                        event_type: "system_info".to_string(),
+                        data: json!({ "text": notice, "level": "info" }),
+                    });
+                    Json(json!({
+                        "status": "ok",
+                        "kind": "switch_session",
+                        "session_id": session_id.to_string(),
+                        "permission_mode": state.engine.app_state().tool_permission_context.mode.as_str(),
+                        "plan_workflow": state.engine.app_state().plan_workflow,
+                    }))
+                }
                 CommandResult::Clear => {
                     let session_id = state.engine.start_new_session();
                     Json(json!({

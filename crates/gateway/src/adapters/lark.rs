@@ -16,7 +16,10 @@ pub struct LarkAdapter {
 
 impl LarkAdapter {
     pub fn new(config: LarkAdapterConfig) -> Self {
-        Self::with_transport(config, DisabledLarkTransport)
+        Self::with_transport(
+            config.clone(),
+            HttpLarkTransport::new(config.api_base_url.clone()),
+        )
     }
 
     pub fn with_transport<T>(config: LarkAdapterConfig, transport: T) -> Self
@@ -170,41 +173,131 @@ pub trait LarkTransport: Send + Sync {
     ) -> Result<(), GatewayError>;
 }
 
-struct DisabledLarkTransport;
+struct HttpLarkTransport {
+    api_base_url: String,
+    client: reqwest::blocking::Client,
+}
 
-impl LarkTransport for DisabledLarkTransport {
-    fn tenant_access_token(&self, _app_id: &str, _app_secret: &str) -> Result<Value, GatewayError> {
-        Err(transport_unavailable("tenant_access_token"))
+impl HttpLarkTransport {
+    fn new(api_base_url: String) -> Self {
+        Self {
+            api_base_url: api_base_url.trim_end_matches('/').to_string(),
+            client: http_client_for_base_url(&api_base_url),
+        }
+    }
+}
+
+impl LarkTransport for HttpLarkTransport {
+    fn tenant_access_token(&self, app_id: &str, app_secret: &str) -> Result<Value, GatewayError> {
+        let url = format!(
+            "{}/open-apis/auth/v3/tenant_access_token/internal",
+            self.api_base_url
+        );
+        let response = self
+            .client
+            .post(url)
+            .json(&serde_json::json!({
+                "app_id": app_id,
+                "app_secret": app_secret,
+            }))
+            .send()
+            .map_err(|_| lark_http_error("tenant_access_token", None))?;
+        response_json(response, "tenant_access_token")
     }
 
-    fn probe_webhook(&self, _webhook_url: &str) -> Result<(), GatewayError> {
-        Err(transport_unavailable("probe_webhook"))
+    fn probe_webhook(&self, webhook_url: &str) -> Result<(), GatewayError> {
+        self.send_webhook(webhook_url, "cc-rust gateway Lark adapter health check")
     }
 
-    fn send_webhook(&self, _webhook_url: &str, _text: &str) -> Result<(), GatewayError> {
-        Err(transport_unavailable("send_webhook"))
+    fn send_webhook(&self, webhook_url: &str, text: &str) -> Result<(), GatewayError> {
+        let response = self
+            .client
+            .post(webhook_url)
+            .json(&serde_json::json!({
+                "msg_type": "text",
+                "content": { "text": text },
+            }))
+            .send()
+            .map_err(|_| lark_http_error("send_webhook", None))?;
+        let value = response_json(response, "send_webhook")?;
+        ensure_lark_ok("send_webhook", value)
     }
 
     fn send_app_message(
         &self,
-        _tenant_access_token: &str,
-        _target: &str,
-        _text: &str,
+        tenant_access_token: &str,
+        target: &str,
+        text: &str,
     ) -> Result<(), GatewayError> {
-        Err(transport_unavailable("send_app_message"))
+        let url = format!(
+            "{}/open-apis/im/v1/messages?receive_id_type=chat_id",
+            self.api_base_url
+        );
+        let content = serde_json::json!({ "text": text }).to_string();
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(tenant_access_token)
+            .json(&serde_json::json!({
+                "receive_id": target,
+                "msg_type": "text",
+                "content": content,
+            }))
+            .send()
+            .map_err(|_| lark_http_error("send_app_message", None))?;
+        let value = response_json(response, "send_app_message")?;
+        ensure_lark_ok("send_app_message", value)
     }
 }
 
-fn transport_unavailable(operation: &'static str) -> GatewayError {
+fn response_json(
+    response: reqwest::blocking::Response,
+    operation: &'static str,
+) -> Result<Value, GatewayError> {
+    let status = response.status();
+    let value = response
+        .json::<Value>()
+        .map_err(|_| lark_http_error(operation, Some(status.as_u16())))?;
+    if !status.is_success() {
+        return Err(lark_http_error(operation, Some(status.as_u16())));
+    }
+    Ok(value)
+}
+
+fn lark_http_error(operation: &'static str, status: Option<u16>) -> GatewayError {
+    let status_context = status
+        .map(|status| format!(", http_status={status}"))
+        .unwrap_or_default();
     GatewayError::new(
-        adapter_diagnostic(
-            LARK_PROVIDER,
-            "lark_transport_unavailable",
-            "Lark HTTP transport is not wired in this gateway layer yet.",
-            "Inject a Lark transport from the daemon/API layer before connecting.",
+        lark_diagnostic(
+            "lark_http_failed",
+            "Lark adapter HTTP request failed.",
+            "Verify network access, Lark API availability, and adapter credentials.",
+            operation,
         )
-        .with_context(format!("provider=lark, operation={operation}")),
+        .with_context(format!(
+            "provider=lark, operation={operation}{status_context}"
+        )),
     )
+}
+
+fn http_client_for_base_url(api_base_url: &str) -> reqwest::blocking::Client {
+    let builder = reqwest::blocking::Client::builder();
+    let builder = if is_loopback_base_url(api_base_url) {
+        builder.no_proxy()
+    } else {
+        builder
+    };
+    builder
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new())
+}
+
+fn is_loopback_base_url(api_base_url: &str) -> bool {
+    reqwest::Url::parse(api_base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .is_some_and(|host| matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1"))
 }
 
 fn ensure_lark_ok(operation: &'static str, response: Value) -> Result<(), GatewayError> {

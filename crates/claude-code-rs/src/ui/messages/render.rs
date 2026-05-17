@@ -2,8 +2,12 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
+use std::collections::HashMap;
 
 use crate::ui::markdown::markdown_to_lines;
+use crate::ui::messages::user_bash_output_message::{
+    render_user_bash_output_message_with_options, ShellOutputRenderOptions,
+};
 use crate::ui::theme::Theme;
 use crate::ui::virtual_scroll::VirtualScroll;
 use cc_types::message::{
@@ -14,6 +18,109 @@ use super::file_edit_tool_updated_message::{
     render_file_edit_tool_updated_message, FileEditMessageStyle, FileEditToolUpdatedView,
 };
 use super::wrap::wrap_line_to_width;
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct MessageRenderContext {
+    tool_uses: HashMap<String, ToolUseRenderRecord>,
+    latest_shell_tool_result_id: Option<String>,
+    selected_message: Option<usize>,
+    selected_expanded: bool,
+    cache_key: String,
+}
+
+#[derive(Debug, Clone)]
+struct ToolUseRenderRecord {
+    tool_name: String,
+    input: serde_json::Value,
+}
+
+impl MessageRenderContext {
+    pub(crate) fn cache_key(&self) -> &str {
+        &self.cache_key
+    }
+
+    fn tool_use(&self, tool_use_id: &str) -> Option<&ToolUseRenderRecord> {
+        self.tool_uses.get(tool_use_id)
+    }
+
+    fn shell_expanded(&self, msg_index: usize, tool_use_id: &str) -> bool {
+        self.latest_shell_tool_result_id.as_deref() == Some(tool_use_id)
+            || (self.selected_message == Some(msg_index) && self.selected_expanded)
+    }
+}
+
+pub(crate) fn build_message_render_context(
+    messages: &[Message],
+    selected_message: Option<usize>,
+    selected_expanded: bool,
+) -> MessageRenderContext {
+    let mut ctx = MessageRenderContext {
+        selected_message,
+        selected_expanded,
+        ..MessageRenderContext::default()
+    };
+
+    for message in messages {
+        match message {
+            Message::Assistant(assistant) => {
+                for block in &assistant.content {
+                    match block {
+                        ContentBlock::ToolUse { id, name, input }
+                        | ContentBlock::ServerToolUse { id, name, input } => {
+                            ctx.tool_uses.insert(
+                                id.clone(),
+                                ToolUseRenderRecord {
+                                    tool_name: name.clone(),
+                                    input: input.clone(),
+                                },
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Message::User(user) => {
+                if let MessageContent::Blocks(blocks) = &user.content {
+                    for block in blocks {
+                        if let ContentBlock::ToolResult { tool_use_id, .. } = block {
+                            if ctx
+                                .tool_uses
+                                .get(tool_use_id)
+                                .is_some_and(ToolUseRenderRecord::is_shell)
+                            {
+                                ctx.latest_shell_tool_result_id = Some(tool_use_id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    ctx.cache_key = format!(
+        "shell={}|selected={:?}|expanded={}",
+        ctx.latest_shell_tool_result_id.as_deref().unwrap_or(""),
+        ctx.selected_message,
+        ctx.selected_expanded
+    );
+    ctx
+}
+
+impl ToolUseRenderRecord {
+    fn is_shell(&self) -> bool {
+        matches!(self.tool_name.as_str(), "Bash" | "PowerShell")
+    }
+
+    fn command(&self) -> String {
+        self.input
+            .get("command")
+            .and_then(|value| value.as_str())
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| self.tool_name.clone())
+    }
+}
 
 /// Render only the visible messages into the given buffer area using virtual
 /// scrolling.
@@ -32,8 +139,7 @@ pub fn render_messages(
     streaming: bool,
     scroll: usize,
     vscroll: &VirtualScroll,
-    selected_message: Option<usize>,
-    selected_expanded: bool,
+    render_context: &MessageRenderContext,
 ) {
     if area.height == 0 || area.width == 0 || messages.is_empty() {
         return;
@@ -50,16 +156,8 @@ pub fn render_messages(
     let mut y = 0usize; // current row in the viewport
 
     for idx in start..end.min(messages.len()) {
-        let mut msg_lines = render_single_message_wrapped(&messages[idx], theme, area.width);
-        if Some(idx) == selected_message {
-            decorate_selected_message(
-                &mut msg_lines,
-                &messages[idx],
-                theme,
-                selected_expanded,
-                area.width as usize,
-            );
-        }
+        let mut msg_lines =
+            render_single_message_wrapped(&messages[idx], idx, theme, area.width, render_context);
         if streaming
             && idx == messages.len().saturating_sub(1)
             && matches!(&messages[idx], Message::Assistant(_))
@@ -91,19 +189,57 @@ pub fn render_messages(
     }
 }
 
-fn render_single_message_wrapped<'a>(msg: &Message, theme: &Theme, width: u16) -> Vec<Line<'a>> {
-    render_single_message(msg, theme)
+fn render_single_message_wrapped<'a>(
+    msg: &Message,
+    index: usize,
+    theme: &Theme,
+    width: u16,
+    render_context: &MessageRenderContext,
+) -> Vec<Line<'a>> {
+    render_single_message_for_layout(msg, index, theme, width as usize, render_context)
         .into_iter()
         .flat_map(|line| wrap_line_to_width(&line, width))
         .collect()
+}
+
+pub(crate) fn render_single_message_for_layout<'a>(
+    msg: &Message,
+    index: usize,
+    theme: &Theme,
+    width: usize,
+    render_context: &MessageRenderContext,
+) -> Vec<Line<'a>> {
+    let mut lines = render_single_message_with_context(msg, index, theme, width, render_context);
+    if render_context.selected_message == Some(index) {
+        decorate_selected_message(
+            &mut lines,
+            msg,
+            theme,
+            render_context.selected_expanded,
+            width,
+        );
+    }
+    lines
 }
 
 /// Render a single message into one or more `Line`s.
 ///
 /// `pub(super)` so that `virtual_scroll` can call it for height measurement.
 pub(in crate::ui) fn render_single_message<'a>(msg: &Message, theme: &Theme) -> Vec<Line<'a>> {
+    render_single_message_with_context(msg, 0, theme, 80, &MessageRenderContext::default())
+}
+
+pub(in crate::ui) fn render_single_message_with_context<'a>(
+    msg: &Message,
+    index: usize,
+    theme: &Theme,
+    width: usize,
+    render_context: &MessageRenderContext,
+) -> Vec<Line<'a>> {
     match msg {
-        Message::User(user_msg) => render_user_message(user_msg, theme),
+        Message::User(user_msg) => {
+            render_user_message(user_msg, theme, index, width, render_context)
+        }
         Message::Assistant(assistant_msg) => render_assistant_message(assistant_msg, theme),
         Message::System(system_msg) => render_system_message(system_msg, theme),
         Message::Progress(progress_msg) => render_progress_message(progress_msg, theme),
@@ -217,13 +353,26 @@ fn message_detail_lines(msg: &Message, width: usize) -> Vec<String> {
 
 // ── User messages ───────────────────────────────────────────────────────
 
-fn render_user_message<'a>(msg: &cc_types::message::UserMessage, theme: &Theme) -> Vec<Line<'a>> {
+fn render_user_message<'a>(
+    msg: &cc_types::message::UserMessage,
+    theme: &Theme,
+    msg_index: usize,
+    width: usize,
+    render_context: &MessageRenderContext,
+) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
 
     let content_text = match &msg.content {
         MessageContent::Text(t) => t.clone(),
         MessageContent::Blocks(blocks) => {
-            if let Some(tool_lines) = render_tool_result_user_message(msg, blocks, theme) {
+            if let Some(tool_lines) = render_tool_result_user_message(
+                msg,
+                blocks,
+                theme,
+                msg_index,
+                width,
+                render_context,
+            ) {
                 return tool_lines;
             }
             blocks
@@ -262,16 +411,49 @@ fn render_tool_result_user_message<'a>(
     msg: &cc_types::message::UserMessage,
     blocks: &[ContentBlock],
     theme: &Theme,
+    msg_index: usize,
+    width: usize,
+    render_context: &MessageRenderContext,
 ) -> Option<Vec<Line<'a>>> {
     let tool_result = blocks.iter().find_map(|block| match block {
         ContentBlock::ToolResult {
-            content, is_error, ..
-        } => Some((content, *is_error)),
+            tool_use_id,
+            content,
+            is_error,
+        } => Some((tool_use_id, content, *is_error)),
         _ => None,
     })?;
 
+    if let Some(tool_use) = render_context.tool_use(tool_result.0) {
+        if tool_use.is_shell() {
+            let output = msg
+                .tool_use_result
+                .as_deref()
+                .map(str::to_string)
+                .unwrap_or_else(|| tool_result_content_text(tool_result.1));
+            let expanded = render_context.shell_expanded(msg_index, tool_result.0);
+            let rendered = render_user_bash_output_message_with_options(
+                &tool_use.command(),
+                &output,
+                ShellOutputRenderOptions {
+                    width: width.max(20),
+                    expanded,
+                    total_lines: Some(output.lines().count()),
+                    total_bytes: Some(output.len()),
+                    ..ShellOutputRenderOptions::default()
+                },
+            );
+            let style = if tool_result.2 {
+                theme.error
+            } else {
+                theme.tool_result
+            };
+            return Some(styled_text_lines(&rendered, style));
+        }
+    }
+
     if let Some(preview) = msg.tool_use_result.as_deref() {
-        if !tool_result.1 {
+        if !tool_result.2 {
             if let Some(lines) = render_file_edit_preview(preview, theme) {
                 return Some(lines);
             }
@@ -282,8 +464,8 @@ fn render_tool_result_user_message<'a>(
         ));
     }
 
-    let text = tool_result_content_text(tool_result.0);
-    let style = if tool_result.1 {
+    let text = tool_result_content_text(tool_result.1);
+    let style = if tool_result.2 {
         theme.error
     } else {
         theme.tool_result

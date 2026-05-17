@@ -720,13 +720,15 @@ mod tests {
 
     #[test]
     fn test_teammate_spawn_request_rejects_nested_teammate_spawn() {
-        let mut state = crate::types::app_state::AppState::default();
-        state.team_context = Some(cc_types::teams::TeamContext {
-            team_name: "alpha".into(),
-            lead_agent_id: cc_types::teams::lead_agent_id("alpha"),
-            self_agent_id: Some(cc_types::teams::format_agent_id("worker", "alpha")),
+        let state = crate::types::app_state::AppState {
+            team_context: Some(cc_types::teams::TeamContext {
+                team_name: "alpha".into(),
+                lead_agent_id: cc_types::teams::lead_agent_id("alpha"),
+                self_agent_id: Some(cc_types::teams::format_agent_id("worker", "alpha")),
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         let params: AgentInput = serde_json::from_value(json!({
             "prompt": "review",
             "description": "review code",

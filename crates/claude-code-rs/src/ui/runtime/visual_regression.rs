@@ -273,17 +273,18 @@ fn render_streaming_message_snapshot() -> String {
     let area = Rect::new(0, 0, 96, 8);
     let mut buf = Buffer::empty(area);
     let mut vscroll = VirtualScroll::new();
-    vscroll.ensure_up_to_date(&messages, area.width, &Theme::default());
+    let theme = Theme::default();
+    let render_context = super::messages::build_message_render_context(&messages, None, false);
+    vscroll.ensure_up_to_date(&messages, area.width, &theme, &render_context);
     render_messages(
         &messages,
         area,
         &mut buf,
-        &Theme::default(),
+        &theme,
         true,
         0,
         &vscroll,
-        None,
-        false,
+        &render_context,
     );
     normalize_snapshot_text(buffer_text(&buf, area))
 }

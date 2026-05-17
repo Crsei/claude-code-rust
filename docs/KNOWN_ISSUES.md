@@ -41,16 +41,16 @@
 | ID | 严重度 | 状态 | 范围 | 摘要 | 详情 |
 | --- | --- | --- | --- | --- | --- |
 | UI-001 | 中 | Open | TS/OpenTUI resize | Rust TUI resize 已收口；TS/OpenTUI 在 Windows maximize/fullscreen 后仍可能留下白色横行或未完整 repaint。 | 历史 #1/#17 |
-| UI-002 | 中 | Open | Rust TUI shell output | shell output renderer 已支持 expanded/detail view，但最新 shell 输出尚未由 runtime context 自动展开。 | 历史 #21 |
-| UI-003 | 中 | Open | Rust TUI Ctrl+R | Ctrl+R 历史搜索只搜索当前 session，尚未接跨会话持久 prompt history reader。 | 历史 #22 |
-| UI-004 | 中 | Open | Browser MCP | Browser MCP 截图、console/network 结构化结果和权限文案尚未对真实第三方 server 做端到端验证。 | 历史 Browser MCP |
+| UI-002 | 中 | Fixed | Rust TUI shell output | 最新 Bash/PowerShell tool result 现在由 runtime context 自动展开；历史长输出默认折叠，选中后可展开/折叠查看 detail。 | 历史 #21 |
+| UI-003 | 中 | Fixed | Rust TUI Ctrl+R | Ctrl+R 现在按当前 workspace 读取跨会话持久 prompt history，条目带 session/title/cwd 来源和时间；无后端数据时显示明确空态。 | 历史 #22 |
+| UI-004 | 中 | Evidence pending | Browser MCP | Browser MCP / Chrome native host / Chrome MCP bridge 已有 fake bridge/native-host 端到端证据；真实第三方 Browser MCP server 与 Chrome extension 仍是 release 手动证据，缺失时不声称 live server 已验证。 | 历史 Browser MCP |
 
 ## 6. 文档状态问题
 
 | ID | 严重度 | 状态 | 范围 | 摘要 | 详情 |
 | --- | --- | --- | --- | --- | --- |
 | DOC-002 | 中 | Open | Extensibility implementation map | Phase 5/6 closure 与旧“部分实现”状态冲突；Phase 5 实施记录、future fields、WebSocket/out-of-scope 口径需收口。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §五 |
-| DOC-003 | 中 | Open | stale Lite wording | 部分历史/概览文档仍使用 Lite 口径或旧路径表述；触及时应改成 Full Build 语义或移入 archive。 | 本轮文档清理发现 |
+| DOC-003 | 中 | Review | stale Lite wording | 顶层 release/current-state/CLI docs 已改为 Full Build 与当前 crate 路径口径；plan/archive/mvp 文档中的历史 Lite 文字只按历史上下文保留，后续成为活跃 release reference 时继续清理。 | 本轮文档清理发现 |
 
 ## 7. 更新规则
 
@@ -64,7 +64,7 @@
 | ID | Severity | Status | Scope | Summary | Detail |
 | --- | --- | --- | --- | --- | --- |
 | REMOTE-001 | Medium | Open | Gateway busy policy | Mid-turn `steer` is intentionally unsupported. | `GatewayPolicy::supports_steer` defaults to false and `BusyPolicy::Steer` returns `501 unsupported`. Capabilities must not imply live steering until `QueryEngine` has explicit mid-turn injection semantics. |
-| REMOTE-002 | Medium | Open | Telegram/Lark adapters | Telegram and Lark are outbound diagnostics only. | The first gateway release supports adapter configuration status, connect/health checks, and allowlisted test messages. Full inbound conversational remote control remains follow-up work. |
+| REMOTE-002 | Medium | Open | Telegram/Lark adapters | Telegram and Lark are outbound-control adapters only. | The first gateway release supports adapter configuration status, HTTP connect/health checks, and allowlisted test messages. Full inbound conversational remote control remains follow-up work. |
 | REMOTE-003 | Medium | Open | Webhook configuration | Declarative webhook routes are code-backed but not yet backed by a full admin CRUD surface. | Built-in route ids resolve secrets from environment variables and use generic defaults for unknown route ids. A durable route-management UX/API is still needed before broad operator use. |
 | REMOTE-004 | Medium | Open | Release verification | Session 16 performed docs-gate verification, not full remote-control code verification. | The next release step must run the Session 17 command set before claiming the gateway implementation is fully green. |
 | REMOTE-005 | Low | Open | Public exposure | Public hosted gateway and multi-tenant SaaS are non-goals for this release. | Non-loopback use requires explicit remote-token policy and origin controls; production hosting design remains out of scope. |

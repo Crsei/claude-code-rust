@@ -78,25 +78,13 @@ pub struct SessionMeta {
 }
 
 /// Raw transcript data — full messages + breakdown counts.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TranscriptData {
     pub messages: Vec<serde_json::Value>,
     pub message_count: usize,
     pub user_message_count: usize,
     pub assistant_message_count: usize,
     pub system_message_count: usize,
-}
-
-impl Default for TranscriptData {
-    fn default() -> Self {
-        Self {
-            messages: Vec::new(),
-            message_count: 0,
-            user_message_count: 0,
-            assistant_message_count: 0,
-            system_message_count: 0,
-        }
-    }
 }
 
 /// API-view summary derived from the recorded request snapshots.

@@ -1,9 +1,9 @@
 # cc-rust CLI 接口参考
 
 > 以当前代码实现为准，主要来源：
-> - `src/main.rs` 中的 `clap` 参数定义
+> - `crates/claude-code-rs/src/main.rs` 中的 `clap` 参数定义
 > - `run_full_init()` 中的模式分派顺序
-> - `src/commands/mod.rs` 中的斜杠命令注册表
+> - `crates/cc-commands/src/lib.rs` 中的斜杠命令注册表
 >
 > 本文覆盖两层接口：
 > 1. 进程启动参数（真正的 CLI 参数）
@@ -261,7 +261,7 @@ FEATURE_KAIROS=1 claude-code-rs --daemon --port 19836
 
 ## 6. REPL 斜杠命令注册表
 
-下面是当前 `src/commands/mod.rs` 中已注册的交互式命令。它们不属于进程启动参数，但属于进入 REPL 后的 CLI 接口面。
+下面是当前 `crates/cc-commands/src/lib.rs` 中已注册的交互式命令。它们不属于进程启动参数，但属于进入 REPL 后的 CLI 接口面。
 
 ### 6.1 基础命令
 
@@ -329,7 +329,7 @@ FEATURE_KAIROS=1 claude-code-rs --daemon --port 19836
 | 命令 | 别名 | 说明 |
 |------|------|------|
 | `/diff` | — | 查看当前 git diff |
-| `/branch` | `/br` | 查看或切换分支 |
+| `/branch` | `/br` | fork 当前会话并切换到新 session |
 | `/commit` | — | 基于当前变更创建提交 |
 | `/export` | — | 导出对话为 Markdown |
 | `/audit-export` | `/audit` | 导出可校验审计记录 |
@@ -360,7 +360,7 @@ FEATURE_KAIROS=1 claude-code-rs --daemon --port 19836
 
 这是这次整理里确认到的几个现状：
 
-- `src/main.rs` 的 help 文案里 `--permission-mode` 还没把 `plan` 写进去，但代码已经支持
+- `crates/claude-code-rs/src/main.rs` 的 help 文案里 `--permission-mode` 还没把 `plan` 写进去，但代码已经支持
 - `--output-format` 的 help 文案列了 `stream-json`，但实现里目前只有 `json` 有专门分支
 - daemon / headless 属于真实存在但默认隐藏的接口
 - 旧文档中提到的前端名称、二进制名称、部分登录方式和模式说明已经过时，应以本文为准

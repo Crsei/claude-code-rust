@@ -23,6 +23,7 @@ use crate::types::message::{
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, Tools};
 
+#[allow(clippy::large_enum_variant)]
 enum MockStreamStep {
     Response(ModelResponse),
     Error(String),
@@ -192,7 +193,7 @@ impl QueryDeps for MockDeps {
         };
 
         let stream_finished = self.stream_finished.clone();
-        let stream = futures::stream::iter(events.into_iter()).then(move |(delay, event)| {
+        let stream = futures::stream::iter(events).then(move |(delay, event)| {
             let stream_finished = stream_finished.clone();
             async move {
                 if !delay.is_zero() {

@@ -419,6 +419,18 @@ pub async fn command_handler(
                     response_type: "output".into(),
                     content: text,
                 }),
+                cc_commands::CommandResult::SwitchSession {
+                    session_id,
+                    messages,
+                    notice,
+                } => {
+                    state.engine().set_current_session_id(session_id.clone());
+                    state.engine().replace_messages(messages);
+                    Json(CommandResponse {
+                        response_type: "switch_session".into(),
+                        content: format!("{notice}\nSession: {session_id}"),
+                    })
+                }
                 cc_commands::CommandResult::Clear => {
                     let session_id = state.engine().start_new_session();
                     Json(CommandResponse {
@@ -882,8 +894,9 @@ mod tests {
     #[tokio::test]
     async fn set_model_accepts_alias_when_full_id_is_allowlisted() {
         let state = make_web_state();
+        let expected_model = cc_commands::model::resolve_model_alias("SOTA");
         state.engine().update_app_state(|s| {
-            s.settings.available_models = vec!["claude-opus-4-20250514".to_string()];
+            s.settings.available_models = vec![expected_model.clone()];
         });
 
         let response = settings_handler(
@@ -899,13 +912,10 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["ok"], json!(true));
-        assert_eq!(
-            state.engine().app_state().main_loop_model,
-            "claude-opus-4-20250514"
-        );
+        assert_eq!(state.engine().app_state().main_loop_model, expected_model);
         assert_eq!(
             state.engine().app_state().settings.model.as_deref(),
-            Some("claude-opus-4-20250514")
+            Some(expected_model.as_str())
         );
     }
 

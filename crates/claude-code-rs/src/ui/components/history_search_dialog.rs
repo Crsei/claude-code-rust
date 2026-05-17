@@ -11,6 +11,9 @@ const PREVIEW_ROWS: usize = 6;
 pub struct HistorySearchEntry {
     pub display: String,
     pub timestamp_secs: i64,
+    pub source_session_id: Option<String>,
+    pub source_title: Option<String>,
+    pub source_cwd: Option<String>,
 }
 
 impl HistorySearchEntry {
@@ -18,7 +21,22 @@ impl HistorySearchEntry {
         Self {
             display: display.into(),
             timestamp_secs,
+            source_session_id: None,
+            source_title: None,
+            source_cwd: None,
         }
+    }
+
+    pub fn with_source(
+        mut self,
+        session_id: impl Into<String>,
+        title: impl Into<String>,
+        cwd: impl Into<String>,
+    ) -> Self {
+        self.source_session_id = Some(session_id.into());
+        self.source_title = non_empty_string(title.into());
+        self.source_cwd = non_empty_string(cwd.into());
+        self
     }
 }
 
@@ -42,6 +60,7 @@ struct HistorySearchItem {
     lower: String,
     first_line: String,
     age: String,
+    source: String,
 }
 
 impl HistorySearchDialog {
@@ -150,6 +169,12 @@ impl HistorySearchDialog {
                     truncate_to_width(prompt, width.saturating_sub(28).max(20))
                 ));
             }
+            if let Some(source) = self.selected_source() {
+                rows.push(format!(
+                    "Source: {}",
+                    truncate_to_width(&source, width.saturating_sub(28).max(20))
+                ));
+            }
             rows
         };
         BetterViewPanel::new("History search")
@@ -182,10 +207,16 @@ impl HistorySearchDialog {
                 } else {
                     " "
                 };
+                let source = if item.source.is_empty() {
+                    String::new()
+                } else {
+                    format!("  [{}]", truncate_to_width(&item.source, 24))
+                };
                 Some(format!(
-                    "{marker} {} {}",
+                    "{marker} {} {}{}",
                     item.age,
-                    truncate_to_width(&item.first_line, row_width)
+                    truncate_to_width(&item.first_line, row_width),
+                    source
                 ))
             })
             .collect()
@@ -229,10 +260,18 @@ impl HistorySearchDialog {
     fn empty_message(&self) -> Option<&'static str> {
         match &self.items {
             None => Some("Loading..."),
-            Some(items) if items.is_empty() => Some("No history yet"),
+            Some(items) if items.is_empty() => Some("No saved prompts for this workspace yet"),
             Some(_) if self.visible_indices().is_empty() => Some("No matching prompts"),
             Some(_) => None,
         }
+    }
+
+    fn selected_source(&self) -> Option<String> {
+        let idx = self.selected_item_index()?;
+        self.items
+            .as_ref()
+            .and_then(|items| items.get(idx))
+            .and_then(|item| (!item.source.is_empty()).then(|| item.source.clone()))
     }
 
     fn move_next(&mut self) {
@@ -301,13 +340,30 @@ impl HistorySearchItem {
             .to_string();
         let lower = entry.display.to_ascii_lowercase();
         let age = pad_to_width(&format_age(entry.timestamp_secs, now_secs), AGE_WIDTH);
+        let source = format_source(&entry);
         Self {
             entry,
             lower,
             first_line,
             age,
+            source,
         }
     }
+}
+
+fn format_source(entry: &HistorySearchEntry) -> String {
+    entry
+        .source_title
+        .as_deref()
+        .or(entry.source_cwd.as_deref())
+        .or(entry.source_session_id.as_deref())
+        .unwrap_or("")
+        .to_string()
+}
+
+fn non_empty_string(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 fn format_age(timestamp_secs: i64, now_secs: i64) -> String {

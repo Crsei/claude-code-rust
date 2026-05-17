@@ -45,7 +45,7 @@ expression: "format!(\"## wide\\n{wide}\\n\\n## narrow\\n{narrow}\\n\\n## loadin
 | filter= matches=0                                                                    |
 |--------------------------------------------------------------------------------------|
 | History                Preview                                                       |
-| > Prompts              No history yet                                                |
+| > Prompts              No saved prompts for this workspace yet                       |
 |   Preview                                                                            |
 
 ## no matches

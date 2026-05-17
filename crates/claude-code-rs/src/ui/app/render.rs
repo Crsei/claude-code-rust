@@ -85,8 +85,17 @@ impl App {
         let content_height = if self.show_welcome {
             welcome::welcome_height_for(size.width).min(max_content_height)
         } else {
-            self.vscroll
-                .ensure_up_to_date(&self.messages, size.width, &self.theme);
+            let message_render_context = super::super::messages::build_message_render_context(
+                &self.messages,
+                self.selected_message,
+                self.selected_message_expanded,
+            );
+            self.vscroll.ensure_up_to_date(
+                &self.messages,
+                size.width,
+                &self.theme,
+                &message_render_context,
+            );
             self.vscroll
                 .total_visual_lines()
                 .min(max_content_height as usize) as u16
@@ -114,8 +123,17 @@ impl App {
             );
         } else {
             // Messages (virtual scroll)
-            self.vscroll
-                .ensure_up_to_date(&self.messages, message_area.width, &self.theme);
+            let message_render_context = super::super::messages::build_message_render_context(
+                &self.messages,
+                self.selected_message,
+                self.selected_message_expanded,
+            );
+            self.vscroll.ensure_up_to_date(
+                &self.messages,
+                message_area.width,
+                &self.theme,
+                &message_render_context,
+            );
             let total = self.vscroll.total_visual_lines();
             let max_scroll = total.saturating_sub(message_area.height as usize);
             if self.scroll_offset > max_scroll {
@@ -130,8 +148,7 @@ impl App {
                 self.is_streaming,
                 self.scroll_offset,
                 &self.vscroll,
-                self.selected_message,
-                self.selected_message_expanded,
+                &message_render_context,
             );
         }
 
@@ -385,8 +402,17 @@ impl App {
         // Ensure the virtual-scroll cache matches the body width. Sharing
         // `vscroll` with prompt mode is fine because both invalidate on
         // width change.
-        self.vscroll
-            .ensure_up_to_date(&self.messages, body_area.width, &self.theme);
+        let message_render_context = super::super::messages::build_message_render_context(
+            &self.messages,
+            self.selected_message,
+            self.selected_message_expanded,
+        );
+        self.vscroll.ensure_up_to_date(
+            &self.messages,
+            body_area.width,
+            &self.theme,
+            &message_render_context,
+        );
         let total = self.vscroll.total_visual_lines();
         let max_scroll = total.saturating_sub(body_area.height as usize);
         if self.transcript_state.scroll_offset > max_scroll {
@@ -401,8 +427,7 @@ impl App {
             self.is_streaming,
             self.transcript_state.scroll_offset,
             &self.vscroll,
-            self.selected_message,
-            self.selected_message_expanded,
+            &message_render_context,
         );
 
         if header_height > 0 {

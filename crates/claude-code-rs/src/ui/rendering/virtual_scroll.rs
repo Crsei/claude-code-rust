@@ -9,7 +9,7 @@ use unicode_width::UnicodeWidthStr;
 
 use cc_types::message::Message;
 
-use super::messages::render_single_message;
+use super::messages::{render_single_message_for_layout, MessageRenderContext};
 use super::theme::Theme;
 
 /// Number of extra lines to render above/below the viewport for smooth
@@ -31,6 +31,8 @@ pub struct VirtualScroll {
     valid_up_to: usize,
     /// Terminal width used for the cached heights.
     cached_width: u16,
+    /// Message render-context cache key used for height calculations.
+    cached_render_key: String,
 }
 
 impl VirtualScroll {
@@ -42,6 +44,7 @@ impl VirtualScroll {
             visual_offsets: vec![0],
             valid_up_to: 0,
             cached_width: 0,
+            cached_render_key: String::new(),
         }
     }
 
@@ -69,11 +72,18 @@ impl VirtualScroll {
 
     /// Ensure heights and offsets are up-to-date for all messages.
     /// Re-computes only the invalidated tail.
-    pub fn ensure_up_to_date(&mut self, messages: &[Message], width: u16, theme: &Theme) {
+    pub fn ensure_up_to_date(
+        &mut self,
+        messages: &[Message],
+        width: u16,
+        theme: &Theme,
+        render_context: &MessageRenderContext,
+    ) {
         // Width changed → full invalidation
-        if width != self.cached_width {
+        if width != self.cached_width || render_context.cache_key() != self.cached_render_key {
             self.invalidate_all();
             self.cached_width = width;
+            self.cached_render_key = render_context.cache_key().to_string();
         }
 
         // Shrink if messages were removed
@@ -85,7 +95,8 @@ impl VirtualScroll {
         let total = messages.len();
 
         for (i, message) in messages.iter().enumerate().take(total).skip(start) {
-            let lines = render_single_message(message, theme);
+            let lines =
+                render_single_message_for_layout(message, i, theme, width as usize, render_context);
             let mut h = lines.len();
             let mut visual_h = wrapped_line_height(&lines, width);
             // Separator blank line between messages (not after last)
@@ -276,7 +287,8 @@ mod tests {
             assistant_text("and a long response that should also reflow"),
         ];
         let mut vs = VirtualScroll::new();
-        vs.ensure_up_to_date(&msgs, 80, &theme);
+        let context = crate::ui::messages::build_message_render_context(&msgs, None, false);
+        vs.ensure_up_to_date(&msgs, 80, &theme, &context);
         let logical_total = vs.total_lines();
         let visual_total_wide = vs.total_visual_lines();
         assert_eq!(vs.cached_width(), 80);
@@ -284,7 +296,8 @@ mod tests {
 
         // Width change -> wrapped heights should grow while logical heights
         // remain stable for the existing renderer contract.
-        vs.ensure_up_to_date(&msgs, 30, &theme);
+        let context = crate::ui::messages::build_message_render_context(&msgs, None, false);
+        vs.ensure_up_to_date(&msgs, 30, &theme, &context);
         assert_eq!(vs.cached_width(), 30);
         assert_eq!(vs.total_lines(), logical_total);
         assert!(vs.total_visual_lines() > visual_total_wide);
@@ -293,7 +306,8 @@ mod tests {
 
         // Same width again -> stable totals and offsets.
         let total_before_noop = vs.total_visual_lines();
-        vs.ensure_up_to_date(&msgs, 30, &theme);
+        let context = crate::ui::messages::build_message_render_context(&msgs, None, false);
+        vs.ensure_up_to_date(&msgs, 30, &theme, &context);
         assert_eq!(vs.total_visual_lines(), total_before_noop);
     }
 
@@ -305,7 +319,8 @@ mod tests {
             assistant_text("short"),
         ];
         let mut vs = VirtualScroll::new();
-        vs.ensure_up_to_date(&msgs, 18, &theme);
+        let context = crate::ui::messages::build_message_render_context(&msgs, None, false);
+        vs.ensure_up_to_date(&msgs, 18, &theme, &context);
 
         let first_visual_height = vs.visual_height_of(0);
         assert!(first_visual_height > 2);
@@ -322,7 +337,8 @@ mod tests {
         let theme = Theme::default();
         let msgs = vec![user("hello")];
         let mut vs = VirtualScroll::new();
-        vs.ensure_up_to_date(&msgs, 40, &theme);
+        let context = crate::ui::messages::build_message_render_context(&msgs, None, false);
+        vs.ensure_up_to_date(&msgs, 40, &theme, &context);
         assert!(vs.total_lines() > 0);
         vs.invalidate_all();
         assert_eq!(vs.total_lines(), 0);

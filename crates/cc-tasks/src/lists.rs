@@ -81,7 +81,7 @@ fn task_lists_root() -> PathBuf {
                 return PathBuf::from(root).join("tasks");
             }
         }
-        return TEST_TASKS_ROOT.clone();
+        TEST_TASKS_ROOT.clone()
     }
 
     #[cfg(not(test))]

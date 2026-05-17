@@ -5,6 +5,7 @@
 //! backend session data exists, so Ctrl+R works before the first prompt.
 
 use std::collections::HashSet;
+use std::path::Path;
 
 use anyhow::Result;
 
@@ -13,11 +14,11 @@ use cc_types::message::{Message, MessageContent};
 
 const MAX_PERSISTENT_HISTORY: usize = 200;
 
-pub fn load_persistent_history() -> Result<Vec<HistorySearchEntry>> {
+pub fn load_persistent_history_for_workspace(cwd: &Path) -> Result<Vec<HistorySearchEntry>> {
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
 
-    for session in cc_session::storage::list_sessions()? {
+    for session in cc_session::storage::list_workspace_sessions(cwd)? {
         let messages = match cc_session::storage::load_session(&session.session_id) {
             Ok(messages) => messages,
             Err(error) => {
@@ -38,7 +39,16 @@ pub fn load_persistent_history() -> Result<Vec<HistorySearchEntry>> {
             if text.is_empty() || !seen.insert(text.clone()) {
                 continue;
             }
-            entries.push(HistorySearchEntry::new(text, timestamp));
+            let source_label = if session.workspace_name.is_empty() {
+                session.cwd.clone()
+            } else {
+                session.workspace_name.clone()
+            };
+            entries.push(HistorySearchEntry::new(text, timestamp).with_source(
+                session.session_id.clone(),
+                session.title.clone(),
+                source_label,
+            ));
             if entries.len() >= MAX_PERSISTENT_HISTORY {
                 return Ok(entries);
             }

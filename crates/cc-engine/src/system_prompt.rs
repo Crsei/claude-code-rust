@@ -498,6 +498,7 @@ const SUMMARIZE_TOOL_RESULTS: &str =
 ///
 /// Returns `(system_prompt_parts, user_context, system_context)`.
 #[cfg(test)]
+#[expect(clippy::too_many_arguments)]
 pub fn build_system_prompt(
     custom_prompt: Option<&str>,
     append_prompt: Option<&str>,

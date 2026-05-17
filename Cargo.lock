@@ -1999,6 +1999,7 @@ dependencies = [
  "cc-config",
  "hex",
  "hmac",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2",

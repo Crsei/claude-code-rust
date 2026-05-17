@@ -10,9 +10,8 @@
 //! Usage:
 //! - `/branch`            — fork the current conversation at the latest message
 //!
-//! The command prints a resume hint. Automatic switch-into-fork requires
-//! runtime state surgery (reloading the engine's session pointer) which is
-//! out of scope for this change — see the TODO at the call site.
+//! The command returns a session-switch result so runtime hosts can land the
+//! user directly in the fork.
 //!
 //! To use the git-branch wrapper, run `/gbranch` or `/gitbranch`.
 
@@ -52,12 +51,6 @@ impl CommandHandler for BranchHandler {
             None,
         )?;
 
-        // TODO: automatically switch the engine's session pointer so the user
-        // lands in the fork without needing /resume. Doing this correctly
-        // requires coordinating with QueryEngine state (abort in-flight work,
-        // swap SessionId, reset transcript flush targets) — deferred to a
-        // follow-up change. For now, print a resume hint.
-
         let short = short_id(outcome.new_session_id.as_str());
         let lines = [
             format!("Forked session -> {}.", outcome.new_session_id),
@@ -75,10 +68,16 @@ impl CommandHandler for BranchHandler {
             ),
             format!("  title:       {}", outcome.title),
             String::new(),
-            format!("Resume with `/resume {}`.", short),
+            format!("Switched to fork `{}`.", short),
         ];
 
-        Ok(CommandResult::Output(lines.join("\n")))
+        ctx.session_id = new_session_id.clone();
+
+        Ok(CommandResult::SwitchSession {
+            session_id: new_session_id,
+            messages: ctx.messages.clone(),
+            notice: lines.join("\n"),
+        })
     }
 }
 
@@ -174,14 +173,20 @@ mod tests {
         };
 
         let result = BranchHandler.execute("", &mut ctx).await.unwrap();
-        let text = match result {
-            CommandResult::Output(t) => t,
-            _ => panic!("expected Output"),
+        let (session_id, messages, text) = match result {
+            CommandResult::SwitchSession {
+                session_id,
+                messages,
+                notice,
+            } => (session_id, messages, notice),
+            _ => panic!("expected SwitchSession"),
         };
 
         assert!(text.starts_with("Forked session"), "got: {}", text);
-        assert!(text.contains("Resume with `/resume"));
+        assert!(text.contains("Switched to fork"));
         assert!(text.contains(parent_id), "parent id missing: {}", text);
+        assert_eq!(session_id, ctx.session_id);
+        assert_eq!(messages.len(), ctx.messages.len());
 
         // The parent transcript must still be intact and unchanged.
         let parent_transcript =

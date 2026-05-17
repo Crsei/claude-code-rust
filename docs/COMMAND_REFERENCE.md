@@ -1,7 +1,7 @@
 # cc-rust Slash Command Reference
 
 > 本文按当前源码实现整理：
-> - 命令注册表：`src/commands/mod.rs`
+> - 命令注册表：`crates/cc-commands/src/lib.rs`
 > - 每个命令的参数解析：`src/commands/*.rs`
 >
 > 与旧文档不同，这里优先描述“当前代码实际支持什么”，而不是历史设计目标。
@@ -475,11 +475,13 @@
   - `/branch`
   - `/branch <branch-name>`
 - Behavior:
-  - 无参数时列出本地分支并标记当前分支
-  - 有参数时先尝试 `git checkout <name>`，失败后再尝试 `git checkout -b <name>`
+  - fork 当前会话 transcript 到一个新 session，并立即把 active session 切到 fork 后的 session
+  - 无参数时生成默认 fork 名称
+  - 有参数时使用给定名称作为 fork title/label
+  - 命令结果通过 `SwitchSession` 返回新 `session_id` 和切换后的可见 transcript；TUI、headless、daemon 和 Web command path 都应同步 session pointer
 - Examples:
   - `/branch`
-  - `/br feature/docs`
+  - `/br investigate-parser`
 
 ### `/commit`
 

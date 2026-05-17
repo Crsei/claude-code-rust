@@ -22,9 +22,9 @@
 | Daemon supervisor/worker ownership | submit/abort worker-owned，仍有 parity residual | `/api/submit`、`/api/abort`、`/api/permission` 已写入 `cc-daemon` command/event protocol，assistant worker 执行 submit 并回写事件；permission response 仍只是 durable ack，resize/history 仍缺 worker-owned 语义。 |
 | Session export | API snapshot/schema v2 已接入，context collapse residual | 导出 schema v2 已包含 raw transcript、api view summary、`ApiRequestSnapshot`、custom title 和图片块可读占位；仍缺 context collapse 原生事件、mode/tag 来源和完整 api-view 投影。 |
 | Crate migration / thin binary | Engine + IPC owner migration 已落地，thin-binary guard 未关闭 | `claude-code-rs/src/engine/**` 与 `claude-code-rs/src/ipc/**` 已删除；`cc-engine` 拥有 engine/agent，`cc-ipc`/`cc-ipc-client`/`cc-ipc-protocol` 拥有 IPC runtime、client helper 与 wire DTO；IPC envelope 已有 version/min-compat 策略。仍需收束剩余 root-style imports、allow-attribute hits、Codex compatibility path hits，并跑完整 workspace/release gates。 |
-| Remote-control gateway control plane | 未实现，Phase 0 边界已冻结 | 计划新增 `crates/gateway` 作为控制面，负责 `/remote-control/v1/**`、RemoteSource/session/run、auth、adapter registry、durable events、delivery 和 recovery；现有 daemon `/api/*` 不是公网 remote-control API。 |
-| Telegram/Lark gateway adapter connectivity | 未实现，范围限定 | 第一版只做连接、健康检查、provider-neutral 状态诊断和测试发送；不做 inbound conversation、完整远程会话控制或绕过 gateway runner 触发模型。 |
-| Local `/remote` and TUI remote surface | 部分完成 | `/remote` slash command and `RemoteSurface` now exist and read local gateway status/adapters/runs/events. Remaining work: a live remote status indicator and full end-to-end gateway verification. |
+| Remote-control gateway control plane | 基础完成，release evidence 未全收口 | `crates/gateway` 已拥有 `/remote-control/v1/**`、RemoteSource/session/run、auth、adapter registry、durable events、delivery 和 recovery；现有 daemon `/api/*` 仍不是公网 remote-control API。剩余工作是 release gate 验证、public exposure policy 和 admin UX。 |
+| Telegram/Lark gateway adapter connectivity | outbound 完成，inbound 裁剪 | 第一版支持连接、健康检查、provider-neutral 状态诊断和 allowlisted test-message 发送；不做 inbound conversation、完整远程会话控制或绕过 gateway runner 触发模型。 |
+| Local `/remote` and TUI remote surface | 基础完成，验证残留 | `/remote` slash command、`RemoteSurface`、remote status indicator 已存在并读取 local gateway status/adapters/runs/events。剩余工作是完整 release gate 验证和真实运维证据。 |
 | Remote/teleport command surfaces | teleport deferred | `/channels` is intentionally limited to gateway-backed outbound adapter status for now. Inbound channel sessions and any `/teleport` command remain deferred until a product/runtime contract exists; do not present placeholders as real remote-control capability. |
 
 ## 2. 活跃方案文档
@@ -48,9 +48,9 @@
 | 范围 | 状态 | 说明 |
 | --- | --- | --- |
 | UI resize 回流 | 部分收口 | Rust TUI 已有 width-aware virtual scroll 回归；TS/OpenTUI fullscreen/maximize 白行问题仍在 [KNOWN_ISSUES.md](KNOWN_ISSUES.md) 跟踪。 |
-| Rust TUI shell output | 基础完成，自动策略未完 | renderer 已支持 expanded/collapsed/detail view；最新 shell output 自动展开仍待 runtime context 接线。 |
-| Rust TUI Ctrl+R history | 基础完成，持久历史未完 | 当前只搜索本次 TUI session prompt；跨会话历史 reader/API 未接。 |
-| Browser MCP real-server path | 未验证 | 配置/提示/渲染基础存在，但尚未对真实 browser MCP server 做截图/console/network 端到端验证。 |
+| Rust TUI shell output | 已接 runtime context | renderer 支持 expanded/collapsed/detail view；最新 Bash/PowerShell tool result 自动展开，历史长输出默认折叠，选中后可展开 detail。 |
+| Rust TUI Ctrl+R history | 已接 workspace 持久历史 | Ctrl+R 按当前 workspace 读取跨会话 prompt history，条目带 session/title/cwd 来源和时间；无数据时显示明确空态。 |
+| Browser MCP real-server path | fake/e2e 已有，真实 server 手动证据待补 | `e2e_browser_mcp`、`e2e_chrome_native_host`、`e2e_chrome_mcp_bridge` 覆盖 fake/unreachable/native-host 路径；真实第三方 Browser MCP server 截图/console/network 仍是 release 手动证据，不作为默认已验证声明。 |
 
 ## 4. 历史 Deferred 重评队列
 
@@ -88,6 +88,8 @@
 - Agent Teams tmux/iTerm2 pane backend: cc-rust 当前主运行环境包含 Windows，外部 pane backend 会引入 tmux/iTerm2/窗口管理器耦合、跨平台清理语义和额外交互面；MVP-005 决定不实现外部 pane backend，而是把 in-process backend 做成唯一受支持路径并补齐生命周期控制。`PaneBackend` trait 保留为未来上游 parity 审查边界。 | Codex | 2026-04-28 | 用户明确需要可见终端 pane、上游 pane protocol 成为产品必需项，或 cc-rust roadmap 切换到 Unix terminal-pane 优先发布。
 - BashTool Windows Restricted Token / Job Object OS-level primitive: 上游 `@anthropic-ai/sandbox-runtime` 当前只对 macOS、Linux 与 WSL2 暴露 sandbox 支持，PowerShell permission UI 明确没有 sandbox toggle；cc-rust 不自研 Windows token/job sandbox，保留 Rust-level FS/network preflight、`/sandbox require` fail-closed 与 unavailable 诊断。 | Codex | 2026-05-05 | 上游发布 Windows sandbox-runtime backend、PowerShell sandbox toggle 成为产品必需项，或安全策略要求 Windows OS-level enforcement。
 - WebFetch browser-grade JS rendering: 本次发布只承诺 HTTP fetch 能力，包括 redirect/MIME/proxy/`NO_PROXY`、credential URL 拒绝和无 cookie store 边界；不内置浏览器运行时，不执行页面 JavaScript，避免把 cookie/session/DOM 执行面引入普通 WebFetch。需要 JS 渲染的工作流应走外置 Browser MCP 或后续 native browser host 方案。 | Codex | 2026-05-17 | 外置 Browser MCP 升级为默认发布支持面、用户明确要求 JS-rendered page fetch，或安全模型允许受控浏览器 profile/session 隔离。
+- Voice dictation audio/STT backend: cc-rust 当前只保留 `/voice`、`voiceEnabled`、keybinding 和 language normalization 兼容面；不声明真实 microphone capture、waveform UI、streaming transcription 或 Claude.ai voice STT。 | Codex | 2026-05-17 | 项目新增受支持 audio backend、STT client、local/SSH/WSL/auth 矩阵测试，并决定把 voice 纳入发布支持面。
+- Telegram/Lark inbound channel sessions and remote triggers: 本轮只承诺 gateway-backed outbound adapter status/control、connect health check 和 allowlisted test-message；不承诺入站 Telegram/Lark conversation、schedule remote triggers 或完整远程会话 parity。 | Codex | 2026-05-17 | 产品定义入站 channel session contract、gateway runner 注入语义和安全/审计策略，并补 e2e。
 
 新增规则：
 
