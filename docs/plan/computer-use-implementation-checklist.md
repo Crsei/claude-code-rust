@@ -9,7 +9,7 @@
 - 在同一轮 agent loop 中完成“看屏幕 -> 决策 -> 点击/输入 -> 再看屏幕”
 - 在 macOS / Windows / Linux 上逐步具备可验证能力
 
-本清单以当前 Rust-lite 代码结构为准，不假设要一比一复制 TypeScript 版本的内部实现。
+本清单以 Full Build 代码结构为准，不假设要一比一复制 TypeScript 版本的内部实现。
 
 ## 2. 当前结论
 
@@ -65,12 +65,14 @@
 - [x] 改造 [src/query/loop_impl.rs](../src/query/loop_impl.rs)
   - 目标：当工具返回图片块或混合块时，生成 `ContentBlock::ToolResult { content: ToolResultContent::Blocks(...) }`
   - 只有纯文本结果才走 `ToolResultContent::Text(...)`
-- [ ] 为 [src/session/storage.rs](../src/session/storage.rs) 和导出模块补充回归验证
-  - 确认 `Blocks([Image])` 在会话保存、恢复、导出时不丢失
+- [x] 为导出模块补充图片块回归验证
+  - `cargo test -p cc-session session_export` 确认图片型 tool result 导出为结构化 metadata + 可读占位，不丢失 MIME/长度信息，也不输出原始 base64
+- [ ] 为 session save/restore 补充图片块回归验证
+  - 确认 `Blocks([Image])` 在会话保存、恢复后仍存在
 - [x] 为 headless/TUI 增加最小可见性
-  - [src/ipc/protocol.rs](../src/ipc/protocol.rs)：`ToolResult` 消息增加可选 `content_blocks` 和 `ToolResultContentInfo` 类型
-  - [src/ui/messages.rs](../src/ui/messages.rs)：图片型 tool result 渲染为 `[image: mime_type]`
-  - [src/ipc/headless.rs](../src/ipc/headless.rs)：`extract_tool_result_output()` 正确提取图片占位符
+  - `crates/cc-ipc-protocol/src/protocol.rs`：`ToolResult` 消息增加可选 `content_blocks` 和 `ToolResultContentInfo` 类型
+  - `crates/claude-code-rs/src/ui/messages.rs`：图片型 tool result 渲染为 `[image: mime_type]`
+  - `crates/cc-ipc/src/headless.rs`：`extract_tool_result_output()` 正确提取图片占位符
 
 **Phase 0 验收标准**
 
@@ -197,10 +199,9 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
 
 ### Phase 5：会话、导出、前端体验补齐
 
-- [ ] [src/session/export.rs](../src/session/export.rs) / `session_export/*`
-  - 为图片型 tool result 增加更好的导出文本
-  - 不要只导出空白或 `[object Object]`
-- [ ] [src/ipc/protocol.rs](../src/ipc/protocol.rs)
+- [x] `crates/cc-session/src/session_export/*`
+  - 图片型 tool result 导出为结构化 metadata + 可读占位，不输出空白或 `[object Object]`
+- [ ] `crates/cc-ipc-protocol/src/protocol.rs`
   - `ToolResult` 增加可选 `content_blocks`
   - headless 前端可以直接展示图片结果
 - [ ] [src/ui/messages.rs](../src/ui/messages.rs)
@@ -214,7 +215,8 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
 
 - [ ] 单元测试：MCP `image` 结果转换为 `ContentBlock::Image`
 - [ ] 单元测试：query loop 对结构化 tool result 不再强制字符串化
-- [ ] 单元测试：session storage/export 对图片块的保存与恢复
+- [x] 单元测试：session export 对图片块的结构化占位输出
+- [ ] 单元测试：session storage 对图片块的保存与恢复
 - [ ] 集成测试：fake MCP server 返回 screenshot 图片，模型收到图片块
 - [ ] 集成测试：权限拒绝 / 允许 / session grant 三种路径
 - [ ] 平台 smoke test：
@@ -233,10 +235,10 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
 
 ### 高概率会改
 
-- [src/ipc/protocol.rs](../src/ipc/protocol.rs)
-- [src/ui/messages.rs](../src/ui/messages.rs)
-- [src/session/storage.rs](../src/session/storage.rs)
-- [src/session/export.rs](../src/session/export.rs)
+- `crates/cc-ipc-protocol/src/protocol.rs`
+- `crates/claude-code-rs/src/ui/messages.rs`
+- `crates/cc-session/src/storage.rs`
+- `crates/cc-session/src/session_export/*`
 
 ### 可后置
 

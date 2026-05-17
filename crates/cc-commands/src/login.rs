@@ -114,6 +114,9 @@ fn auth_status_text() -> String {
 }
 
 fn cloud_auth_status_text() -> Option<String> {
+    if cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_FOUNDRY") {
+        return Some(foundry_status_text());
+    }
     if cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
         return Some(bedrock_status_text());
     }
@@ -126,6 +129,7 @@ fn cloud_auth_status_text() -> Option<String> {
 fn enable_bedrock_session() -> String {
     std::env::set_var("CLAUDE_CODE_USE_BEDROCK", "1");
     std::env::remove_var("CLAUDE_CODE_USE_VERTEX");
+    std::env::remove_var("CLAUDE_CODE_USE_FOUNDRY");
 
     let mut lines = vec![
         "AWS Bedrock provider enabled for this cc-rust session.".to_string(),
@@ -150,6 +154,7 @@ fn enable_bedrock_session() -> String {
 fn enable_vertex_session() -> String {
     std::env::set_var("CLAUDE_CODE_USE_VERTEX", "1");
     std::env::remove_var("CLAUDE_CODE_USE_BEDROCK");
+    std::env::remove_var("CLAUDE_CODE_USE_FOUNDRY");
 
     let mut lines = vec![
         "GCP Vertex AI provider enabled for this cc-rust session.".to_string(),
@@ -267,6 +272,23 @@ fn vertex_token_source() -> String {
         .to_string()
 }
 
+fn foundry_status_text() -> String {
+    let validation = cc_api::api::providers::validate_provider_name("azure-foundry");
+    let diagnostic = validation
+        .diagnostics
+        .first()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .unwrap_or(cc_api::api::providers::FOUNDRY_UNSUPPORTED_REASON);
+    format!(
+        "Provider: Microsoft Foundry\n\
+         Enabled: true\n\
+         Status: unsupported\n\
+         Diagnostic: {}\n\
+         Action: unset CLAUDE_CODE_USE_FOUNDRY or choose /login bedrock or /login vertex.",
+        diagnostic
+    )
+}
+
 fn codex_auth_status_text() -> Option<String> {
     if std::env::var("OPENAI_CODEX_AUTH_TOKEN")
         .map(|v| !v.trim().is_empty())
@@ -313,7 +335,12 @@ fn codex_auth_status_text() -> Option<String> {
 }
 
 fn cloud_setup_text() -> String {
-    format!("{}\n\n{}", bedrock_setup_text(), vertex_setup_text())
+    format!(
+        "{}\n\n{}\n\n{}",
+        bedrock_setup_text(),
+        vertex_setup_text(),
+        foundry_setup_text()
+    )
 }
 
 fn bedrock_setup_text() -> String {
@@ -338,6 +365,22 @@ fn vertex_setup_text() -> String {
      5. Optional: ANTHROPIC_MODEL.\n\
      Current session shortcut: /login vertex"
         .to_string()
+}
+
+fn foundry_setup_text() -> String {
+    let validation = cc_api::api::providers::validate_provider_name("azure-foundry");
+    let diagnostic = validation
+        .diagnostics
+        .first()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .unwrap_or(cc_api::api::providers::FOUNDRY_UNSUPPORTED_REASON);
+    format!(
+        "Microsoft Foundry setup:\n\
+         Status: unsupported in this cc-rust build.\n\
+         Diagnostic: {}\n\
+         Do not set CLAUDE_CODE_USE_FOUNDRY for this release.",
+        diagnostic
+    )
 }
 
 fn check_codex_cli() -> String {
@@ -472,6 +515,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
         let _bedrock = EnvGuard::set("CLAUDE_CODE_USE_BEDROCK", None);
         let _vertex = EnvGuard::set("CLAUDE_CODE_USE_VERTEX", Some("1"));
+        let _foundry = EnvGuard::set("CLAUDE_CODE_USE_FOUNDRY", Some("1"));
         let _bearer = EnvGuard::set("AWS_BEARER_TOKEN_BEDROCK", Some("bedrock-token-1234"));
         let _region = EnvGuard::set("AWS_REGION", Some("us-west-2"));
 
@@ -483,6 +527,9 @@ mod tests {
         assert!(!cc_api::api::client::is_env_truthy(
             "CLAUDE_CODE_USE_VERTEX"
         ));
+        assert!(!cc_api::api::client::is_env_truthy(
+            "CLAUDE_CODE_USE_FOUNDRY"
+        ));
         assert!(text.contains("AWS Bedrock provider enabled"));
         assert!(text.contains("Region: us-west-2"));
         assert!(text.contains("Bearer token"));
@@ -493,6 +540,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
         let _bedrock = EnvGuard::set("CLAUDE_CODE_USE_BEDROCK", Some("1"));
         let _vertex = EnvGuard::set("CLAUDE_CODE_USE_VERTEX", None);
+        let _foundry = EnvGuard::set("CLAUDE_CODE_USE_FOUNDRY", Some("1"));
         let _project = EnvGuard::set("ANTHROPIC_VERTEX_PROJECT_ID", Some("proj-123"));
         let _token = EnvGuard::set("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", Some("vertex-token"));
         let _region = EnvGuard::set("CLOUD_ML_REGION", Some("europe-west4"));
@@ -503,10 +551,27 @@ mod tests {
         assert!(!cc_api::api::client::is_env_truthy(
             "CLAUDE_CODE_USE_BEDROCK"
         ));
+        assert!(!cc_api::api::client::is_env_truthy(
+            "CLAUDE_CODE_USE_FOUNDRY"
+        ));
         assert!(text.contains("GCP Vertex AI provider enabled"));
         assert!(text.contains("Project: proj-123"));
         assert!(text.contains("Region: europe-west4"));
         assert!(text.contains("CLAUDE_CODE_VERTEX_ACCESS_TOKEN"));
+    }
+
+    #[test]
+    fn test_foundry_status_surfaces_provider_validation_diagnostic() {
+        let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let _foundry = EnvGuard::set("CLAUDE_CODE_USE_FOUNDRY", Some("1"));
+        let _bedrock = EnvGuard::set("CLAUDE_CODE_USE_BEDROCK", None);
+        let _vertex = EnvGuard::set("CLAUDE_CODE_USE_VERTEX", None);
+
+        let text = auth_status_text();
+
+        assert!(text.contains("Microsoft Foundry"));
+        assert!(text.contains("unsupported"));
+        assert!(text.contains("no Foundry request/auth adapter"));
     }
 
     #[test]

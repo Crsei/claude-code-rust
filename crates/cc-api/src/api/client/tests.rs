@@ -656,6 +656,30 @@ fn test_from_env_result_errors_for_explicit_bedrock_without_auth() {
 }
 
 #[test]
+fn test_from_env_result_errors_for_explicit_foundry() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        "CLAUDE_CODE_USE_FOUNDRY",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "ANTHROPIC_API_KEY",
+    ]);
+    clear_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+    std::env::set_var("CLAUDE_CODE_USE_FOUNDRY", "1");
+    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-should-not-fallback");
+
+    let err = match ApiClient::from_env_result() {
+        Err(error) => error,
+        Ok(_) => panic!("Foundry config must fail early"),
+    };
+    let msg = err.to_string();
+    assert!(msg.contains("Foundry"));
+    assert!(msg.contains("no Foundry request/auth adapter"));
+
+    restore_env(saved);
+}
+
+#[test]
 fn test_from_env_result_errors_for_explicit_vertex_without_project() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let saved = save_env(&[

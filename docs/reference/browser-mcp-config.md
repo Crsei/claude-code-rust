@@ -124,15 +124,15 @@ cc-rust 把下面的基名识别为 browser MCP（按类别）：
 - **截图/视觉**：`take_screenshot`, `screenshot`
 - **其他**：`wait_for`, `find`, `resize_window`
 
-完整列表见 `src/browser/detection.rs` 的 `BROWSER_TOOL_BASENAMES`。
+完整列表见 `crates/cc-browser/src/detection.rs` 的 `BROWSER_TOOL_BASENAMES`。
 
 如果你的 browser MCP 服务使用了不在上面的工具名，**设置 `"browserMcp": true` 即可**
 让 cc-rust 把它当作 browser MCP 处理（权限对话会退化为通用的 browser 风格提示）。
 
 ## 非目标（MVP 范围）
 
-- ❌ 不做第一方 Chrome 扩展或 native host
-- ❌ 不提供 `--chrome` 命令行或 `/chrome` 斜杠命令
+- ❌ 不把第一方 Chrome 扩展或 native host 作为本指南的发布承诺
+- ❌ 不要求 `--chrome` 命令行或 `/chrome` 斜杠命令；这些属于后续 native-host 路线
 - ❌ 不做 session 之间共享浏览器状态（由 browser MCP 服务自行负责）
 - ❌ 不做完整的浏览器权限模型（仅粗粒度分类授权）
 

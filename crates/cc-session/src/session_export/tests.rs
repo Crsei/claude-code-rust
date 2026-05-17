@@ -3,7 +3,31 @@ use super::compression;
 use super::compression::detect_microcompact;
 use super::*;
 use cc_types::message::*;
+use std::path::Path;
 use uuid::Uuid;
+
+struct EnvGuard {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvGuard {
+    fn set_path(key: &'static str, value: &Path) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        if let Some(previous) = &self.previous {
+            std::env::set_var(self.key, previous);
+        } else {
+            std::env::remove_var(self.key);
+        }
+    }
+}
 
 fn make_user_msg(text: &str) -> Message {
     Message::User(UserMessage {
@@ -68,6 +92,28 @@ fn make_tool_result_msg(tool_use_id: &str, result: &str, is_error: bool) -> Mess
             tool_use_id: tool_use_id.into(),
             content: ToolResultContent::Text(result.into()),
             is_error,
+        }]),
+        is_meta: true,
+        tool_use_result: None,
+        source_tool_assistant_uuid: None,
+    })
+}
+
+fn make_tool_result_image_msg(tool_use_id: &str) -> Message {
+    Message::User(UserMessage {
+        uuid: Uuid::new_v4(),
+        timestamp: 1700000003000,
+        role: "user".into(),
+        content: MessageContent::Blocks(vec![ContentBlock::ToolResult {
+            tool_use_id: tool_use_id.into(),
+            content: ToolResultContent::Blocks(vec![ContentBlock::Image {
+                source: ImageSource {
+                    source_type: "base64".into(),
+                    media_type: "image/png".into(),
+                    data: "abcdef".into(),
+                },
+            }]),
+            is_error: false,
         }]),
         is_meta: true,
         tool_use_result: None,
@@ -272,6 +318,104 @@ fn test_build_transcript_data() {
     assert_eq!(transcript.assistant_message_count, 1);
     assert_eq!(transcript.system_message_count, 1);
     assert_eq!(transcript.messages.len(), 3);
+}
+
+#[test]
+fn test_build_transcript_data_sanitizes_image_blocks_for_export() {
+    let messages = vec![
+        make_assistant_with_tool_use("tu_img", "ComputerUseScreenshot"),
+        make_tool_result_image_msg("tu_img"),
+    ];
+
+    let transcript = builders::build_transcript_data(&messages);
+    let source = &transcript.messages[1]["content"][0]["content"][0]["source"];
+
+    assert_eq!(source["media_type"], "image/png");
+    assert_eq!(source["metadata"]["base64_length"], 6);
+    assert_ne!(source["data"], "abcdef");
+    assert!(source["data"].as_str().unwrap().contains("image omitted"));
+}
+
+#[test]
+fn test_build_session_export_schema_v2_includes_api_view_defaults() {
+    let export = build_session_export("session-export-v2", &[make_user_msg("hello")], "/tmp");
+
+    assert_eq!(export.schema_version, SESSION_EXPORT_SCHEMA_VERSION);
+    assert_eq!(
+        export.raw_transcript.message_count,
+        export.transcript.message_count
+    );
+    assert_eq!(export.api_view.request_count, 0);
+    assert!(export.api_requests.is_empty());
+}
+
+#[test]
+#[serial_test::serial]
+fn test_build_session_export_reports_bad_api_snapshot_log() {
+    let temp = tempfile::tempdir().unwrap();
+    let _guard = EnvGuard::set_path("CC_RUST_HOME", temp.path());
+    let path = crate::request_snapshot::snapshot_path("session-bad-snapshots");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "{not-json}\n").unwrap();
+
+    let export = build_session_export("session-bad-snapshots", &[make_user_msg("hello")], "/tmp");
+
+    assert_eq!(export.api_view.request_count, 0);
+    assert!(export.api_requests.is_empty());
+    assert!(
+        export.api_view.diagnostics[0].contains("failed to load API request snapshots"),
+        "{:?}",
+        export.api_view.diagnostics
+    );
+}
+
+#[test]
+fn test_old_session_export_json_still_deserializes() {
+    let old = serde_json::json!({
+        "schema_version": 1,
+        "exported_at": "2026-01-01T00:00:00Z",
+        "session": {
+            "session_id": "old",
+            "project_path": null,
+            "git_branch": null,
+            "git_head_sha": null,
+            "model": null,
+            "started_at": null,
+            "ended_at": null
+        },
+        "transcript": {
+            "messages": [],
+            "message_count": 0,
+            "user_message_count": 0,
+            "assistant_message_count": 0,
+            "system_message_count": 0
+        },
+        "tool_calls": [],
+        "compression": {
+            "compact_boundaries": [],
+            "content_replacements": [],
+            "microcompact_replacements": [],
+            "total_compactions": 0
+        },
+        "context": {
+            "estimated_total_tokens": 0,
+            "context_window_size": 200000,
+            "utilization_pct": 0.0,
+            "total_cost_usd": 0.0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "cache_read_tokens": 0,
+            "api_call_count": 0,
+            "tool_use_count": 0,
+            "unique_tools_used": []
+        }
+    });
+
+    let parsed: SessionExport = serde_json::from_value(old).expect("old schema readable");
+    assert_eq!(parsed.schema_version, 1);
+    assert!(parsed.api_requests.is_empty());
+    assert_eq!(parsed.api_view.request_count, 0);
+    assert!(parsed.api_view.diagnostics.is_empty());
 }
 
 #[test]

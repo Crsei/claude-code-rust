@@ -12,31 +12,43 @@
 
 ## Rust 实现进度 (cc-rust)
 
+状态日期：2026-05-17。当前导出 schema 为 v2。
+
 ### 已完成
 
 | 功能 | 文件 | 说明 |
 |------|------|------|
-| transcript.messages 全量导出 | `src/session/session_export.rs` | `build_transcript_data()` — 所有消息类型 (user/assistant/system/progress/attachment) |
-| tool call timeline 重建 | `src/session/session_export.rs` | `reconstruct_tool_timeline()` — tool_use ↔ tool_result 配对，含未匹配的孤立调用 |
-| compact boundary 提取 | `src/session/session_export.rs` | `extract_compression_events()` — 从 `SystemSubtype::CompactBoundary` 提取 |
-| content replacement 检测 | `src/session/session_export.rs` | `detect_content_replacement()` — 匹配 `tool_result_budget` 产生的 `”Full output saved to”` 标记 |
-| microcompact 检测 | `src/session/session_export.rs` | `detect_microcompact()` — 匹配 `compact/microcompact.rs` 产生的 `”(microcompacted)”` 标记 |
-| context snapshot | `src/session/session_export.rs` | `build_context_snapshot()` — token/cost/tool 统计、上下文窗口利用率 |
-| session 元数据 | `src/session/session_export.rs` | git branch/sha、model、project_path、时间戳 |
-| /session-export 命令 | `src/commands/session_export.rs` | export / list / export-to-path / export-by-id + summary 输出 |
-| /audit-export 命令 | `src/commands/audit_export.rs` + `src/session/audit_export.rs` | SHA-256 哈希链、防篡改验证 |
+| transcript.messages 全量导出 | `crates/cc-session/src/session_export/*` | `build_transcript_data()` — 所有消息类型 (user/assistant/system/progress/attachment)，图片块导出为结构化 metadata + 可读占位，不输出 base64 原文 |
+| rawTranscript vs apiView 基础结构 | `crates/cc-session/src/session_export/mod.rs` | `SessionExport` schema v2 包含 `raw_transcript`、`transcript`、`api_view` 和 `api_requests`；当前 `api_view` 是 request snapshot summary，不是完整 projectView 投影；snapshot log 读取失败会写入 `api_view.diagnostics` |
+| API 请求快照 | `crates/cc-session/src/request_snapshot.rs`, `crates/cc-engine/src/lifecycle/deps.rs` | `cc-engine` 在 provider request 发送前记录最终 request body；导出读取同一 request boundary，image source data 会被 metadata 占位替换 |
+| tool call timeline 重建 | `crates/cc-session/src/session_export/compression.rs` | `reconstruct_tool_timeline()` — tool_use ↔ tool_result 配对，含未匹配的孤立调用 |
+| compact boundary 提取 | `crates/cc-session/src/session_export/compression.rs` | `extract_compression_events()` — 从 `SystemSubtype::CompactBoundary` 提取 |
+| content replacement 检测 | `crates/cc-session/src/session_export/compression.rs` | `detect_content_replacement()` — 匹配 `tool_result_budget` 产生的 `”Full output saved to”` 标记 |
+| microcompact 检测 | `crates/cc-session/src/session_export/compression.rs` | `detect_microcompact()` — 匹配 `compact/microcompact.rs` 产生的 `”(microcompacted)”` 标记 |
+| context snapshot | `crates/cc-session/src/session_export/builders.rs` | `build_context_snapshot()` — token/cost/tool 统计、上下文窗口利用率 |
+| session 元数据 | `crates/cc-session/src/session_export/mod.rs` | git branch/sha、model、project_path、时间戳、custom_title；`mode`/`permission_mode`/`tags` 字段已在 schema 中预留 |
+| /session-export 命令 | `crates/cc-commands/src/session_export.rs` | export / list / export-to-path / export-by-id + summary 输出，包含 API request count |
+| /audit-export 命令 | `crates/cc-session/src/audit_export.rs`, `crates/cc-commands/src/audit_export.rs` | SHA-256 哈希链、防篡改验证 |
 
-### 未实现 (Rust 端缺少基础设施)
+### 仍未完整实现
 
-以下功能在原版 TypeScript 中存在，但 cc-rust 尚未实现对应的基础模块，因此 session_export 无法集成：
+以下功能在原版 TypeScript 中存在，但 cc-rust 尚未实现完整来源或投影逻辑，因此仍是 release residual：
 
 | 功能 | 阻塞原因 | 后续路径 |
 |------|----------|----------|
-| **API 请求快照** (`apiRequest`) | `ProcessState` 中没有记录最近一次 API 请求的 params/messages 字段。TS 版通过 `getLastAPIRequest()` / `getLastAPIRequestMessages()` 获取。 | 需要在 `src/bootstrap/state.rs` 的 `ProcessState` 中增加 `last_api_request` 字段，在 `src/query/loop_core.rs` 发送请求时写入。之后在 `session_export.rs` 中增加 `ApiRequestSnapshot` 类型并从 `ProcessState` 读取。 |
 | **Context collapse 事件** (`contextCollapseCommits`, `contextCollapseSnapshot`) | `src/compact/pipeline.rs` 中 Step 4 明确标注 `”Not yet implemented — will fold old segments into summaries.”` (Phase 2+)。`SystemSubtype` 枚举中没有 `ContextCollapse` 变体。 | 等 `compact/pipeline.rs` 实现 context collapse 后，在 `SystemSubtype` 中增加变体，然后在 `extract_compression_events()` 中提取。 |
-| **Session mode / tag / custom_title** | `SessionFile` 只有 `session_id, created_at, last_modified, cwd, messages` 五个字段。`ProcessState` 中也没有 mode/tag/title。TS 版在 transcript `.jsonl` 中额外存储这些字段。 | 需要在 `src/session/storage.rs` 的 `SessionFile` 中增加 `mode`, `tag`, `custom_title` 可选字段，同时在 `SessionMeta` 中补充。 |
-| **双视图导出** (rawTranscript vs apiView) | 没有 `getMessagesAfterCompactBoundary()` + `projectView()` 的 API 视图投影逻辑。当前只导出内存中的原始消息。 | 需要在 `src/compact/` 或 `src/query/` 中实现 API 视图投影函数，然后在导出中同时输出两份视图。 |
+| **Session mode / tag / permission_mode 来源** | `SessionExport` schema 已预留 `mode`, `permission_mode`, `tags`，`custom_title` 已从 `SessionFile` 导出；但 session storage / runtime 还没有稳定 mode/tag 来源。 | 在 `crates/cc-session/src/storage.rs` 和 engine runtime state 中补持久来源，然后由 `build_session_meta()` 填充。 |
+| **完整 apiView 投影** | 当前 `api_view` 是 `ApiRequestSnapshot` 摘要；还没有 `getMessagesAfterCompactBoundary()` + `projectView()` 等价 API 视图投影逻辑。 | 需要在 `crates/cc-compact/` 或 `crates/cc-engine/` 中实现 API 视图投影函数，然后在导出中输出模型上下文视图。 |
 | **Microcompact boundary (系统消息)** | `microcompact_messages()` 只是修改 tool result 内容，不产生 `SystemSubtype` 边界消息。当前只能通过文本标记间接检测。 | 可选：在 `microcompact_messages()` 执行后插入一条 `SystemSubtype::MicrocompactBoundary` 系统消息，记录本轮 microcompact 的 tokens_freed 等统计。 |
+
+当前回归命令：
+
+```bash
+cargo test -p cc-session request_snapshot
+cargo test -p cc-session session_export
+cargo test -p cc-commands session_export
+cargo test -p cc-engine lifecycle
+```
 
 ## 原版 TypeScript 架构参考
 

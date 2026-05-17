@@ -1,6 +1,6 @@
 # cc-rust 技术债务
 
-> 更新日期: 2026-05-08 | 当前阶段: 全量构建 / Full Build
+> 更新日期: 2026-05-17 | 当前阶段: 全量构建 / Full Build
 >
 > 本文件只保留仍需要执行、重评或继续验证的代码层技术债。已经实现、已勘误或已被当前代码结构超越的历史条目已迁移到 [archive/TECH_DEBT.md](archive/TECH_DEBT.md)。
 >
@@ -13,12 +13,12 @@
 | 优先级 | 范围 | 当前状态 | 下一步 |
 | --- | --- | --- | --- |
 | P0 | Query / lifecycle / tool execution 主流程 | `query/loop_impl.rs` 与 `engine/lifecycle/submit_message.rs` 已继续拆分，但 `engine/lifecycle/deps.rs`、Phase D 前置准备、inner stream 事件分发和 `SdkResult` 构造仍偏大 | 先补回归测试，再按“helper 提取，不改协议/行为”的方式继续拆分 |
-| P1 | IPC subsystem handlers/types/events | `headless.rs` 已是薄入口，但 subsystem 层仍把 LSP/MCP/Plugin/IDE/Skill/AgentSettings 聚合在大文件里 | 为 IPC JSON 协议补 serialization/roundtrip contract tests，再机械拆到 per-subsystem 模块 |
+| P1 | IPC subsystem handlers/types/events | `headless.rs` 已是薄入口，envelope version/min-compat 策略已有 roundtrip tests；subsystem 层仍把 LSP/MCP/Plugin/IDE/Skill/AgentSettings 聚合在大文件里 | 继续补 per-subsystem serialization/roundtrip contract tests，再机械拆到 per-subsystem 模块 |
 | P1 | 过度防御性容错 / 静默降级 | 多处把锁失败、已有配置解析失败、认证读取失败或持久化状态损坏折成默认值/空列表/无认证 | 按边界分级：状态写入和安全/认证路径失败必须显式返回错误；可选文件缺失才允许默认值 |
 | P1 | API provider 与 streaming 转换 | 已有 `StreamProvider` 抽象和 `RetryConfig`/错误分类，但 provider 内部消息转换、SSE/event 语义仍分散 | 收束 provider-local 转换边界，避免跨 provider 行为漂移 |
 | P2 | 全局状态与 runtime registry | `PROCESS_STATE` 已使用 `parking_lot::RwLock` 和部分 accessor，但字段仍大量 `pub`；LSP/plugin registry 仍是全局 `LazyLock` | 逐步转 runtime-owned service / getter-setter，减少多 session 测试污染 |
 | P2 | 代码卫生 | `#![allow(unused)]` / `#[allow(dead_code)]`、重复 `test_ctx()`、通配符导入、工具输入解析风格不统一仍存在 | 按模块小批量清理，保留行为测试 |
-| P2 | 协议与文档一致性 | IPC 协议缺显式版本策略；文档和注释中仍有历史 Lite/乱码残留 | 补协议版本/兼容策略；继续清理 mojibake 和过期文档结论 |
+| P2 | 协议与文档一致性 | IPC envelope 已有显式版本策略；文档和注释中仍有历史 Lite/乱码残留 | 继续清理 mojibake 和过期文档结论，并把新增 wire DTO 纳入 contract tests |
 
 ---
 
@@ -46,8 +46,8 @@ Detailed completion records for the fail-fast implementation phases are archived
 
 - 2026-05-08 follow-up closure sessions resolved and archived the MCP startup diagnostics, auth command diagnostic surfaces, hook IO public diagnostics, and team smoke coverage follow-ups. Evidence is recorded in `target/codex-runs/session-01-mcp-startup-diagnostics/task-01.last-message.txt` through `target/codex-runs/session-05-team-e2e-coverage/task-01.last-message.txt`, with Review B in `target/codex-runs/review-b-final-integration/task-01.last-message.txt`.
 - 2026-05-08 residual Review B closure sessions resolved and archived the critical post-tool/post-failure hook propagation gap and the `/reload_plugins` global diagnostics visibility gap. Evidence is recorded in `target/codex-runs/p1-review-b-residual-session-01-hook-propagation/task-01.last-message.txt`, `target/codex-runs/p1-review-b-residual-session-02-plugin-reload-diagnostics/task-01.last-message.txt`, and `target/codex-runs/p1-review-b-residual-review-a/task-01.last-message.txt`.
-- Legacy auth compatibility wrappers still log and return unauthenticated for external callers that have not moved to the diagnostic `try_*` APIs.
-- Plugin filtered tests passed in Session 4 and the residual reload-output visibility gap was later closed, but keep an eye on global registry/env isolation in plugin tests if that path is touched again.
+- Auth compatibility wrappers now call the diagnostic `try_*` APIs and log warnings for compatibility; external callers that need actionable errors should call `try_resolve_auth()` / `try_resolve_codex_auth_token()` directly.
+- Plugin filtered tests passed in Session 4 and the residual reload-output visibility gap was later closed; active risk is limited to global registry/env isolation in plugin tests if that path is touched again.
 - Session 5 added filtered/unit-smoke coverage for worktree isolation fallback visibility, but a full multi-process team E2E run is still not recorded.
 - Broad lint allows remain in modules outside the completed phase touch set and should be handled by the general code hygiene track, not this fail-fast closure.
 
@@ -216,7 +216,7 @@ The original scan tables after this status note are retained only as source cont
 
 ### IPC 协议版本策略
 
-`ipc/protocol` 仍缺显式协议版本和兼容策略。当前后端消息中仍有泛型 `serde_json::Value` 载荷，前后端可能在无感知情况下漂移。
+`cc-ipc-protocol` 的 `IpcEnvelope` 已声明 `IPC_ENVELOPE_VERSION` / `IPC_ENVELOPE_MIN_COMPAT_VERSION`，缺省 version 会按当前 wire contract 解码，future version 可被检测为 incompatible。剩余风险是 subsystem DTO 中仍有泛型 `serde_json::Value` 载荷，前后端可能在无感知情况下漂移；后续新增或拆分 subsystem 时必须补 serialization/roundtrip contract tests。
 
 ### UI facade 清理
 

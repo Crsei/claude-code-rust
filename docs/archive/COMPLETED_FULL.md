@@ -1,9 +1,20 @@
 # 已完成模块 — 完整实现
 
-> 最后更新: 2026-05-05
+> 最后更新: 2026-05-17
 > 此文档记录与 TypeScript 原版功能对等或接近完整的已完成模块。
 > 大幅简化的模块见 [`COMPLETED_SIMPLIFIED.md`](COMPLETED_SIMPLIFIED.md)。
 > 剩余工作见 [`REWRITE_PLAN.md`](../REWRITE_PLAN.md)。
+
+---
+
+## 2026-05-17 P1 release closeout updates
+
+| 模块 | 文件 | 验证 | 说明 |
+|------|------|------|------|
+| Provider validation DTO and Foundry fail-early | `crates/cc-api/src/api/providers.rs`, `crates/cc-api/src/api/client/mod.rs`, `crates/cc-commands/src/login.rs` | `cargo test -p cc-api provider_validation`; `cargo test -p cc-api test_from_env_result_errors_for_explicit_foundry`; `cargo test -p cc-commands login` | Provider capability matrix 可序列化为 validation DTO；Azure OpenAI alias 归一到 `azure`，Foundry/Azure Foundry 归一到 unsupported `azure-foundry` 并在显式 env selection 时 fail early；`/login status` 会显示 Foundry unsupported diagnostic，Bedrock/Vertex session shortcuts 会清理 stale Foundry flag。 |
+| Session export schema v2 request snapshots | `crates/cc-session/src/request_snapshot.rs`, `crates/cc-session/src/session_export/*`, `crates/cc-engine/src/lifecycle/deps.rs`, `crates/cc-commands/src/session_export.rs` | `cargo test -p cc-session request_snapshot`; `cargo test -p cc-session session_export`; `cargo test -p cc-commands session_export`; `cargo test -p cc-engine lifecycle` | `cc-engine` 在 provider request 发送前记录最终 sanitized request snapshot；session export schema v2 增加 raw transcript、api view summary、api request snapshots、custom title 和图片块 metadata 占位。 |
+| IPC envelope version policy | `crates/cc-ipc-protocol/src/envelope.rs`, `crates/cc-ipc-protocol/src/lib.rs` | `cargo test -p cc-ipc-protocol envelope` | `IpcEnvelope` 暴露 current/min-compatible version，缺失 version 默认按 v1 解码，future version 可被检测为 incompatible。 |
+| WebFetch HTTP-only release boundary | `docs/IMPLEMENTATION_GAPS.md`, `docs/FINAL_RELEASE_PLAN.md` | 文档门禁；既有 WebFetch HTTP tests 见 2026-05-05 rows | WebFetch 发布支持面固定为 HTTP fetch：redirect/MIME/proxy/NO_PROXY/credential boundary；browser-grade JS rendering 登记为 intentional crop。 |
 
 ---
 

@@ -875,6 +875,7 @@ impl QueryEngine {
                 aborted: aborted_ref.clone(),
                 state: state_ref.clone(),
                 cwd: config.cwd.clone(),
+                session_id: session_id.to_string(),
                 audit_ctx: submit_audit_ctx,
                 langfuse_trace: submit_langfuse_trace.clone(),
                 api_client,

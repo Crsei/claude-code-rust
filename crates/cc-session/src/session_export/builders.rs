@@ -8,7 +8,9 @@ use cc_compact::auto_compact::get_context_window_size;
 use cc_types::message::{ContentBlock, Message, MessageContent, ToolResultContent};
 use cc_utils::tokens::estimate_messages_tokens;
 
-use super::{format_ts_millis, ContextSnapshot, SessionMeta, TranscriptData};
+use super::{
+    format_ts_millis, ApiRequestSnapshot, ApiViewData, ContextSnapshot, SessionMeta, TranscriptData,
+};
 
 // ---------------------------------------------------------------------------
 // Session metadata
@@ -47,6 +49,10 @@ pub(super) fn build_session_meta(session_id: &str, messages: &[Message], cwd: &s
         git_branch,
         git_head_sha,
         model,
+        mode: None,
+        permission_mode: None,
+        custom_title: None,
+        tags: Vec::new(),
         started_at,
         ended_at,
     }
@@ -151,6 +157,30 @@ pub fn build_context_snapshot(messages: &[Message]) -> ContextSnapshot {
     }
 }
 
+pub(super) fn build_api_view_data(requests: &[ApiRequestSnapshot]) -> ApiViewData {
+    let mut providers: Vec<String> = requests
+        .iter()
+        .map(|snapshot| snapshot.provider.clone())
+        .collect();
+    providers.sort();
+    providers.dedup();
+
+    let mut models: Vec<String> = requests
+        .iter()
+        .map(|snapshot| snapshot.model.clone())
+        .collect();
+    models.sort();
+    models.dedup();
+
+    ApiViewData {
+        request_count: requests.len(),
+        providers,
+        models,
+        last_request_id: requests.last().map(|snapshot| snapshot.request_id.clone()),
+        diagnostics: Vec::new(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Message serialization
 // ---------------------------------------------------------------------------
@@ -161,7 +191,7 @@ fn message_to_json(msg: &Message) -> serde_json::Value {
         Message::User(u) => {
             let content_value = match &u.content {
                 MessageContent::Text(t) => serde_json::json!(t),
-                MessageContent::Blocks(blocks) => serde_json::json!(blocks),
+                MessageContent::Blocks(blocks) => content_blocks_to_export_json(blocks),
             };
             serde_json::json!({
                 "type": "user",
@@ -179,7 +209,7 @@ fn message_to_json(msg: &Message) -> serde_json::Value {
             "uuid": a.uuid.to_string(),
             "timestamp": a.timestamp,
             "role": "assistant",
-            "content": a.content,
+            "content": content_blocks_to_export_json(&a.content),
             "usage": a.usage,
             "stop_reason": a.stop_reason,
             "is_api_error_message": a.is_api_error_message,
@@ -213,6 +243,43 @@ fn message_to_json(msg: &Message) -> serde_json::Value {
 pub(super) fn tool_result_content_to_json(content: &ToolResultContent) -> serde_json::Value {
     match content {
         ToolResultContent::Text(t) => serde_json::json!(t),
-        ToolResultContent::Blocks(blocks) => serde_json::json!(blocks),
+        ToolResultContent::Blocks(blocks) => content_blocks_to_export_json(blocks),
+    }
+}
+
+fn content_blocks_to_export_json(blocks: &[ContentBlock]) -> serde_json::Value {
+    serde_json::Value::Array(blocks.iter().map(content_block_to_export_json).collect())
+}
+
+fn content_block_to_export_json(block: &ContentBlock) -> serde_json::Value {
+    match block {
+        ContentBlock::Image { source } => serde_json::json!({
+            "type": "image",
+            "source": {
+                "type": source.source_type,
+                "media_type": source.media_type,
+                "data": format!(
+                    "[image omitted: {}, base64 length {}]",
+                    source.media_type,
+                    source.data.len()
+                ),
+                "metadata": {
+                    "omitted": true,
+                    "encoding": source.source_type,
+                    "base64_length": source.data.len(),
+                }
+            }
+        }),
+        ContentBlock::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } => serde_json::json!({
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": tool_result_content_to_json(content),
+            "is_error": is_error,
+        }),
+        other => serde_json::to_value(other).unwrap_or(serde_json::Value::Null),
     }
 }

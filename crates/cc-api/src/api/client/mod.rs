@@ -607,9 +607,10 @@ impl ApiClient {
     /// Auto-detect provider from environment variables and construct an `ApiClient`.
     ///
     /// Priority:
-    /// 1. `CLAUDE_CODE_USE_BEDROCK=1` 鈫?AWS Bedrock (Claude)
-    /// 2. `CLAUDE_CODE_USE_VERTEX=1`  鈫?GCP Vertex AI (Claude)
-    /// 3. First of the registered API-key providers (Anthropic, Azure, OpenAI, 鈥?
+    /// 1. `CLAUDE_CODE_USE_FOUNDRY=1` -> fail early; Foundry has no adapter yet
+    /// 2. `CLAUDE_CODE_USE_BEDROCK=1` -> AWS Bedrock (Claude)
+    /// 3. `CLAUDE_CODE_USE_VERTEX=1`  -> GCP Vertex AI (Claude)
+    /// 4. First of the registered API-key providers (Anthropic, Azure, OpenAI, ...)
     ///    that has its env var set.
     ///
     /// For Azure OpenAI, the base URL is read from `AZURE_BASE_URL` since it is
@@ -617,8 +618,18 @@ impl ApiClient {
     ///
     /// Returns `None` if no provider is configured.
     pub fn from_env_result() -> Result<Option<Self>> {
-        // 1. CLAUDE_CODE_USE_BEDROCK / _VERTEX 鈥?third-party cloud providers
-        //    checked BEFORE API-key providers, matching claude-code-bun.
+        // Env-flag cloud providers are checked BEFORE API-key providers,
+        // matching claude-code-bun. Foundry is recognized but intentionally
+        // unsupported until a request/auth adapter exists.
+        if is_env_truthy("CLAUDE_CODE_USE_FOUNDRY") {
+            let validation = crate::api::providers::validate_provider_name("azure-foundry");
+            let reason = validation
+                .diagnostics
+                .first()
+                .map(|diagnostic| diagnostic.message.as_str())
+                .unwrap_or(crate::api::providers::FOUNDRY_UNSUPPORTED_REASON);
+            bail!("{reason}");
+        }
         if is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
             return Self::from_bedrock_env_result().map(Some);
         }

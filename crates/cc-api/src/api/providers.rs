@@ -8,8 +8,11 @@
 //!
 //! Reference: code-iris/crates/iris-llm
 
+use serde::Serialize;
+
 /// Wire protocol used by a provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ProviderProtocol {
     /// Native Anthropic Messages API (SSE with content_block events)
     Anthropic,
@@ -20,14 +23,16 @@ pub enum ProviderProtocol {
 }
 
 /// Whether a provider has a native server-side streaming implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StreamingSupport {
     Native,
     None,
 }
 
 /// Current implementation status for a provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ProviderSupportStatus {
     Supported,
     Unsupported { reason: &'static str },
@@ -47,7 +52,7 @@ impl ProviderSupportStatus {
 }
 
 /// Provider capability matrix used by startup validation and diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ProviderCapabilities {
     pub name: &'static str,
     pub auth_sources: &'static [&'static str],
@@ -63,6 +68,58 @@ pub struct ProviderCapabilities {
 impl ProviderCapabilities {
     pub fn is_usable(self) -> bool {
         self.status.is_usable()
+    }
+}
+
+/// User-facing diagnostic emitted while validating a provider selection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProviderDiagnostic {
+    pub code: &'static str,
+    pub message: String,
+}
+
+/// Serializable validation DTO shared by startup, `/model`, login flows, and
+/// API-client construction diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProviderValidationResult {
+    pub provider: String,
+    pub usable: bool,
+    pub capabilities: Option<ProviderCapabilities>,
+    pub diagnostics: Vec<ProviderDiagnostic>,
+}
+
+impl ProviderValidationResult {
+    pub fn ok(provider: &str, capabilities: ProviderCapabilities) -> Self {
+        Self {
+            provider: provider.to_string(),
+            usable: true,
+            capabilities: Some(capabilities),
+            diagnostics: Vec::new(),
+        }
+    }
+
+    pub fn unsupported(provider: &str, capabilities: ProviderCapabilities, reason: &str) -> Self {
+        Self {
+            provider: provider.to_string(),
+            usable: false,
+            capabilities: Some(capabilities),
+            diagnostics: vec![ProviderDiagnostic {
+                code: "provider_unsupported",
+                message: reason.to_string(),
+            }],
+        }
+    }
+
+    pub fn unknown(provider: &str) -> Self {
+        Self {
+            provider: provider.to_string(),
+            usable: false,
+            capabilities: None,
+            diagnostics: vec![ProviderDiagnostic {
+                code: "provider_unknown",
+                message: format!("Unknown API provider `{provider}`"),
+            }],
+        }
     }
 }
 
@@ -103,9 +160,9 @@ const AUTH_VERTEX: &[&str] = &[
     "GOOGLE_APPLICATION_CREDENTIALS",
     "gcloud application-default access token",
 ];
-const AUTH_FOUNDRY: &[&str] = &["CLAUDE_CODE_USE_FOUNDRY"];
+const AUTH_FOUNDRY: &[&str] = &["CLAUDE_CODE_USE_FOUNDRY", "AZURE_FOUNDRY_*"];
 
-pub const FOUNDRY_UNSUPPORTED_REASON: &str = "Foundry provider selection is known from the reference project, but cc-rust has no Foundry request/auth adapter yet";
+pub const FOUNDRY_UNSUPPORTED_REASON: &str = "Microsoft Foundry provider selection is known from the reference project, but cc-rust has no Foundry request/auth adapter yet";
 
 /// All supported providers 鈥?ordered by detection priority.
 ///
@@ -120,7 +177,7 @@ pub static PROVIDERS: &[ProviderInfo] = &[
         label: "Anthropic (Claude)",
         protocol: ProviderProtocol::Anthropic,
     },
-    // Azure OpenAI 鈥?base_url is a placeholder; the real endpoint is read
+    // Azure OpenAI: base_url is a placeholder; the real endpoint is read
     // from AZURE_BASE_URL at runtime (deployment-specific).
     ProviderInfo {
         name: "azure",
@@ -307,6 +364,7 @@ pub fn capabilities_for_provider_info(info: &ProviderInfo) -> ProviderCapabiliti
 pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities> {
     let name = name.to_ascii_lowercase();
     match name.as_str() {
+        "azure-openai" => get_provider("azure").map(capabilities_for_provider_info),
         "bedrock" => Some(ProviderCapabilities {
             name: "bedrock",
             auth_sources: AUTH_BEDROCK,
@@ -329,8 +387,8 @@ pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities
             advisor: true,
             status: ProviderSupportStatus::Supported,
         }),
-        "foundry" => Some(ProviderCapabilities {
-            name: "foundry",
+        "foundry" | "azure-foundry" | "microsoft-foundry" => Some(ProviderCapabilities {
+            name: "azure-foundry",
             auth_sources: AUTH_FOUNDRY,
             protocol: ProviderProtocol::Anthropic,
             streaming: StreamingSupport::None,
@@ -343,6 +401,28 @@ pub fn capabilities_for_provider_name(name: &str) -> Option<ProviderCapabilities
             },
         }),
         other => get_provider(other).map(capabilities_for_provider_info),
+    }
+}
+
+/// Validate a provider identifier against the static capability matrix.
+///
+/// This does not read credentials; callers that need fail-early startup
+/// behavior combine this DTO with provider-specific auth checks.
+pub fn validate_provider_name(name: &str) -> ProviderValidationResult {
+    let Some(capabilities) = capabilities_for_provider_name(name) else {
+        return ProviderValidationResult::unknown(name);
+    };
+    if capabilities.is_usable() {
+        ProviderValidationResult::ok(name, capabilities)
+    } else {
+        ProviderValidationResult::unsupported(
+            name,
+            capabilities,
+            capabilities
+                .status
+                .reason()
+                .unwrap_or("provider is unsupported"),
+        )
     }
 }
 
@@ -482,6 +562,7 @@ mod tests {
     #[test]
     fn test_capabilities_for_foundry_are_unsupported() {
         let caps = capabilities_for_provider_name("foundry").unwrap();
+        assert_eq!(caps.name, "azure-foundry");
         assert_eq!(caps.streaming, StreamingSupport::None);
         assert!(!caps.is_usable());
         assert!(matches!(
@@ -489,6 +570,33 @@ mod tests {
             ProviderSupportStatus::Unsupported { reason }
                 if reason.contains("no Foundry request/auth adapter")
         ));
+    }
+
+    #[test]
+    fn test_capabilities_for_azure_openai_alias_are_supported() {
+        let caps = capabilities_for_provider_name("azure-openai").unwrap();
+        assert_eq!(caps.name, "azure");
+        assert_eq!(caps.protocol, ProviderProtocol::OpenAiCompat);
+        assert!(caps.is_usable());
+    }
+
+    #[test]
+    fn test_capabilities_for_azure_foundry_alias_are_unsupported() {
+        let caps = capabilities_for_provider_name("azure-foundry").unwrap();
+        assert_eq!(caps.name, "azure-foundry");
+        assert_eq!(caps.protocol, ProviderProtocol::Anthropic);
+        assert!(!caps.is_usable());
+    }
+
+    #[test]
+    fn test_provider_validation_result_surfaces_unknown_and_unsupported() {
+        let unsupported = validate_provider_name("microsoft-foundry");
+        assert!(!unsupported.usable);
+        assert_eq!(unsupported.diagnostics[0].code, "provider_unsupported");
+
+        let unknown = validate_provider_name("nope");
+        assert!(!unknown.usable);
+        assert_eq!(unknown.diagnostics[0].code, "provider_unknown");
     }
 
     #[test]

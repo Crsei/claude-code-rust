@@ -7,7 +7,10 @@ pub mod protocol;
 pub mod subsystem_events;
 pub mod subsystem_types;
 
-pub use envelope::{IpcEnvelope, IPC_ENVELOPE_VERSION};
+pub use envelope::{
+    is_supported_envelope_version, IpcEnvelope, IPC_ENVELOPE_MIN_COMPAT_VERSION,
+    IPC_ENVELOPE_VERSION,
+};
 pub use lsp::{CompletionItemInfo, DocumentChange, SourceRange};
 pub use normalized::{
     legacy_backend_to_payload, legacy_backend_type, ControlCommand, ConversationEvent,

@@ -2,6 +2,17 @@
 
 `--headless` 模式下 Rust 后端通过 stdin/stdout 以 JSONL（每行一个 JSON 对象）与外部 UI 进程通信。
 
+## 版本与兼容策略
+
+共享 envelope 类型定义在 `crates/cc-ipc-protocol/src/envelope.rs`：
+
+- `IPC_ENVELOPE_VERSION = 1`
+- `IPC_ENVELOPE_MIN_COMPAT_VERSION = 1`
+- 缺失 `version` 的 envelope 按当前 v1 wire contract 解码，以兼容旧 JSONL 测试与过渡期客户端。
+- 高于当前版本的 envelope 必须通过 `is_supported_envelope_version()` 判定为 incompatible，调用方不得静默按 v1 解释。
+
+当前 legacy headless JSONL 仍可发送裸 `FrontendMessage` / `BackendMessage`；新增 subsystem 或跨进程 DTO 应优先使用带 `version`、`id`、`seq`、`timestamp`、`payload` 的 `IpcEnvelope<T>`，并补 serialization/roundtrip contract tests。
+
 ## 启动流程
 
 ```
@@ -19,7 +30,7 @@ run.ps1 / run.sh
 
 ### Frontend → Backend (`FrontendMessage`)
 
-定义: `src/ipc/protocol.rs`, `ui/src/ipc/protocol.ts`
+定义: `crates/cc-ipc-protocol/src/protocol.rs`, `crates/cc-ipc/src/headless.rs`
 
 | type | 字段 | 说明 |
 |------|------|------|
@@ -32,7 +43,7 @@ run.ps1 / run.sh
 
 ### Backend → Frontend (`BackendMessage`)
 
-定义: `src/ipc/protocol.rs`, `ui/src/ipc/protocol.ts`
+定义: `crates/cc-ipc-protocol/src/protocol.rs`, `crates/cc-ipc/src/headless.rs`
 
 | type | 字段 | 说明 |
 |------|------|------|
@@ -83,11 +94,11 @@ Model 请求工具 → deps.execute_tool()
 ```
 
 实现位置：
-- 回调类型: `src/types/tool.rs` — `PermissionCallback`
-- 回调注册: `src/engine/lifecycle/mod.rs` — `set_permission_callback()`
-- 权限检查: `src/engine/lifecycle/deps.rs` — `execute_tool()` Stage: Permission check
-- IPC 桥接: `src/ipc/headless.rs` — `PendingPermissions` + oneshot channel
-- 前端组件: `ui/src/components/PermissionDialog.tsx`
+- 回调类型: `crates/cc-engine/src/types/tool.rs` / `crates/cc-types` tool callback aliases
+- 回调注册: `crates/cc-engine/src/lifecycle/mod.rs` — `set_permission_callback()`
+- 权限检查: `crates/cc-engine/src/lifecycle/deps.rs` — `execute_tool()` Stage: Permission check
+- IPC 桥接: `crates/cc-ipc/src/headless.rs` — pending permission response + oneshot channel
+- Rust TUI 前端: `crates/claude-code-rs/src/ui/**`
 
 ## 典型消息序列
 
@@ -142,11 +153,8 @@ Model 请求工具 → deps.execute_tool()
 
 | 文件 | 说明 |
 |------|------|
-| `src/ipc/protocol.rs` | Rust 端协议类型 (`FrontendMessage`, `BackendMessage`) |
-| `src/ipc/headless.rs` | Headless 事件循环 + SdkMessage 映射 + 权限桥接 |
-| `ui/src/ipc/protocol.ts` | TypeScript 端协议类型 |
-| `ui/src/ipc/client.ts` | `RustBackend` 类：spawn binary + JSONL 解析 |
-| `ui/src/components/App.tsx` | 消息分发到 store |
-| `ui/src/components/PermissionDialog.tsx` | 权限对话框 UI |
-| `ui/src/store/app-store.tsx` | 状态管理 (permissionRequest) |
-| `tests/e2e_terminal/` | 42 个 E2E 测试 (26 offline + 16 live) |
+| `crates/cc-ipc-protocol/src/protocol.rs` | 共享协议类型 (`FrontendMessage`, `BackendMessage`) |
+| `crates/cc-ipc-protocol/src/envelope.rs` | IPC envelope version / min-compat contract |
+| `crates/cc-ipc/src/headless.rs` | Headless 事件循环 + SdkMessage 映射 + 权限桥接 |
+| `crates/claude-code-rs/src/ui/**` | Rust TUI 前端 |
+| `crates/claude-code-rs/tests/e2e_terminal/` | E2E terminal 测试 |

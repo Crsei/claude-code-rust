@@ -124,6 +124,7 @@ fn format_export_summary(export: &session_export::SessionExport) -> String {
             export.context.unique_tools_used.join(", ")
         ));
     }
+    lines.push(format!("API requests: {}", export.api_view.request_count));
     lines.push(format!(
         "Compactions: {}",
         export.compression.total_compactions
@@ -155,7 +156,8 @@ mod tests {
     use super::*;
     use cc_bootstrap::SessionId;
     use cc_session::session_export::{
-        CompressionData, ContextSnapshot, SessionExport, SessionMeta, TranscriptData,
+        ApiViewData, CompressionData, ContextSnapshot, SessionExport, SessionMeta, TranscriptData,
+        SESSION_EXPORT_SCHEMA_VERSION,
     };
     use std::path::PathBuf;
 
@@ -182,7 +184,7 @@ mod tests {
         cost: f64,
     ) -> SessionExport {
         SessionExport {
-            schema_version: 1,
+            schema_version: SESSION_EXPORT_SCHEMA_VERSION,
             exported_at: "2026-01-01T00:00:00Z".into(),
             session: SessionMeta {
                 session_id: "test".into(),
@@ -190,8 +192,19 @@ mod tests {
                 git_branch: None,
                 git_head_sha: None,
                 model: None,
+                mode: None,
+                permission_mode: None,
+                custom_title: None,
+                tags: Vec::new(),
                 started_at: None,
                 ended_at: None,
+            },
+            raw_transcript: TranscriptData {
+                messages: vec![],
+                message_count: msg_count,
+                user_message_count: user,
+                assistant_message_count: asst,
+                system_message_count: sys,
             },
             transcript: TranscriptData {
                 messages: vec![],
@@ -200,6 +213,8 @@ mod tests {
                 assistant_message_count: asst,
                 system_message_count: sys,
             },
+            api_view: ApiViewData::default(),
+            api_requests: Vec::new(),
             tool_calls: vec![],
             compression: CompressionData {
                 compact_boundaries: vec![],

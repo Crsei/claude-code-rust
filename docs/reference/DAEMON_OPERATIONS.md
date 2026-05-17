@@ -1,7 +1,7 @@
 # Daemon 操作与发布检查
 
-> 状态日期：2026-05-05
-> 范围：`crates/claude-code-rs/src/daemon/**`、daemon CLI 管理命令、KAIROS HTTP/SSE 控制面。
+> 状态日期：2026-05-17
+> 范围：`crates/cc-daemon/**`、daemon CLI 管理命令、KAIROS HTTP/SSE 控制面。
 
 ## 当前可用能力
 
@@ -55,9 +55,9 @@ daemon 默认监听 `127.0.0.1:19836`，可通过 `--port` 调整。
 - `GET /api/status`：返回 QueryEngine、supervisor、workers、command root、event log、daemon sleep state。
 - `GET /api/history`：返回当前 SSE buffer 与 daemon worker event log。
 - `GET /events`：SSE stream，连接时 replay assistant worker event log。
-- `POST /api/submit`：投递 submit command，并沿用现有 QueryEngine/SSE 路径执行。
-- `POST /api/abort`：投递 abort command 并调用当前 engine abort。
-- `POST /api/permission`：投递 permission response command。
+- `POST /api/submit`：只投递 `Submit` command；assistant worker claim 后拥有 QueryEngine 执行和 worker event log。
+- `POST /api/abort`：只投递 `Abort` command；assistant worker 执行 abort 并写入 `abort_ack` event。
+- `POST /api/permission`：投递 `PermissionResponse` command 并持久化 ack；尚未完整恢复到 live permission waiter。
 - `POST /api/command`：执行 slash command。
 - `POST /api/resize`：当前明确为 no-op。
 
@@ -78,25 +78,12 @@ curl -H "x-cc-rust-daemon-token: $TOKEN" \
 Phase 1-6 已经用目标测试和本地 smoke 验证过核心路径。发布前至少运行：
 
 ```bash
-rustfmt --edition 2021 --check \
-  crates/claude-code-rs/src/daemon/process_state.rs \
-  crates/claude-code-rs/src/daemon/protocol.rs \
-  crates/claude-code-rs/src/daemon/routes.rs \
-  crates/claude-code-rs/src/daemon/sse.rs \
-  crates/claude-code-rs/src/daemon/supervisor.rs \
-  crates/claude-code-rs/src/daemon/tick.rs \
-  crates/claude-code-rs/src/commands/daemon_cmd.rs \
-  crates/claude-code-rs/src/commands/sleep_cmd.rs \
-  crates/claude-code-rs/src/tools/exec/sleep.rs
-
 cargo test -p cc-config partition_functions_all_root_under_data_root --lib
-cargo test -p claude-code-rs daemon::process_state
-cargo test -p claude-code-rs daemon::protocol
-cargo test -p claude-code-rs daemon::routes
-cargo test -p claude-code-rs daemon::sse
-cargo test -p claude-code-rs daemon::supervisor
+cargo test -p cc-daemon protocol
+cargo test -p cc-daemon routes
+cargo test -p cc-daemon supervisor
+cargo test -p cc-daemon gateway_bridge
 cargo test -p claude-code-rs commands::daemon_cmd
-cargo test -p claude-code-rs tools::exec::sleep
 cargo test -p claude-code-rs --test e2e_cli daemon_management_reports_stopped_state_without_running_daemon
 ```
 
@@ -108,19 +95,20 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-2026-05-05 当前检查结果：
+2026-05-17 当前专项结论：
 
-- `cargo fmt --all --check` 通过。
-- `cargo clippy --workspace --all-targets -- -D warnings` 被 `crates/cc-sandbox/src/runner.rs:241` 的既有 `clippy::needless_lifetimes` 阻塞。
-- `cargo test --workspace` 在 daemon memory log 测试修正后仍有 6 个非 daemon 失败：config command、IDE command、teams mailbox、file edit 和 worktree tests。
+- `/api/submit`、`/api/abort` 和 `/api/permission` route 不再直接执行 assistant QueryEngine submit/abort/permission response；route 只做 token 校验、command enqueue 和事件提示。
+- `AssistantWorkerRuntime` claim command 后执行 submit/abort，并把 `submit_started`、SDK-derived SSE event、`submit_completed`、`abort_ack` 写入 worker event log。
+- 本轮验证覆盖共享 engine lifecycle：`cargo test -p cc-engine lifecycle -- --nocapture`。
 
-不要把这些阻塞误判为 daemon 专项回归；daemon 目标测试集应以本节上方命令为准。
+不要把 workspace 级非 daemon 失败误判为 daemon 专项回归；daemon 目标测试集应以本节上方命令为准。
 
 ## 仍未完成
 
 以下能力尚未达到完整上游 parity：
 
-- assistant worker 尚未完全拥有 `/api/submit` 的 QueryEngine 执行所有权；当前 HTTP supervisor 路径仍负责真实模型调用。
+- permission response command 当前只有 durable ack，尚未接回 live permission waiter/replay 队列。
+- resize 仍是明确 no-op；history 只返回 SSE buffer 与 worker event log，尚未形成 worker-owned history/resize DTO。
 - bridge worker 尚未接入 remote-control server 注册、远程 submit/abort/permission 映射和结果回传。
 - scheduler/proactive worker 尚未独立化，cron-style task 与 daily log 结构化双轨仍未接入。
 - 30 分钟以上 daemon soak、worker 崩溃自动 e2e、HTTP submit + SSE result live e2e 仍需在有模型凭据和干净工作区时执行。

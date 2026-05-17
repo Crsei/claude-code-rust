@@ -27,10 +27,13 @@ use serde::{Deserialize, Serialize};
 use crate::storage::{self, SessionFile};
 use cc_types::message::Message;
 
+pub use crate::request_snapshot::ApiRequestSnapshot;
 pub use builders::build_context_snapshot;
 pub use compression::{
     detect_content_replacement, extract_compression_events, reconstruct_tool_timeline,
 };
+
+pub const SESSION_EXPORT_SCHEMA_VERSION: u32 = 2;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -42,7 +45,13 @@ pub struct SessionExport {
     pub schema_version: u32,
     pub exported_at: String,
     pub session: SessionMeta,
+    #[serde(default)]
+    pub raw_transcript: TranscriptData,
     pub transcript: TranscriptData,
+    #[serde(default)]
+    pub api_view: ApiViewData,
+    #[serde(default)]
+    pub api_requests: Vec<ApiRequestSnapshot>,
     pub tool_calls: Vec<ToolCallRecord>,
     pub compression: CompressionData,
     pub context: ContextSnapshot,
@@ -56,6 +65,14 @@ pub struct SessionMeta {
     pub git_branch: Option<String>,
     pub git_head_sha: Option<String>,
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
 }
@@ -68,6 +85,29 @@ pub struct TranscriptData {
     pub user_message_count: usize,
     pub assistant_message_count: usize,
     pub system_message_count: usize,
+}
+
+impl Default for TranscriptData {
+    fn default() -> Self {
+        Self {
+            messages: Vec::new(),
+            message_count: 0,
+            user_message_count: 0,
+            assistant_message_count: 0,
+            system_message_count: 0,
+        }
+    }
+}
+
+/// API-view summary derived from the recorded request snapshots.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ApiViewData {
+    pub request_count: usize,
+    pub providers: Vec<String>,
+    pub models: Vec<String>,
+    pub last_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<String>,
 }
 
 /// A single tool call with its matched result.
@@ -178,7 +218,8 @@ pub fn export_saved_session(
 ) -> Result<(PathBuf, SessionExport)> {
     let session_file = load_session_file_raw(session_id)?;
     let messages = storage::load_session(session_id)?;
-    let export = build_session_export(session_id, &messages, &session_file.cwd);
+    let mut export = build_session_export(session_id, &messages, &session_file.cwd);
+    export.session.custom_title = session_file.custom_title.clone();
     let path = write_session_export(&export, session_id, output_path)?;
     Ok((path, export))
 }
@@ -206,15 +247,27 @@ pub fn list_session_exports() -> Result<Vec<PathBuf>> {
 pub fn build_session_export(session_id: &str, messages: &[Message], cwd: &str) -> SessionExport {
     let session_meta = builders::build_session_meta(session_id, messages, cwd);
     let transcript = builders::build_transcript_data(messages);
+    let mut api_diagnostics = Vec::new();
+    let api_requests = crate::request_snapshot::load_api_request_snapshots(session_id)
+        .unwrap_or_else(|error| {
+            tracing::warn!(session_id, %error, "failed to load API request snapshots for export");
+            api_diagnostics.push(format!("failed to load API request snapshots: {error}"));
+            Vec::new()
+        });
+    let mut api_view = builders::build_api_view_data(&api_requests);
+    api_view.diagnostics = api_diagnostics;
     let tool_calls = compression::reconstruct_tool_timeline(messages);
     let compression = compression::extract_compression_events(messages);
     let context = builders::build_context_snapshot(messages);
 
     SessionExport {
-        schema_version: 1,
+        schema_version: SESSION_EXPORT_SCHEMA_VERSION,
         exported_at: Utc::now().to_rfc3339(),
         session: session_meta,
+        raw_transcript: transcript.clone(),
         transcript,
+        api_view,
+        api_requests,
         tool_calls,
         compression,
         context,

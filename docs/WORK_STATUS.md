@@ -1,6 +1,6 @@
 # cc-rust 工作状态总览
 
-> 更新日期: 2026-05-16 | 分支历史名: `rust-lite` | 当前阶段: 全量构建 / Full Build
+> 更新日期: 2026-05-17 | 分支历史名: `rust-lite` | 当前阶段: 全量构建 / Full Build
 
 本文件只保留当前阶段仍需要判断和执行的状态。已经确认实现、已关闭或只具历史价值的阶段记录统一看：
 
@@ -29,13 +29,14 @@ cc-rust 已不再按历史 "Lite" 边界维护。触及上游能力时，默认�
 
 | 范围 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| API providers | 基线完成，质量门未完全收束 | 收束 Azure 命名/能力矩阵与真实 Bedrock/Vertex/Azure provider e2e 覆盖。 |
+| API providers | 基线完成，质量门未完全收束 | provider validation DTO 与 Azure/Foundry 命名诊断已补；下一步补真实 Bedrock/Vertex/Azure provider e2e 与 mock fixture 覆盖。 |
 | Team Memory 客户端同步 | 代码路径已接通，验证与文档收口未完 | 补同步、断线恢复、冲突处理 e2e；通过后归档旧 Team Memory plan/spec。 |
 | TaskTools | 多数基础已完成，remote/multi-type poller parity 仍开放 | 对齐远程/多类型后台任务 poller/reconnect runtime。 |
 | PlanMode | 保守 classifier、持久化、审批和 plan file 白名单已完成 | 补 full auto-mode LLM classifier parity，并覆盖 plan 创建/恢复/审批/e2e。 |
-| WebFetch | redirect/MIME/proxy/credential 边界已完成 | 补 browser-grade JS 渲染或明确裁剪。 |
-| Daemon | Phase 1-7 主干记录已落地，仍有 worker/route ownership 余量 | 继续把真实 submit/abort 与 scheduler ownership 从兼容路径迁入 supervisor/worker 架构。 |
-| Crate migration | Engine + IPC owner migration landed; verification in progress | 保持 [crate-migration-phase-plan-2026-05-14.md](plan/crate-migration-phase-plan-2026-05-14.md) 为活跃计划；下一步收束剩余 root-style imports、allow attributes、Codex compatibility path hits，并补齐 thin-binary closeout 文档。 |
+| WebFetch | HTTP-only release scope | redirect/MIME/proxy/credential 边界已完成；browser-grade JS rendering 已写入 [IMPLEMENTATION_GAPS.md](IMPLEMENTATION_GAPS.md) §6 intentional crop。 |
+| Daemon | submit/abort worker ownership 已落地，仍有 permission/resize/history residual | 继续把 permission waiter replay、resize/history DTO 与 scheduler ownership 收束到 supervisor/worker 架构。 |
+| Session export | schema v2 与 API request snapshots 已接入，projection residual 开放 | 补 context collapse 原生事件、mode/tag 来源和完整 apiView 投影。 |
+| Crate migration | Engine + IPC owner migration landed; verification in progress | IPC envelope version/min-compat 已补；下一步收束剩余 root-style imports、allow attributes、Codex compatibility path hits，并补齐 thin-binary closeout 文档。 |
 | UI/runtime issues | P0/P1 基础完成，存在 residuals 和未跟踪 parity 缺口 | 运行时 residual 见 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)；`⚠️ 部分` / `❌ 缺失` 的未跟踪功能按 [ratatui-ui-parity-untracked-gap-plan-2026-05-08.md](plan/ratatui-ui-parity-untracked-gap-plan-2026-05-08.md) 分阶段处理。 |
 | 文档状态一致性 | 本轮已收敛顶层入口 | 后续每完成一个模块，都同步迁移完成记录到 archive，避免活跃 TODO 文档堆积完成历史。 |
 

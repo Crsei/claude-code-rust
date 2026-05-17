@@ -4,9 +4,15 @@ use serde::{Deserialize, Serialize};
 
 /// Current envelope schema version.
 pub const IPC_ENVELOPE_VERSION: u16 = 1;
+/// Oldest envelope schema version accepted by this build.
+pub const IPC_ENVELOPE_MIN_COMPAT_VERSION: u16 = 1;
 
 fn default_version() -> u16 {
     IPC_ENVELOPE_VERSION
+}
+
+pub fn is_supported_envelope_version(version: u16) -> bool {
+    (IPC_ENVELOPE_MIN_COMPAT_VERSION..=IPC_ENVELOPE_VERSION).contains(&version)
 }
 
 /// Transport-neutral wrapper for IPC events and commands.
@@ -67,6 +73,10 @@ impl<T> IpcEnvelope<T> {
         self.correlation_id = Some(correlation_id.into());
         self
     }
+
+    pub fn is_supported_version(&self) -> bool {
+        is_supported_envelope_version(self.version)
+    }
 }
 
 #[cfg(test)]
@@ -104,5 +114,39 @@ mod tests {
             decoded.payload,
             ConversationEvent::StreamStart { message_id } if message_id == "message-1"
         ));
+    }
+
+    #[test]
+    fn missing_version_defaults_to_current_wire_contract() {
+        let decoded: IpcEnvelope<ConversationEvent> = serde_json::from_value(serde_json::json!({
+            "id": "event-2",
+            "seq": 8,
+            "timestamp": 1_700_000_001,
+            "payload": {
+                "type": "stream_start",
+                "message_id": "message-2"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(decoded.version, IPC_ENVELOPE_VERSION);
+        assert!(decoded.is_supported_version());
+    }
+
+    #[test]
+    fn future_version_is_detected_as_incompatible() {
+        let decoded: IpcEnvelope<ConversationEvent> = serde_json::from_value(serde_json::json!({
+            "version": IPC_ENVELOPE_VERSION + 1,
+            "id": "event-3",
+            "seq": 9,
+            "timestamp": 1_700_000_002,
+            "payload": {
+                "type": "stream_start",
+                "message_id": "message-3"
+            }
+        }))
+        .unwrap();
+
+        assert!(!decoded.is_supported_version());
     }
 }

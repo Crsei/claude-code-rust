@@ -37,6 +37,7 @@ pub(crate) struct QueryEngineDeps {
     pub(crate) aborted: Arc<AtomicBool>,
     pub(crate) state: Arc<RwLock<QueryEngineState>>,
     pub(crate) cwd: String,
+    pub(crate) session_id: String,
     /// Audit context for this submit — carries correlation IDs.
     pub(crate) audit_ctx: crate::observability::AuditContext,
     pub(crate) langfuse_trace: Option<crate::services::langfuse::LangfuseTrace>,
@@ -265,6 +266,25 @@ fn build_auto_compact_exact_count_request(
     build_messages_request(&count_params)
 }
 
+fn record_request_snapshot(
+    session_id: &str,
+    provider: &str,
+    request: &cc_api::api::client::MessagesRequest,
+) {
+    let value = match serde_json::to_value(request) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to serialize API request snapshot");
+            return;
+        }
+    };
+    if let Err(error) =
+        cc_session::request_snapshot::record_api_request_snapshot(session_id, provider, &value)
+    {
+        tracing::warn!(session_id, %provider, %error, "failed to record API request snapshot");
+    }
+}
+
 #[async_trait::async_trait]
 impl QueryDeps for QueryEngineDeps {
     fn tool_progress_callback(&self) -> Option<Arc<dyn Fn(ToolProgress) + Send + Sync>> {
@@ -295,6 +315,7 @@ impl QueryDeps for QueryEngineDeps {
         }
 
         let request = build_messages_request(&params);
+        record_request_snapshot(&self.session_id, client.langfuse_provider_name(), &request);
         let stream = client.messages_stream(request).await?;
         let mut stream = std::pin::pin!(stream);
 
@@ -346,6 +367,7 @@ impl QueryDeps for QueryEngineDeps {
         }
 
         let request = build_messages_request(&params);
+        record_request_snapshot(&self.session_id, client.langfuse_provider_name(), &request);
         if cc_api::api::client::is_env_truthy("CC_RUST_EXACT_TOKEN_DIAGNOSTICS")
             && client.supports_exact_token_count()
         {
@@ -1606,6 +1628,7 @@ mod tests {
             aborted: engine.aborted.clone(),
             state: engine.state.clone(),
             cwd: ".".to_string(),
+            session_id: "test-session".to_string(),
             audit_ctx: crate::observability::AuditContext::noop("test"),
             langfuse_trace: None,
             api_client: None,
