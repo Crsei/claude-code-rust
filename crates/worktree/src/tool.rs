@@ -45,6 +45,8 @@ pub struct WorktreeSession {
     pub branch_name: String,
     /// The original working directory before entering the worktree.
     pub original_cwd: PathBuf,
+    /// The repository root resolved when the worktree was created.
+    pub git_root: PathBuf,
     /// The HEAD commit SHA when the worktree was created.
     pub original_head_commit: Option<String>,
 }
@@ -306,6 +308,7 @@ impl Tool for EnterWorktreeTool {
             worktree_path: worktree_path.clone(),
             branch_name: branch_name.clone(),
             original_cwd: cwd,
+            git_root,
             original_head_commit: original_head,
         }));
 
@@ -477,7 +480,7 @@ impl Tool for ExitWorktreeTool {
 
         let worktree_path = session.worktree_path.clone();
         let branch_name = session.branch_name.clone();
-        let original_cwd = session.original_cwd.clone();
+        let git_root = session.git_root.clone();
 
         match params.action.as_str() {
             "keep" => {
@@ -538,7 +541,7 @@ impl Tool for ExitWorktreeTool {
                     &ctx.hook_runner,
                     &app_state.hooks,
                     "ExitWorktree",
-                    &original_cwd,
+                    &git_root,
                     &worktree_path,
                     &branch_name,
                     ctx.agent_id.as_deref(),
@@ -562,7 +565,7 @@ impl Tool for ExitWorktreeTool {
                         let remove_result = tokio::process::Command::new("git")
                             .args([
                                 "-C",
-                                &original_cwd.to_string_lossy(),
+                                &git_root.to_string_lossy(),
                                 "worktree",
                                 "remove",
                                 "--force",
@@ -594,7 +597,7 @@ impl Tool for ExitWorktreeTool {
                             let branch_result = tokio::process::Command::new("git")
                                 .args([
                                     "-C",
-                                    &original_cwd.to_string_lossy(),
+                                    &git_root.to_string_lossy(),
                                     "branch",
                                     "-D",
                                     &branch_name,
@@ -994,6 +997,7 @@ mod tests {
             worktree_path: PathBuf::from("/tmp/test"),
             branch_name: "test-branch".to_string(),
             original_cwd: PathBuf::from("/tmp"),
+            git_root: PathBuf::from("/tmp"),
             original_head_commit: None,
         }));
 
@@ -1018,6 +1022,7 @@ mod tests {
             worktree_path: tmp.path().join("missing-worktree"),
             branch_name: "test-branch".to_string(),
             original_cwd: tmp.path().to_path_buf(),
+            git_root: tmp.path().to_path_buf(),
             original_head_commit: Some("abc123".to_string()),
         }));
 
@@ -1049,6 +1054,7 @@ mod tests {
             worktree_path: tmp.path().join("outside-worktree"),
             branch_name: "test-branch".to_string(),
             original_cwd: tmp.path().to_path_buf(),
+            git_root: tmp.path().to_path_buf(),
             original_head_commit: None,
         }));
 
@@ -1095,11 +1101,13 @@ mod tests {
             worktree_path: PathBuf::from("/tmp/wt"),
             branch_name: "wt-branch".to_string(),
             original_cwd: PathBuf::from("/project"),
+            git_root: PathBuf::from("/project"),
             original_head_commit: Some("abc123".to_string()),
         };
         set_worktree_session(Some(session));
         let current = get_current_worktree_session().unwrap();
         assert_eq!(current.branch_name, "wt-branch");
+        assert_eq!(current.git_root, PathBuf::from("/project"));
         assert_eq!(current.original_head_commit.as_deref(), Some("abc123"));
 
         set_worktree_session(None);
@@ -1113,6 +1121,7 @@ mod tests {
             worktree_path: PathBuf::from("/tmp/existing"),
             branch_name: "existing".to_string(),
             original_cwd: PathBuf::from("/tmp"),
+            git_root: PathBuf::from("/tmp"),
             original_head_commit: None,
         }));
 
@@ -1221,6 +1230,46 @@ mod tests {
         assert!(
             !worktree_path.exists(),
             "git fallback removal should delete the worktree"
+        );
+        assert!(get_current_worktree_session().is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_enter_from_subdir_records_git_root_for_cleanup() {
+        let _session_guard = WorktreeSessionGuard;
+        set_worktree_session(None);
+
+        let home = TempDir::new().unwrap();
+        let repo = TempDir::new().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        init_git_repo(repo.path());
+        let subdir = repo.path().join("nested").join("child");
+        fs::create_dir_all(&subdir).unwrap();
+        let _cwd = CurrentDirGuard::set(&subdir);
+
+        let ctx = make_ctx();
+        let parent = parent_message();
+
+        let enter = EnterWorktreeTool
+            .call(json!({"name": "subdir-root"}), &ctx, &parent, None)
+            .await
+            .unwrap();
+
+        let worktree_path = PathBuf::from(enter.data["worktree_path"].as_str().unwrap());
+        let session = get_current_worktree_session().expect("session exists");
+        assert_eq!(session.original_cwd, subdir);
+        assert_eq!(session.git_root, repo.path());
+
+        let exit = ExitWorktreeTool
+            .call(json!({"action": "remove"}), &ctx, &parent, None)
+            .await
+            .unwrap();
+
+        assert_eq!(exit.data["removed"], true);
+        assert!(
+            !worktree_path.exists(),
+            "cleanup should use the recorded git root"
         );
         assert!(get_current_worktree_session().is_none());
     }

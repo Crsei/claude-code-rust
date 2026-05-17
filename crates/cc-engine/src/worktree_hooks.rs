@@ -7,6 +7,7 @@
 //! return `updated_input.handled = true`, `updated_input.removed = true`, or a
 //! `decision` of `handled` / `removed` / `skip_git`.
 
+use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -48,24 +49,44 @@ pub fn ensure_worktree_parent(worktree_path: &Path) -> Result<()> {
 }
 
 pub fn validate_allowed_worktree_path(worktree_path: &Path) -> Result<()> {
-    if !is_allowed_worktree_path(worktree_path) {
-        bail!(
-            "worktree path {} is outside {}",
-            worktree_path.display(),
-            absolute_path(&crate::config::paths::worktrees_dir()).display()
-        );
-    }
-    Ok(())
+    validate_allowed_worktree_path_inner(worktree_path)
 }
 
 pub fn is_allowed_worktree_path(worktree_path: &Path) -> bool {
+    validate_allowed_worktree_path(worktree_path).is_ok()
+}
+
+fn validate_allowed_worktree_path_inner(worktree_path: &Path) -> Result<()> {
     if has_parent_component(worktree_path) {
-        return false;
+        bail!(
+            "worktree path {} contains parent directory components",
+            worktree_path.display()
+        );
     }
 
     let path = absolute_path(worktree_path);
     let root = absolute_path(&crate::config::paths::worktrees_dir());
-    path.starts_with(root)
+    if !path.starts_with(&root) {
+        bail!(
+            "worktree path {} is outside {}",
+            worktree_path.display(),
+            root.display()
+        );
+    }
+
+    let resolved_root = resolve_existing_boundary(&root)
+        .with_context(|| format!("failed to resolve worktree root {}", root.display()))?;
+    let resolved_path = resolve_existing_boundary(&path)
+        .with_context(|| format!("failed to resolve worktree path {}", path.display()))?;
+    if !resolved_path.starts_with(&resolved_root) {
+        bail!(
+            "worktree path {} resolves outside {}",
+            worktree_path.display(),
+            root.display()
+        );
+    }
+
+    Ok(())
 }
 
 pub fn parse_worktree_create_hook_output(
@@ -222,6 +243,31 @@ fn absolute_path(path: &Path) -> PathBuf {
     }
 }
 
+fn resolve_existing_boundary(path: &Path) -> Result<PathBuf> {
+    let mut cursor = path;
+    let mut suffix = Vec::<OsString>::new();
+
+    loop {
+        if cursor.exists() {
+            let mut resolved = std::fs::canonicalize(cursor)
+                .with_context(|| format!("failed to canonicalize {}", cursor.display()))?;
+            for component in suffix.iter().rev() {
+                resolved.push(component);
+            }
+            return Ok(resolved);
+        }
+
+        let Some(parent) = cursor.parent() else {
+            bail!("path has no existing ancestor: {}", path.display());
+        };
+        let Some(file_name) = cursor.file_name() else {
+            bail!("path has no existing ancestor: {}", path.display());
+        };
+        suffix.push(file_name.to_os_string());
+        cursor = parent;
+    }
+}
+
 fn has_parent_component(path: &Path) -> bool {
     path.components()
         .any(|component| matches!(component, Component::ParentDir))
@@ -232,8 +278,33 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
     #[test]
+    #[serial_test::serial]
     fn parse_create_output_accepts_allowed_path() {
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
         let path = crate::config::paths::worktrees_dir().join("agent-worktree-test");
         let output = HookOutput {
             updated_input: Some(json!({
@@ -251,7 +322,10 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn parse_create_output_rejects_out_of_bounds_path() {
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
         let output = HookOutput {
             updated_input: Some(json!({
                 "worktree_path": std::env::temp_dir().join("outside-worktree").display().to_string(),
@@ -260,6 +334,57 @@ mod tests {
         };
 
         assert!(parse_worktree_create_hook_output(&output, "default").is_err());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn allowed_path_accepts_nonexistent_child_under_worktrees_root() {
+        let home = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let path = crate::config::paths::worktrees_dir()
+            .join("new-parent")
+            .join("new-worktree");
+
+        validate_allowed_worktree_path(&path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[serial_test::serial]
+    fn allowed_path_rejects_symlink_escape() {
+        let home = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let root = crate::config::paths::worktrees_dir();
+        std::fs::create_dir_all(&root).unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.join("escape")).unwrap();
+
+        let escaped = root.join("escape").join("victim");
+        assert!(validate_allowed_worktree_path(&escaped).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[serial_test::serial]
+    fn allowed_path_rejects_junction_escape() {
+        let home = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let root = crate::config::paths::worktrees_dir();
+        std::fs::create_dir_all(&root).unwrap();
+        let junction = root.join("escape");
+        let status = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&junction)
+            .arg(outside.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let escaped = junction.join("victim");
+        assert!(validate_allowed_worktree_path(&escaped).is_err());
     }
 
     #[test]

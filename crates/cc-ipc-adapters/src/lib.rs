@@ -65,7 +65,7 @@ fn stream_delta_type_matches(delta: &serde_json::Value, expected: &str) -> bool 
     delta
         .get("type")
         .and_then(|v| v.as_str())
-        .map_or(true, |actual| actual == expected)
+        .is_none_or(|actual| actual == expected)
 }
 
 /// Extract human-readable output text and optional structured content info

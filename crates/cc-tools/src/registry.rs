@@ -107,7 +107,7 @@ pub fn allowed_tool_names(policy: ToolPolicy) -> Option<&'static [&'static str]>
 
 pub fn tool_allowed(policy: ToolPolicy, name: &str) -> bool {
     allowed_tool_names(policy)
-        .map(|allowed| allowed.iter().any(|allowed_name| *allowed_name == name))
+        .map(|allowed| allowed.contains(&name))
         .unwrap_or(true)
 }
 

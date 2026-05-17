@@ -101,6 +101,12 @@ impl BashTool {
     }
 }
 
+impl Default for BashTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl Tool for BashTool {
     fn name(&self) -> &str {

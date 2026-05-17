@@ -12,17 +12,17 @@ use crate::{IpcFrame, IpcReader, IpcTransport, IpcWriter};
 #[derive(Debug)]
 pub enum ParsedFrontendLine {
     Message(FrontendMessage),
-    Diagnostic(BackendMessage),
+    Diagnostic(Box<BackendMessage>),
 }
 
 /// Parse one newline-delimited frontend message.
 pub fn parse_frontend_line(line: &str) -> ParsedFrontendLine {
     match serde_json::from_str::<FrontendMessage>(line) {
         Ok(msg) => ParsedFrontendLine::Message(msg),
-        Err(err) => ParsedFrontendLine::Diagnostic(BackendMessage::Error {
+        Err(err) => ParsedFrontendLine::Diagnostic(Box::new(BackendMessage::Error {
             message: format!("invalid FrontendMessage: {err}; source_phase=client_transport"),
             recoverable: true,
-        }),
+        })),
     }
 }
 
@@ -100,10 +100,13 @@ mod tests {
     #[test]
     fn parse_failure_is_debuggable_diagnostic() {
         let parsed = parse_frontend_line("{bad json");
-        let ParsedFrontendLine::Diagnostic(BackendMessage::Error {
+        let ParsedFrontendLine::Diagnostic(diagnostic) = parsed else {
+            panic!("expected diagnostic");
+        };
+        let BackendMessage::Error {
             message,
             recoverable,
-        }) = parsed
+        } = *diagnostic
         else {
             panic!("expected diagnostic");
         };

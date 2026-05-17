@@ -588,16 +588,16 @@ fn handle_mcp_command_at_cwd(
             }]
         }
         McpCommand::QueryConfig => {
-            let entries = build_mcp_server_config_entries(&cwd);
+            let entries = build_mcp_server_config_entries(cwd);
             vec![BackendMessage::McpEvent {
                 event: McpEvent::ConfigList { entries },
             }]
         }
-        McpCommand::UpsertConfig { entry } => match upsert_mcp_entry(&cwd, entry) {
+        McpCommand::UpsertConfig { entry } => match upsert_mcp_entry(cwd, *entry) {
             Ok(updated) => vec![BackendMessage::McpEvent {
                 event: McpEvent::ConfigChanged {
                     server_name: updated.name.clone(),
-                    entry: Some(updated),
+                    entry: Some(Box::new(updated)),
                 },
             }],
             Err((server_name, message)) => {
@@ -615,7 +615,7 @@ fn handle_mcp_command_at_cwd(
             }
         },
         McpCommand::RemoveConfig { server_name, scope } => {
-            match remove_mcp_entry(&cwd, &server_name, &scope) {
+            match remove_mcp_entry(cwd, &server_name, &scope) {
                 Ok(()) => vec![BackendMessage::McpEvent {
                     event: McpEvent::ConfigChanged {
                         server_name,
@@ -638,7 +638,7 @@ fn handle_mcp_command_at_cwd(
             }
         }
         McpCommand::ToggleEnabled { server_name, scope } => {
-            match toggle_mcp_entry_enabled(&cwd, &server_name, scope.as_ref()) {
+            match toggle_mcp_entry_enabled(cwd, &server_name, scope.as_ref()) {
                 Ok(updated) => {
                     // Sync runtime state — flipping `disabled` immediately
                     // surfaces in the MCP status list so the UI reflects the
@@ -649,7 +649,7 @@ fn handle_mcp_command_at_cwd(
                         BackendMessage::McpEvent {
                             event: McpEvent::ConfigChanged {
                                 server_name: updated.name.clone(),
-                                entry: Some(updated.clone()),
+                                entry: Some(Box::new(updated.clone())),
                             },
                         },
                         BackendMessage::McpEvent {
@@ -2057,7 +2057,9 @@ mod tests {
             browser_mcp: None,
             disabled: None,
         };
-        let msgs = handle_mcp_command(McpCommand::UpsertConfig { entry });
+        let msgs = handle_mcp_command(McpCommand::UpsertConfig {
+            entry: Box::new(entry),
+        });
         assert_eq!(msgs.len(), 1);
         match &msgs[0] {
             BackendMessage::McpEvent {
@@ -2095,7 +2097,9 @@ mod tests {
             browser_mcp: None,
             disabled: None,
         };
-        let msgs = handle_mcp_command(McpCommand::UpsertConfig { entry });
+        let msgs = handle_mcp_command(McpCommand::UpsertConfig {
+            entry: Box::new(entry),
+        });
         match &msgs[0] {
             BackendMessage::McpEvent {
                 event: McpEvent::ConfigError { server_name, .. },
@@ -2205,7 +2209,9 @@ mod tests {
             browser_mcp: None,
             disabled: None,
         };
-        let _ = handle_mcp_command(McpCommand::UpsertConfig { entry: seed });
+        let _ = handle_mcp_command(McpCommand::UpsertConfig {
+            entry: Box::new(seed),
+        });
 
         let msgs = handle_mcp_command(McpCommand::ToggleEnabled {
             server_name: "h-tog".to_string(),

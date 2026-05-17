@@ -31,6 +31,9 @@ const ADAPTERS_PATH: &str = "/remote-control/v1/adapters";
 const ADAPTER_CONNECT_PATH: &str = "/remote-control/v1/adapters/{provider}/connect";
 const ADAPTER_TEST_PATH: &str = "/remote-control/v1/adapters/{provider}/test-message";
 
+type GatewayAuthVerifyFn = dyn Fn(Option<&str>) -> Result<(), GatewayError> + Send + Sync;
+type GatewayBusySnapshotFn = dyn Fn() -> BusySnapshot + Send + Sync;
+
 macro_rules! authorize_or_return {
     ($state:expr, $headers:expr) => {
         if let Err(error) = $state.authorize(&$headers) {
@@ -74,8 +77,8 @@ pub struct GatewayApiState {
     runner: GatewayRunner,
     sink: Arc<dyn GatewayCommandSink + Send + Sync>,
     auth_mode: GatewayAuthMode,
-    auth_verify: Arc<dyn Fn(Option<&str>) -> Result<(), GatewayError> + Send + Sync>,
-    busy_snapshot: Arc<dyn Fn() -> BusySnapshot + Send + Sync>,
+    auth_verify: Arc<GatewayAuthVerifyFn>,
+    busy_snapshot: Arc<GatewayBusySnapshotFn>,
     policy: GatewayPolicy,
     config: GatewayConfig,
 }

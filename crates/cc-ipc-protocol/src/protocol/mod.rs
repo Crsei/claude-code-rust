@@ -92,7 +92,7 @@ pub enum FrontendMessage {
     /// IDE-integration lifecycle command.
     IdeCommand { command: IdeCommand },
     /// Agent-definition settings command (backs the `/agents` editor UI).
-    AgentSettingsCommand { command: AgentSettingsCommand },
+    AgentSettingsCommand { command: Box<AgentSettingsCommand> },
     /// Query all subsystem statuses.
     QuerySubsystemStatus,
 

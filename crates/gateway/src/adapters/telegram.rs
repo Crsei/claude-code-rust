@@ -29,16 +29,16 @@ impl TelegramAdapter {
         }
     }
 
-    fn token(&self) -> Result<&str, AdapterStatus> {
+    fn token(&self) -> Result<&str, Box<AdapterStatus>> {
         self.config
             .bot_token
             .as_deref()
             .filter(|token| !token.trim().is_empty())
             .ok_or_else(|| {
-                AdapterStatus::unconfigured(
+                Box::new(AdapterStatus::unconfigured(
                     TELEGRAM_PROVIDER,
                     "Telegram bot token is not configured.",
-                )
+                ))
             })
     }
 
@@ -74,7 +74,7 @@ impl RemoteAdapter for TelegramAdapter {
     }
 
     fn connect(&self) -> Result<AdapterStatus, GatewayError> {
-        let token = self.token().map_err(status_error)?;
+        let token = self.token().map_err(|status| status_error(*status))?;
         let response = self
             .transport
             .call(token, "getMe", Value::Object(Default::default()))?;
@@ -94,7 +94,7 @@ impl RemoteAdapter for TelegramAdapter {
     }
 
     fn test_message(&self, message: AdapterTestMessage) -> Result<AdapterStatus, GatewayError> {
-        let token = self.token().map_err(status_error)?;
+        let token = self.token().map_err(|status| status_error(*status))?;
         if message.target.trim().is_empty() {
             return Err(GatewayError::new(adapter_diagnostic(
                 TELEGRAM_PROVIDER,

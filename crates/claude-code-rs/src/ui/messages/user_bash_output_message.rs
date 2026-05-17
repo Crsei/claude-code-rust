@@ -135,7 +135,7 @@ fn render_shell_time(elapsed_ms: Option<u64>, timeout_ms: Option<u64>) -> Option
 fn format_duration(ms: u64) -> String {
     if ms < 1000 {
         format!("{ms}ms")
-    } else if ms % 1000 == 0 {
+    } else if ms.is_multiple_of(1000) {
         format!("{}s", ms / 1000)
     } else {
         format!("{:.1}s", ms as f64 / 1000.0)

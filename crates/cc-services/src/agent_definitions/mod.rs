@@ -76,11 +76,11 @@ pub fn handle(cmd: AgentSettingsCommand) -> Vec<BackendMessage> {
                 event: AgentSettingsEvent::List { entries },
             }]
         }
-        AgentSettingsCommand::Upsert { entry } => match upsert_agent(&cwd, entry) {
+        AgentSettingsCommand::Upsert { entry } => match upsert_agent(&cwd, *entry) {
             Ok(saved) => vec![BackendMessage::AgentSettingsEvent {
                 event: AgentSettingsEvent::Changed {
                     name: saved.name.clone(),
-                    entry: Some(saved),
+                    entry: Some(Box::new(saved)),
                 },
             }],
             Err((name, error)) => {

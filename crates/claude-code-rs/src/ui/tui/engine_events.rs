@@ -428,7 +428,7 @@ fn stream_delta_type_matches(delta: &serde_json::Value, expected: &str) -> bool 
     delta
         .get("type")
         .and_then(|v| v.as_str())
-        .map_or(true, |actual| actual == expected)
+        .is_none_or(|actual| actual == expected)
 }
 
 /// Build a partial assistant message for streaming display.

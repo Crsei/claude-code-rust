@@ -11,8 +11,6 @@
 
 | ID | 严重度 | 状态 | 范围 | 摘要 | 详情 |
 | --- | --- | --- | --- | --- | --- |
-| CLIPPY-001 | 高 | Open | clippy warning gate | `cargo clippy -p claude-code-rs --all-targets -- -D warnings` 仍被跨模块 lint 阻塞；已清理本轮发现的低风险机械项，剩余项需单独计划处理。 | [2026-05-07 编译记录](archive/resolved-known-issues-2026-05-07.md#2026-05-07-编译过程记录) |
-| WORKTREE-001 | 中 | Open | worktree hooks | `WorktreeRemove` 可能收到子目录而非仓库根；路径边界校验未处理 symlink / Windows junction 逃逸。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §二 |
 
 ## 2. 安全与权限
 

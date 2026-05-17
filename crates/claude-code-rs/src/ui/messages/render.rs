@@ -20,6 +20,10 @@ use super::wrap::wrap_line_to_width;
 ///
 /// `vscroll` must have been updated via `ensure_up_to_date()` before calling.
 /// `scroll` is the number of rendered lines to skip from the top.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "message renderer takes explicit ratatui render state to avoid per-frame allocations"
+)]
 pub fn render_messages(
     messages: &[Message],
     area: Rect,

@@ -189,7 +189,7 @@ pub async fn run_headless(config: HeadlessRuntimeConfig) -> anyhow::Result<()> {
                         BackendMessage::IdeEvent { event: e }
                     }
                     cc_ipc_protocol::subsystem_events::SubsystemEvent::AgentSettings(e) => {
-                        BackendMessage::AgentSettingsEvent { event: e }
+                        BackendMessage::AgentSettingsEvent { event: *e }
                     }
                 };
                 let _ = sink.send(&msg);

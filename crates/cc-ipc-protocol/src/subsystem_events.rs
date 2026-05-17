@@ -114,7 +114,7 @@ pub enum McpEvent {
     ConfigChanged {
         server_name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
-        entry: Option<McpServerConfigEntry>,
+        entry: Option<Box<McpServerConfigEntry>>,
     },
     /// Config validation / persistence failure.
     ConfigError { server_name: String, error: String },
@@ -202,7 +202,6 @@ pub enum SkillEvent {
 /// `/agents` settings dialog.
 #[derive(Serialize, Debug, Clone)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-#[allow(clippy::large_enum_variant)]
 pub enum AgentSettingsEvent {
     /// Full list of agent definitions (response to `QueryList`).
     List { entries: Vec<AgentDefinitionEntry> },
@@ -210,7 +209,7 @@ pub enum AgentSettingsEvent {
     Changed {
         name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
-        entry: Option<AgentDefinitionEntry>,
+        entry: Option<Box<AgentDefinitionEntry>>,
     },
     /// Validation or persistence failure.
     Error { name: String, error: String },
@@ -343,7 +342,7 @@ pub enum McpCommand {
     /// Non-editable scopes (`Plugin`/`Ide`) must be rejected by the
     /// handler with a `ConfigError` event.
     UpsertConfig {
-        entry: McpServerConfigEntry,
+        entry: Box<McpServerConfigEntry>,
     },
     /// Remove a config entry from the given scope.
     RemoveConfig {
@@ -438,12 +437,11 @@ pub enum SkillCommand {
 /// against those scopes must be rejected with `AgentSettingsEvent::Error`.
 #[derive(Deserialize, Debug)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-#[allow(clippy::large_enum_variant)]
 pub enum AgentSettingsCommand {
     /// Return every known agent definition across all sources.
     QueryList,
     /// Create or replace an agent definition in its scope.
-    Upsert { entry: AgentDefinitionEntry },
+    Upsert { entry: Box<AgentDefinitionEntry> },
     /// Delete an agent definition from the given scope.
     Delete {
         name: String,
@@ -478,7 +476,7 @@ pub enum SubsystemEvent {
     Plugin(PluginEvent),
     Skill(SkillEvent),
     Ide(IdeEvent),
-    AgentSettings(AgentSettingsEvent),
+    AgentSettings(Box<AgentSettingsEvent>),
 }
 
 // ===========================================================================
@@ -1127,6 +1125,7 @@ mod tests {
         let _mcp = SubsystemEvent::Mcp(McpEvent::ServerList { servers: vec![] });
         let _plugin = SubsystemEvent::Plugin(PluginEvent::PluginList { plugins: vec![] });
         let _skill = SubsystemEvent::Skill(SkillEvent::SkillList { skills: vec![] });
-        let _agents = SubsystemEvent::AgentSettings(AgentSettingsEvent::List { entries: vec![] });
+        let _agents =
+            SubsystemEvent::AgentSettings(Box::new(AgentSettingsEvent::List { entries: vec![] }));
     }
 }

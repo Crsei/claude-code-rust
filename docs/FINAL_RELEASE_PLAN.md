@@ -111,10 +111,8 @@ cargo test -p claude-code-rs query::loop_helpers
 | 范围 | 当前问题 | 预期发布效果 | 证据入口 |
 | --- | --- | --- | --- |
 | e2e terminal | `tests/e2e_terminal` 仍有未纳入版本控制的 `phase6.rs` 引用。 | e2e terminal 测试可在干净 checkout 运行，不依赖本地遗留文件。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `TEST-001` |
-| clippy gate | `cargo clippy -p claude-code-rs --all-targets -- -D warnings` 仍被跨模块 lint 阻塞。 | workspace clippy 作为发布硬门禁，不再需要豁免。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `CLIPPY-001` |
 | Context compact | auto compact 阈值可能重复扣减本地释放 token；exact count 漏 system prompt/tools。 | 模型请求大小估算可信，compact 不会错误跳过或误判。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `CONTEXT-001` / `CONTEXT-002` |
 | Model/provider mapping | Bedrock 模型 ID 和 legacy alias 文档/实现不一致。 | provider 模型路由准确；文档、配置校验、运行时错误口径一致。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `MODEL-001` / `MODEL-002` / `DOC-001` |
-| Worktree safety | `WorktreeRemove` 路径边界未覆盖 symlink / Windows junction 逃逸。 | 删除/清理路径在 Windows 与 Unix 都经过 resolved-boundary 校验。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `WORKTREE-001` |
 | Critical post hooks | critical post/failure hook 错误仍可能在生产工具执行后被丢弃。 | critical hook 失败影响当前 step/tool，optional hook 才 warn-only。 | [TECH_DEBT.md](TECH_DEBT.md) Remaining P1 follow-ups |
 
 ### P1: 核心能力必须补齐或裁剪
@@ -162,7 +160,7 @@ cargo test -p claude-code-rs query::loop_helpers
 
 ## 5. 推荐执行顺序
 
-1. 修 P0 构建与剩余阻塞项：`TEST-001`、`CLIPPY-001`、CONTEXT、MODEL、WORKTREE、critical hook。
+1. 修 P0 构建与剩余阻塞项：`TEST-001`、CONTEXT、MODEL、critical hook。
 2. 收 P1 核心链路：API provider e2e、PlanMode、TaskTools、Team Memory、Daemon ownership、Session Export、Computer Use、Browser MCP。
 3. 收 P2 用户体验：Ratatui runtime residuals、Web UI、remote channel 决策、voice/browser/LSP/branch/terminal setup。
 4. 做全仓文档收口：迁移完成历史到 archive，清理 Lite/mojibake，补最终发布说明草稿。

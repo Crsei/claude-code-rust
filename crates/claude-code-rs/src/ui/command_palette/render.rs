@@ -45,8 +45,7 @@ impl CommandPalette {
             .unwrap_or(0);
         let visible_rows = (inner.height as usize)
             .saturating_sub(reserved_rows)
-            .max(1)
-            .min(MAX_ROWS);
+            .clamp(1, MAX_ROWS);
         let mut lines = Vec::new();
         lines.push(Line::from(vec![
             Span::styled(format!("query=/{}", self.query), theme.info),

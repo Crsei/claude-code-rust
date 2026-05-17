@@ -228,8 +228,8 @@ impl FileEditTool {
                     return String::new();
                 }
                 for (old_indent, actual_indent) in &indent_map {
-                    if line.starts_with(old_indent) {
-                        return format!("{}{}", actual_indent, &line[old_indent.len()..]);
+                    if let Some(stripped) = line.strip_prefix(old_indent) {
+                        return format!("{}{}", actual_indent, stripped);
                     }
                 }
                 line.to_string()
@@ -322,6 +322,12 @@ struct FuzzyMatch {
     start_line: usize,
     end_line: usize,
     similarity: f32,
+}
+
+impl Default for FileEditTool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[async_trait]

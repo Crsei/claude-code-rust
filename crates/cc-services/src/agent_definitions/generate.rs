@@ -37,7 +37,7 @@ pub fn set_event_sender(tx: Sender<SubsystemEvent>) {
 
 fn emit(event: AgentSettingsEvent) {
     if let Some(tx) = EVENT_TX.lock().as_ref() {
-        let _ = tx.send(SubsystemEvent::AgentSettings(event));
+        let _ = tx.send(SubsystemEvent::AgentSettings(Box::new(event)));
     }
 }
 

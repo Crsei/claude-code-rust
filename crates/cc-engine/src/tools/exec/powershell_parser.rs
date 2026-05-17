@@ -594,7 +594,7 @@ fn is_trusted_module_qualified_cmdlet(name: &str) -> bool {
     module.contains('.')
         && !module.contains('/')
         && !module.starts_with('.')
-        && !module.get(1..2).is_some_and(|value| value == ":")
+        && module.get(1..2).is_none_or(|value| value != ":")
         && is_ascii_cmdlet_name(command)
 }
 

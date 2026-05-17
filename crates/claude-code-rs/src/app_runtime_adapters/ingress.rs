@@ -188,7 +188,7 @@ pub(crate) async fn dispatch(
         }
         FrontendMessage::AgentSettingsCommand { command } => {
             debug!("headless: AgentSettings command: {:?}", command);
-            let msgs = cc_services::agent_definitions::handle(command);
+            let msgs = cc_services::agent_definitions::handle(*command);
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::QuerySubsystemStatus => {

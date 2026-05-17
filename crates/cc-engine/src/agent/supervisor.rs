@@ -569,6 +569,10 @@ fn register_agent_tree(
     ));
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "runtime setup threads agent identity and hook context together"
+)]
 async fn prepare_runtime(
     use_worktree: bool,
     agent_id: &str,

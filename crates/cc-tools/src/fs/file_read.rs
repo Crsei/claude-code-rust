@@ -304,7 +304,7 @@ impl FileReadTool {
     }
 
     fn decode_utf16_bytes(bytes: &[u8], little_endian: bool) -> Result<String> {
-        if bytes.len() % 2 != 0 {
+        if !bytes.len().is_multiple_of(2) {
             return Err(anyhow::anyhow!("UTF-16 text has an odd number of bytes"));
         }
 
@@ -698,6 +698,12 @@ impl FileReadTool {
             new_messages: vec![],
             ..Default::default()
         })
+    }
+}
+
+impl Default for FileReadTool {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

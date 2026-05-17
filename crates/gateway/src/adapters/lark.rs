@@ -29,7 +29,7 @@ impl LarkAdapter {
         }
     }
 
-    fn mode(&self) -> Result<LarkConnectionMode<'_>, AdapterStatus> {
+    fn mode(&self) -> Result<LarkConnectionMode<'_>, Box<AdapterStatus>> {
         let webhook_url = self
             .config
             .outbound_webhook_url
@@ -56,12 +56,12 @@ impl LarkAdapter {
             return Ok(LarkConnectionMode::AppCredentials { app_id, app_secret });
         }
 
-        Err(AdapterStatus::blocked(
+        Err(Box::new(AdapterStatus::blocked(
             LARK_PROVIDER,
             "lark_credentials_missing",
             "Lark adapter credentials are missing.",
             "Configure an outbound webhook URL or both Lark app_id and app_secret.",
-        ))
+        )))
     }
 
     fn target_allowed(&self, target: &str) -> bool {
@@ -97,12 +97,12 @@ impl RemoteAdapter for LarkAdapter {
                 "Lark app credentials are configured but have not been checked.",
                 "Run adapter connect to verify outbound-only Lark delivery.",
             ),
-            Err(status) => status,
+            Err(status) => *status,
         }
     }
 
     fn connect(&self) -> Result<AdapterStatus, GatewayError> {
-        match self.mode().map_err(status_error)? {
+        match self.mode().map_err(|status| status_error(*status))? {
             LarkConnectionMode::Webhook { webhook_url } => {
                 self.transport.probe_webhook(webhook_url)?;
             }
@@ -136,7 +136,7 @@ impl RemoteAdapter for LarkAdapter {
             )));
         }
 
-        match self.mode().map_err(status_error)? {
+        match self.mode().map_err(|status| status_error(*status))? {
             LarkConnectionMode::Webhook { webhook_url } => {
                 self.transport.send_webhook(webhook_url, &message.text)?;
             }

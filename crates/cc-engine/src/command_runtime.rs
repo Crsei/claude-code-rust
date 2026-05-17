@@ -43,6 +43,12 @@ impl NoopCommandExecutor {
     }
 }
 
+impl Default for NoopCommandExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl CommandExecutor for NoopCommandExecutor {
     async fn execute(

@@ -234,6 +234,10 @@ impl LocalCommandOutcome {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "local command execution needs submit state, session state, and command adapters"
+)]
 async fn handle_parsed_command(
     processed: &mut input_processing::ProcessedInput,
     current_messages: &[Message],
@@ -354,6 +358,10 @@ struct SubmitSystemPrompt {
     system_context: std::collections::HashMap<String, String>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "prompt assembly combines config, live state, hooks, tools, and model metadata"
+)]
 async fn build_submit_system_prompt(
     prompt: &str,
     config: &crate::types::config::QueryEngineConfig,
@@ -449,6 +457,10 @@ async fn build_submit_system_prompt(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "memory recall selection keeps the independent policy inputs explicit"
+)]
 async fn resolve_memory_context_override(
     config: &crate::types::config::QueryEngineConfig,
     include_auto_memory: bool,

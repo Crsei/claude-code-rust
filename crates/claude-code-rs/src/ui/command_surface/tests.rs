@@ -340,8 +340,10 @@ fn config_surface_uses_tab_navigation_and_selection() {
 
 #[test]
 fn config_surface_exposes_model_theme_and_effort_pickers() {
-    let mut state = AppState::default();
-    state.main_loop_model = "custom-model".into();
+    let mut state = AppState {
+        main_loop_model: "custom-model".into(),
+        ..Default::default()
+    };
     state.settings.available_models = vec!["custom-model".into(), "SOTA".into()];
     state.settings.theme = Some("light".into());
     state.settings.output_style = Some("explanatory".into());
@@ -377,8 +379,10 @@ fn config_surface_exposes_model_theme_and_effort_pickers() {
 
 #[test]
 fn config_surface_picker_selection_submits_config_set_commands() {
-    let mut state = AppState::default();
-    state.main_loop_model = "custom-model".into();
+    let mut state = AppState {
+        main_loop_model: "custom-model".into(),
+        ..Default::default()
+    };
     state.settings.available_models = vec!["custom-model".into(), "SOTA".into()];
     state.settings.theme = Some("light".into());
     state.effort_value = Some("medium".into());

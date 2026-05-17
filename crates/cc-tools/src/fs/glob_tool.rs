@@ -39,6 +39,12 @@ impl GlobTool {
     }
 }
 
+impl Default for GlobTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl Tool for GlobTool {
     fn name(&self) -> &str {

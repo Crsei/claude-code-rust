@@ -526,6 +526,10 @@ pub fn build_system_prompt(
 }
 
 /// Build the default system prompt parts with optional session insights.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public prompt builder keeps upstream-compatible prompt inputs explicit"
+)]
 pub fn build_system_prompt_with_session_memory(
     custom_prompt: Option<&str>,
     append_prompt: Option<&str>,
@@ -557,6 +561,10 @@ pub fn build_system_prompt_with_session_memory(
 
 /// Build the default system prompt parts with optional prebuilt memory context
 /// and session insights.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public prompt builder keeps memory context inputs explicit"
+)]
 pub fn build_system_prompt_with_memory_contexts(
     custom_prompt: Option<&str>,
     append_prompt: Option<&str>,

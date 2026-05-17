@@ -21,7 +21,7 @@ pub struct AgentsSurface {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AgentsSurfaceMode {
     List,
-    Detail(AgentDefinition),
+    Detail(Box<AgentDefinition>),
 }
 
 impl AgentsSurface {
@@ -142,7 +142,7 @@ impl AgentsSurface {
             }
             KeyCode::Enter => {
                 if let Some(agent) = self.state.selected_agent() {
-                    self.mode = AgentsSurfaceMode::Detail(agent);
+                    self.mode = AgentsSurfaceMode::Detail(Box::new(agent));
                 }
                 CommandSurfaceOutcome::None
             }

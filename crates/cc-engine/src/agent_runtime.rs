@@ -96,6 +96,10 @@ pub fn agent_runtime_adapters() -> AgentRuntimeAdapters {
 }
 
 pub trait DashboardEmitter: Send + Sync {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "dashboard event ABI mirrors the structured AgentEvent payload"
+    )]
     fn emit_subagent_event(
         &self,
         kind: &str,
@@ -365,6 +369,10 @@ impl AgentTaskStore for NoopAgentTaskStore {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public adapter shim preserves existing dashboard event call sites"
+)]
 pub fn emit_subagent_event(
     kind: &str,
     agent_id: &str,

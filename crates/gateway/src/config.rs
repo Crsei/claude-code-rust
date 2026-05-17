@@ -41,7 +41,7 @@ impl Default for GatewayLimits {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GatewayConfig {
     pub enabled: bool,
@@ -51,18 +51,6 @@ pub struct GatewayConfig {
     pub security: GatewaySecurityConfig,
     #[serde(default)]
     pub adapters: GatewayAdaptersConfig,
-}
-
-impl Default for GatewayConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            persistence: GatewayPersistence::default(),
-            limits: GatewayLimits::default(),
-            security: GatewaySecurityConfig::default(),
-            adapters: GatewayAdaptersConfig::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

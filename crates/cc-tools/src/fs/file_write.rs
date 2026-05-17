@@ -36,6 +36,12 @@ impl FileWriteTool {
     }
 }
 
+impl Default for FileWriteTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl Tool for FileWriteTool {
     fn name(&self) -> &str {

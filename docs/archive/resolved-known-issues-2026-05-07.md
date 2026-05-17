@@ -44,6 +44,13 @@
 | CONTEXT-003 | Phase 10 归档记录显示 `cargo test -p claude-code-rs` 门禁未 green | 2026-05-14 crate-migration 验证中 `cargo test --workspace` 通过；默认 live PTY/API 用例保持 `#[ignore]`。 |
 | TEST-002 | ratatui UI parity closeout 后 package-wide test run not green | 2026-05-14 crate-migration 验证中 `cargo fmt --all --check`、`cargo check --workspace --all-targets`、`cargo test --workspace` 和 `cargo build --workspace --release` 均通过。 |
 
+## 2026-05-17 验证关闭
+
+| 历史编号 | 标题 | 关闭口径 |
+| --- | --- | --- |
+| CLIPPY-001 | `cargo clippy -p claude-code-rs --all-targets -- -D warnings` 被跨模块 lint 阻塞 | 已清理 `gateway`、`cc-ipc-protocol`、IPC transport/adapters、`cc-tools`、`cc-engine` 与 Rust TUI 主 crate 的 clippy 阻塞项；同命令通过。机器缺少 `npm` 导致 web-ui build script 仍打印跳过 warning，按仓库说明不计入 Rust clippy 阻塞。 |
+| WORKTREE-001 | `WorktreeRemove` repo root / symlink / Windows junction 边界不完整 | `WorktreeSession` 记录创建时解析出的 `git_root`，ExitWorktree hook payload 与 git cleanup 使用该 root；worktree path 校验改为词法 root + resolved-boundary 校验，并覆盖 Unix symlink 逃逸与 Windows junction 逃逸测试路径。 |
+
 ## 2026-05-07 编译过程记录
 
 - `cargo build -p claude-code-rs`：通过；未出现 compiler error 或 warning。

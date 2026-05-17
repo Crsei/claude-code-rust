@@ -250,7 +250,7 @@ fn stream_delta_type_matches(delta: &serde_json::Value, expected: &str) -> bool 
     delta
         .get("type")
         .and_then(|v| v.as_str())
-        .map_or(true, |actual| actual == expected)
+        .is_none_or(|actual| actual == expected)
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +335,7 @@ fn active_agent_definition(
     crate::agent_runtime::builtin_agent_entries()
         .into_iter()
         .filter(|entry| entry.name == agent_type)
-        .last()
+        .next_back()
 }
 
 #[cfg(test)]
