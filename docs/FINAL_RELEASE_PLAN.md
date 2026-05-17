@@ -108,12 +108,12 @@ cargo test -p claude-code-rs query::loop_helpers
 
 ### P0: 发布阻塞
 
-| 范围 | 当前问题 | 预期发布效果 | 证据入口 |
+| 范围 | 当前状态 | 发布口径 | 证据入口 |
 | --- | --- | --- | --- |
-| e2e terminal | `tests/e2e_terminal` 仍有未纳入版本控制的 `phase6.rs` 引用。 | e2e terminal 测试可在干净 checkout 运行，不依赖本地遗留文件。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `TEST-001` |
-| Context compact | auto compact 阈值可能重复扣减本地释放 token；exact count 漏 system prompt/tools。 | 模型请求大小估算可信，compact 不会错误跳过或误判。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `CONTEXT-001` / `CONTEXT-002` |
-| Model/provider mapping | Bedrock 模型 ID 和 legacy alias 文档/实现不一致。 | provider 模型路由准确；文档、配置校验、运行时错误口径一致。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `MODEL-001` / `MODEL-002` / `DOC-001` |
-| Critical post hooks | critical post/failure hook 错误仍可能在生产工具执行后被丢弃。 | critical hook 失败影响当前 step/tool，optional hook 才 warn-only。 | [TECH_DEBT.md](TECH_DEBT.md) Remaining P1 follow-ups |
+| e2e terminal | `phase6.rs` 已纳入 `crates/claude-code-rs/tests/e2e_terminal/` 的 tracked 文件集。 | e2e terminal 测试可在干净 checkout 运行，不依赖本地遗留文件。 | [archive/resolved-known-issues-2026-05-07.md](archive/resolved-known-issues-2026-05-07.md) `TEST-001` |
+| Context compact | auto compact 使用本地压缩后的 request estimate；exact count preflight 使用最终请求边界。 | 模型请求大小估算可信，compact 不会错误跳过或误判。 | [archive/resolved-model-context-2026-05-07.md](archive/resolved-model-context-2026-05-07.md) `CONTEXT-001` / `CONTEXT-002` |
+| Model/provider mapping | Bedrock model mapping、removed legacy alias rejection 与文档口径已收敛。 | provider 模型路由准确；文档、配置校验、运行时错误口径一致。 | [archive/resolved-model-context-2026-05-07.md](archive/resolved-model-context-2026-05-07.md) `MODEL-001` / `MODEL-002` / `DOC-001` |
+| Critical post hooks | critical post/failure hook 错误已返回 visible failed `ToolExecResult`，optional hook 保持 warn-only。 | critical hook 失败影响当前 step/tool，optional hook 才 warn-only。 | [archive/TECH_DEBT.md](archive/TECH_DEBT.md) `Critical post-tool and post-failure hook propagation` |
 
 ### P1: 核心能力必须补齐或裁剪
 
@@ -160,7 +160,7 @@ cargo test -p claude-code-rs query::loop_helpers
 
 ## 5. 推荐执行顺序
 
-1. 修 P0 构建与剩余阻塞项：`TEST-001`、CONTEXT、MODEL、critical hook。
+1. 重验 P0 闭环：`TEST-001`、CONTEXT、MODEL、critical hook 保持已关闭状态，活跃问题入口不再列为发布阻塞。
 2. 收 P1 核心链路：API provider e2e、PlanMode、TaskTools、Team Memory、Daemon ownership、Session Export、Computer Use、Browser MCP。
 3. 收 P2 用户体验：Ratatui runtime residuals、Web UI、remote channel 决策、voice/browser/LSP/branch/terminal setup。
 4. 做全仓文档收口：迁移完成历史到 archive，清理 Lite/mojibake，补最终发布说明草稿。

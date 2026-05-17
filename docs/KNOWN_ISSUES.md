@@ -26,16 +26,15 @@
 
 | ID | 严重度 | 状态 | 范围 | 摘要 | 详情 |
 | --- | --- | --- | --- | --- | --- |
-| MODEL-001 | 高 | Open | Bedrock model mapping | `claude-opus-4-7` Bedrock 映射缺日期与 `:0` 后缀，可能路由到不存在的模型 ID。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §一 |
-| MODEL-002 | 高 | Open | model aliases | `opus`、`sonnet`、`haiku` 兼容别名被移除但文档/配置仍描述为有效。 | 同上 |
-| DOC-001 | 中 | Open | command/provider docs | `/model` 命令参考、CLI 用法和配置文档需要随别名策略同步。 | 同上 |
+
+当前无开放项。已关闭记录见 [archive/resolved-model-context-2026-05-07.md](archive/resolved-model-context-2026-05-07.md)。
 
 ## 4. Context / compact
 
 | ID | 严重度 | 状态 | 范围 | 摘要 | 详情 |
 | --- | --- | --- | --- | --- | --- |
-| CONTEXT-001 | 高 | Open | auto compact | 阈值判断重复扣减本地释放 token，可能错误跳过 auto-compact。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §三 |
-| CONTEXT-002 | 高 | Open | exact count preflight | exact-count 预检漏掉 system prompt 和 tools，可能低估真实模型请求大小。 | 同上 |
+
+当前无开放项。已关闭记录见 [archive/resolved-model-context-2026-05-07.md](archive/resolved-model-context-2026-05-07.md)。
 
 ## 5. UI / runtime residuals
 

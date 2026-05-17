@@ -26,9 +26,9 @@ remembering exact version numbers:
 
 | Model alias | Current target | Behavior |
 | ------------ | -------------- | -------- |
-| **`SOTA`** | `claude-opus-4-20250514` | Highest-capability work |
-| **`MOTA`** | `claude-sonnet-4-20250514` | Balanced capability and speed |
-| **`FOTA`** | `claude-haiku-3-5-20241022` | Fast lightweight work |
+| **`SOTA`** | `gpt-5.5` | Highest-capability work |
+| **`MOTA`** | `gpt-5.5` | Balanced capability and speed |
+| **`FOTA`** | `gpt-5.5` | Fast lightweight work |
 
 The old family aliases `opus`, `sonnet`, and `haiku` are no longer accepted as
 public aliases. Use `SOTA`, `MOTA`, `FOTA`, or a full provider/model ID.
