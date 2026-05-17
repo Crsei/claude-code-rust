@@ -25,8 +25,9 @@ pub(super) async fn execute_command_hook(
     command: &str,
     stdin_json: &Value,
     timeout_secs: u64,
+    shell: Option<&str>,
 ) -> Result<HookOutput> {
-    let mut child = spawn_shell_command(command)?;
+    let mut child = spawn_shell_command(command, shell)?;
     let mut io_diagnostics = Vec::new();
 
     // Write JSON to stdin and close it before waiting for output.
@@ -112,12 +113,12 @@ pub(super) async fn execute_command_hook(
             match wait_result {
                 Ok(status) => {
                     if !status.success() {
-                        debug!(
-                            command = command,
-                            status = ?status,
-                            stderr = %stderr,
-                            "hook command exited with non-zero status"
-                        );
+                        return Err(anyhow::anyhow!(
+                            "hook command exited with non-zero status {}{}{}",
+                            status,
+                            if stderr.trim().is_empty() { "" } else { ": " },
+                            stderr.trim()
+                        ));
                     }
                 }
                 Err(e) => {
@@ -194,11 +195,35 @@ fn kill_timed_out_child(command: &str, child: &mut tokio::process::Child) -> Opt
 }
 
 /// Spawn a shell command as a child process.
-fn spawn_shell_command(command: &str) -> Result<tokio::process::Child> {
+fn spawn_shell_command(
+    command: &str,
+    shell_override: Option<&str>,
+) -> Result<tokio::process::Child> {
     #[cfg(windows)]
     {
         // On Windows, try bash first (e.g., Git Bash, WSL), fall back to cmd
         use tokio::process::Command;
+
+        if let Some(shell) = shell_override {
+            if shell.eq_ignore_ascii_case("cmd") || shell.eq_ignore_ascii_case("cmd.exe") {
+                return Command::new("cmd")
+                    .arg("/C")
+                    .arg(command)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .context("failed to spawn hook command via cmd");
+            }
+            return Command::new(shell)
+                .arg("-c")
+                .arg(command)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .with_context(|| format!("failed to spawn hook command via {shell}"));
+        }
 
         // Try bash first
         match Command::new("bash")
@@ -228,7 +253,8 @@ fn spawn_shell_command(command: &str) -> Result<tokio::process::Child> {
     {
         use tokio::process::Command;
 
-        let mut shell = Command::new("bash");
+        let shell_program = shell_override.unwrap_or("bash");
+        let mut shell = Command::new(shell_program);
         shell
             .arg("-c")
             .arg(command)
@@ -239,7 +265,7 @@ fn spawn_shell_command(command: &str) -> Result<tokio::process::Child> {
 
         shell
             .spawn()
-            .context("failed to spawn hook command via bash")
+            .with_context(|| format!("failed to spawn hook command via {shell_program}"))
     }
 }
 
@@ -247,8 +273,7 @@ fn spawn_shell_command(command: &str) -> Result<tokio::process::Child> {
 ///
 /// If the first non-empty line starts with `{`, parse it as JSON.
 /// Otherwise, return a default HookOutput with additional_context = stdout.
-#[cfg(test)]
-fn parse_hook_output(stdout: &str) -> Result<HookOutput> {
+pub(super) fn parse_hook_output(stdout: &str) -> Result<HookOutput> {
     parse_hook_output_with_diagnostics(stdout, &[])
 }
 
@@ -399,6 +424,7 @@ mod tests {
             r#"echo '{"continue":true,"reason":"test_ok"}'"#,
             &stdin_json,
             10,
+            None,
         )
         .await;
 
@@ -419,7 +445,7 @@ mod tests {
     async fn test_execute_command_hook_plain_text() {
         let stdin_json = json!({"test": true});
 
-        let result = execute_command_hook("echo hello_world", &stdin_json, 10).await;
+        let result = execute_command_hook("echo hello_world", &stdin_json, 10, None).await;
 
         match result {
             Ok(output) => {
@@ -442,7 +468,7 @@ mod tests {
     #[tokio::test]
     #[cfg(not(windows))]
     async fn test_hook_timeout() {
-        let result = execute_command_hook("sleep 60", &json!({"test": true}), 2).await;
+        let result = execute_command_hook("sleep 60", &json!({"test": true}), 2, None).await;
 
         match result {
             Err(e) => assert!(e.to_string().contains("timed out")),

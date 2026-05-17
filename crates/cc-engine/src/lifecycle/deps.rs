@@ -862,10 +862,43 @@ impl QueryDeps for QueryEngineDeps {
                     });
                 } else {
                     tracing::warn!(error = %e, "optional pre-tool hook error, continuing");
-                    (sanitized_input, None)
+                    (sanitized_input.clone(), None)
                 }
             }
         };
+
+        if effective_input != sanitized_input {
+            match tool.validate_input(&effective_input, &ctx).await {
+                ValidationResult::Ok => {}
+                ValidationResult::Error { message, .. } => {
+                    return Ok(ToolExecResult {
+                        tool_use_id: request.tool_use_id,
+                        tool_name: request.tool_name,
+                        result: crate::types::tool::ToolResult {
+                            data: serde_json::json!(format!(
+                                "Pre-tool hook produced invalid input: {}.",
+                                message
+                            )),
+                            new_messages: vec![],
+                            ..Default::default()
+                        },
+                        is_error: true,
+                        hook_stopped_continuation: false,
+                    });
+                }
+            }
+
+            if let Some(result) = security_validate(
+                &request.tool_use_id,
+                &request.tool_name,
+                &effective_input,
+                tool.as_ref(),
+                &ctx,
+                execution_started,
+            ) {
+                return Ok(tool_execution_result_to_exec_result(result));
+            }
+        }
 
         // Permission check (tool-local checks first, then central rules/mode).
         let hook_decision = match permission_override.as_ref() {
@@ -1714,6 +1747,8 @@ mod tests {
                     hooks: vec![cc_types::hooks::HookEntry::Command {
                         command: "failing-test-hook".to_string(),
                         timeout: 1,
+                        shell: None,
+                        if_condition: None,
                     }],
                 }]
             } else {
@@ -1786,6 +1821,8 @@ mod tests {
                     hooks: vec![cc_types::hooks::HookEntry::Command {
                         command: "failing-test-hook".to_string(),
                         timeout: 1,
+                        shell: None,
+                        if_condition: None,
                     }],
                 }]
             } else {

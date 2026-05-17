@@ -12,8 +12,8 @@ use cc_engine::types::tool::{
 };
 use cc_types::message::{AssistantMessage, ContentBlock, ImageSource, ToolResultContent};
 
-use crate::input::{self, InputAction, MouseButton};
-use crate::screenshot;
+use crate::executor::Executor;
+use crate::input::MouseButton;
 
 use super::detection::{classify_risk, extract_cu_action, CuRiskLevel};
 
@@ -87,7 +87,7 @@ pub struct ScreenshotTool;
 #[async_trait]
 impl Tool for ScreenshotTool {
     fn name(&self) -> &str {
-        "screenshot"
+        "mcp__computer-use__screenshot"
     }
 
     async fn description(&self, _input: &Value) -> String {
@@ -121,7 +121,7 @@ impl Tool for ScreenshotTool {
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let result = screenshot::capture_screenshot().await?;
+        let result = Executor::new().screenshot().await?;
         let preview = format!(
             "Screenshot captured ({}x{} pixels)",
             result.width, result.height
@@ -164,21 +164,21 @@ impl ClickTool {
     pub fn left() -> Self {
         Self {
             button: MouseButton::Left,
-            tool_name: "left_click",
+            tool_name: "mcp__computer-use__left_click",
             display_name: "left click",
         }
     }
     pub fn right() -> Self {
         Self {
             button: MouseButton::Right,
-            tool_name: "right_click",
+            tool_name: "mcp__computer-use__right_click",
             display_name: "right click",
         }
     }
     pub fn middle() -> Self {
         Self {
             button: MouseButton::Middle,
-            tool_name: "middle_click",
+            tool_name: "mcp__computer-use__middle_click",
             display_name: "middle click",
         }
     }
@@ -234,12 +234,7 @@ impl Tool for ClickTool {
         let x = input["x"].as_i64().unwrap_or(0) as i32;
         let y = input["y"].as_i64().unwrap_or(0) as i32;
 
-        let result = input::execute_input(InputAction::Click {
-            x,
-            y,
-            button: self.button,
-        })
-        .await?;
+        let result = Executor::new().click(x, y, self.button).await?;
 
         Ok(ToolResult {
             data: json!(result),
@@ -252,7 +247,7 @@ impl Tool for ClickTool {
     }
 
     fn user_facing_name(&self, _input: Option<&Value>) -> String {
-        format!("mcp__computer-use__{}", self.tool_name)
+        self.tool_name.to_string()
     }
 }
 
@@ -265,7 +260,7 @@ pub struct DoubleClickTool;
 #[async_trait]
 impl Tool for DoubleClickTool {
     fn name(&self) -> &str {
-        "double_click"
+        "mcp__computer-use__double_click"
     }
 
     async fn description(&self, _input: &Value) -> String {
@@ -309,7 +304,7 @@ impl Tool for DoubleClickTool {
         let x = input["x"].as_i64().unwrap_or(0) as i32;
         let y = input["y"].as_i64().unwrap_or(0) as i32;
 
-        let result = input::execute_input(InputAction::DoubleClick { x, y }).await?;
+        let result = Executor::new().double_click(x, y).await?;
 
         Ok(ToolResult {
             data: json!(result),
@@ -335,7 +330,7 @@ pub struct TypeTextTool;
 #[async_trait]
 impl Tool for TypeTextTool {
     fn name(&self) -> &str {
-        "type_text"
+        "mcp__computer-use__type_text"
     }
 
     async fn description(&self, _input: &Value) -> String {
@@ -373,8 +368,8 @@ impl Tool for TypeTextTool {
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let text = input["text"].as_str().unwrap_or("").to_string();
-        let result = input::execute_input(InputAction::TypeText { text }).await?;
+        let text = input["text"].as_str().unwrap_or("");
+        let result = Executor::new().type_text(text).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -399,7 +394,7 @@ pub struct KeyTool;
 #[async_trait]
 impl Tool for KeyTool {
     fn name(&self) -> &str {
-        "key"
+        "mcp__computer-use__key"
     }
 
     async fn description(&self, _input: &Value) -> String {
@@ -440,8 +435,8 @@ impl Tool for KeyTool {
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let key = input["key"].as_str().unwrap_or("").to_string();
-        let result = input::execute_input(InputAction::KeyPress { key }).await?;
+        let key = input["key"].as_str().unwrap_or("");
+        let result = Executor::new().key_press(key).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -466,7 +461,7 @@ pub struct ScrollTool;
 #[async_trait]
 impl Tool for ScrollTool {
     fn name(&self) -> &str {
-        "scroll"
+        "mcp__computer-use__scroll"
     }
 
     async fn description(&self, _input: &Value) -> String {
@@ -503,7 +498,7 @@ impl Tool for ScrollTool {
         let y = input["y"].as_i64().unwrap_or(0) as i32;
         let amount = input["amount"].as_i64().unwrap_or(3) as i32;
 
-        let result = input::execute_input(InputAction::Scroll { x, y, amount }).await?;
+        let result = Executor::new().scroll(x, y, amount).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -528,7 +523,7 @@ pub struct MouseMoveTool;
 #[async_trait]
 impl Tool for MouseMoveTool {
     fn name(&self) -> &str {
-        "mouse_move"
+        "mcp__computer-use__mouse_move"
     }
 
     async fn description(&self, _input: &Value) -> String {
@@ -560,7 +555,7 @@ impl Tool for MouseMoveTool {
         let x = input["x"].as_i64().unwrap_or(0) as i32;
         let y = input["y"].as_i64().unwrap_or(0) as i32;
 
-        let result = input::execute_input(InputAction::MouseMove { x, y }).await?;
+        let result = Executor::new().mouse_move(x, y).await?;
         Ok(ToolResult {
             data: json!(result),
             ..Default::default()
@@ -585,7 +580,7 @@ pub struct CursorPositionTool;
 #[async_trait]
 impl Tool for CursorPositionTool {
     fn name(&self) -> &str {
-        "cursor_position"
+        "mcp__computer-use__cursor_position"
     }
 
     async fn description(&self, _input: &Value) -> String {
@@ -619,7 +614,7 @@ impl Tool for CursorPositionTool {
         _parent: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let pos = input::get_cursor_position().await?;
+        let pos = Executor::new().cursor_position().await?;
         Ok(ToolResult {
             data: json!({ "x": pos.x, "y": pos.y }),
             ..Default::default()

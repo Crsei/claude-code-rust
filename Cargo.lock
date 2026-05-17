@@ -631,7 +631,9 @@ dependencies = [
  "base64",
  "cc-engine",
  "cc-types",
+ "dirs",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]

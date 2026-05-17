@@ -1,10 +1,7 @@
-//! Tool execution hooks — pre-tool, post-tool, stop, and permission hooks.
+//! Tool execution hooks — pre-tool, post-tool, stop, permission hooks,
+//! SSRF guard, HTTP hooks, async hook registry, hook events, and helpers.
 //!
 //! Corresponds to: LIFECYCLE_STATE_MACHINE.md §6 (Phase E)
-//!   - Pre-Tool Hooks: run before tool execution, can modify input or stop
-//!   - Post-Tool Hooks: run after successful tool execution
-//!   - Post-Tool Failure Hooks: run after failed tool execution
-//!   - Stop Hooks: run when the model stops
 //!
 //! Hooks are user-defined shell commands configured in settings.json under
 //! the `hooks` key. Each hook event (PreToolUse, PostToolUse, Stop) contains
@@ -15,21 +12,39 @@
 //! This module provides the concrete shell-command runner (`ShellHookRunner`)
 //! together with free functions that the rest of the crate uses directly.
 
+mod async_registry;
 mod execution;
+mod hook_events;
+mod hook_helpers;
+mod http_hook;
 mod post_tool;
 mod pre_tool;
+mod ssrf_guard;
 
+pub use async_registry::{
+    check_for_async_hook_responses, clear_all_async_hooks, complete_async_hook,
+    finalize_pending_async_hooks, get_pending_async_hooks, register_pending_async_hook,
+    remove_delivered_async_hooks,
+};
+pub use hook_events::{
+    clear_hook_event_state, emit_hook_response, emit_hook_started, register_hook_event_handler,
+    set_all_hook_events_enabled, HookEventEmitter,
+};
+pub use hook_helpers::{add_arguments_to_prompt, get_hook_display_text, HookHelpers};
+pub use http_hook::{exec_http_hook, HttpHookResult};
 pub use post_tool::{
     fire_notification_hook, run_event_hooks, run_post_tool_failure_hooks, run_stop_hooks,
 };
 pub use pre_tool::run_pre_tool_hooks;
+pub use ssrf_guard::{is_blocked_address, SsrfGuard};
 
 // Re-export the plain data types from cc-types so existing
 // `crate::hooks::{HookEventConfig, HookOutput, ...}` import paths keep
 // working without changes.
 pub use cc_types::hooks::{
-    HookEntry, HookEventConfig, HookOutput, HookRunner, HooksMap, PermissionOverride,
-    PostToolHookResult, PreToolHookResult,
+    HookEntry, HookEvent, HookEventConfig, HookEventMetadata, HookOutput, HookRunner, HookSource,
+    HooksMap, IndividualHookConfig, MatcherMetadata, PermissionOverride, PostToolHookResult,
+    PreToolHookResult,
 };
 
 use async_trait::async_trait;

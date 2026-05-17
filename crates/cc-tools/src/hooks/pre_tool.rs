@@ -4,7 +4,8 @@ use anyhow::Result;
 use serde_json::Value;
 use tracing::{debug, warn};
 
-use super::execution::execute_command_hook;
+use super::execution::{execute_command_hook, parse_hook_output};
+use super::http_hook::exec_http_hook;
 use super::{HookEntry, HookEventConfig, PermissionOverride, PreToolHookResult};
 use cc_types::hooks::matches_tool;
 
@@ -47,11 +48,10 @@ pub async fn run_pre_tool_hooks(
         }
 
         for entry in &config.hooks {
-            let HookEntry::Command { command, timeout } = entry;
+            let hook_label = hook_entry_label(entry);
+            debug!(tool = tool_name, hook = %hook_label, "running pre-tool hook");
 
-            debug!(tool = tool_name, command = command, "running pre-tool hook");
-
-            match execute_command_hook(command, &stdin_json, *timeout).await {
+            match execute_pre_tool_entry(entry, &stdin_json).await {
                 Ok(output) => {
                     // Check for stop
                     if !output.should_continue {
@@ -93,15 +93,15 @@ pub async fn run_pre_tool_hooks(
                 Err(e) => {
                     if config.critical {
                         return Err(anyhow::anyhow!(
-                            "critical pre-tool hook failed for tool '{}' (command '{}'): {}",
+                            "critical pre-tool hook failed for tool '{}' (hook '{}'): {}",
                             tool_name,
-                            command,
+                            hook_label,
                             e
                         ));
                     } else {
                         warn!(
                             tool = tool_name,
-                            command = command,
+                            hook = %hook_label,
                             error = %e,
                             "optional pre-tool hook error, continuing"
                         );
@@ -147,6 +147,8 @@ mod tests {
             hooks: vec![HookEntry::Command {
                 command: command.to_string(),
                 timeout: 10,
+                shell: None,
+                if_condition: None,
             }],
         }
     }
@@ -159,6 +161,8 @@ mod tests {
             hooks: vec![HookEntry::Command {
                 command: command.to_string(),
                 timeout: 10,
+                shell: None,
+                if_condition: None,
             }],
         }
     }
@@ -175,6 +179,8 @@ mod tests {
             hooks: vec![HookEntry::Command {
                 command: command.to_string(),
                 timeout,
+                shell: None,
+                if_condition: None,
             }],
         }
     }
@@ -321,5 +327,63 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("critical pre-tool hook failed"));
         assert!(message.contains("Bash"));
+    }
+}
+
+async fn execute_pre_tool_entry(
+    entry: &HookEntry,
+    stdin_json: &Value,
+) -> Result<super::HookOutput> {
+    match entry {
+        HookEntry::Command {
+            command,
+            timeout,
+            shell,
+            ..
+        } => execute_command_hook(command, stdin_json, *timeout, shell.as_deref()).await,
+        HookEntry::Http {
+            url,
+            timeout,
+            headers,
+            allowed_env_vars,
+            ..
+        } => {
+            let result = exec_http_hook(
+                url,
+                "PreToolUse",
+                stdin_json,
+                headers.as_ref(),
+                allowed_env_vars.as_deref(),
+                None,
+                Some(*timeout),
+            )
+            .await;
+            if !result.ok {
+                anyhow::bail!(
+                    "HTTP hook failed{}{}",
+                    result
+                        .status_code
+                        .map(|code| format!(" with status {code}"))
+                        .unwrap_or_default(),
+                    result
+                        .error
+                        .map(|error| format!(": {error}"))
+                        .unwrap_or_default()
+                );
+            }
+            parse_hook_output(&result.body)
+        }
+        HookEntry::Prompt { .. } | HookEntry::Agent { .. } => {
+            anyhow::bail!("prompt and agent hooks are not wired into the runtime yet")
+        }
+    }
+}
+
+fn hook_entry_label(entry: &HookEntry) -> String {
+    match entry {
+        HookEntry::Command { command, .. } => format!("command:{command}"),
+        HookEntry::Http { url, .. } => format!("http:{url}"),
+        HookEntry::Prompt { .. } => "prompt".to_string(),
+        HookEntry::Agent { .. } => "agent".to_string(),
     }
 }

@@ -4,7 +4,8 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use tracing::{debug, warn};
 
-use super::execution::execute_command_hook;
+use super::execution::{execute_command_hook, parse_hook_output};
+use super::http_hook::exec_http_hook;
 use super::{HookEntry, HookEventConfig, HookOutput, PostToolHookResult};
 #[cfg(test)]
 use crate::tool::ToolResult;
@@ -38,15 +39,10 @@ pub(crate) async fn run_post_tool_hooks_data(
         }
 
         for entry in &config.hooks {
-            let HookEntry::Command { command, timeout } = entry;
+            let hook_label = hook_entry_label(entry);
+            debug!(tool = tool_name, hook = %hook_label, "running post-tool hook");
 
-            debug!(
-                tool = tool_name,
-                command = command,
-                "running post-tool hook"
-            );
-
-            match execute_command_hook(command, &stdin_json, *timeout).await {
+            match execute_event_entry(entry, "PostToolUse", &stdin_json).await {
                 Ok(output) => {
                     if !output.should_continue {
                         let message = output
@@ -65,15 +61,15 @@ pub(crate) async fn run_post_tool_hooks_data(
                 Err(e) => {
                     if config.critical {
                         return Err(anyhow!(
-                            "critical post-tool hook failed for tool '{}' (command '{}'): {}",
+                            "critical post-tool hook failed for tool '{}' (hook '{}'): {}",
                             tool_name,
-                            command,
+                            hook_label,
                             e
                         ));
                     } else {
                         warn!(
                             tool = tool_name,
-                            command = command,
+                            hook = %hook_label,
                             error = %e,
                             "optional post-tool hook error, continuing"
                         );
@@ -140,26 +136,21 @@ pub async fn run_post_tool_failure_hooks(
         }
 
         for entry in &config.hooks {
-            let HookEntry::Command { command, timeout } = entry;
+            let hook_label = hook_entry_label(entry);
+            debug!(tool = tool_name, hook = %hook_label, "running post-tool failure hook");
 
-            debug!(
-                tool = tool_name,
-                command = command,
-                "running post-tool failure hook"
-            );
-
-            if let Err(e) = execute_command_hook(command, &stdin_json, *timeout).await {
+            if let Err(e) = execute_event_entry(entry, "PostToolUseFailure", &stdin_json).await {
                 if config.critical {
                     return Err(anyhow!(
-                        "critical post-tool failure hook failed for tool '{}' (command '{}'): {}",
+                        "critical post-tool failure hook failed for tool '{}' (hook '{}'): {}",
                         tool_name,
-                        command,
+                        hook_label,
                         e
                     ));
                 } else {
                     warn!(
                         tool = tool_name,
-                        command = command,
+                        hook = %hook_label,
                         error = %e,
                         "optional post-tool failure hook error, continuing"
                     );
@@ -191,11 +182,10 @@ pub async fn run_stop_hooks(hook_configs: &[HookEventConfig]) -> Result<PostTool
         }
 
         for entry in &config.hooks {
-            let HookEntry::Command { command, timeout } = entry;
+            let hook_label = hook_entry_label(entry);
+            debug!(hook = %hook_label, "running stop hook");
 
-            debug!(command = command, "running stop hook");
-
-            match execute_command_hook(command, &stdin_json, *timeout).await {
+            match execute_event_entry(entry, "Stop", &stdin_json).await {
                 Ok(output) => {
                     if !output.should_continue {
                         let message = output
@@ -214,13 +204,13 @@ pub async fn run_stop_hooks(hook_configs: &[HookEventConfig]) -> Result<PostTool
                 Err(e) => {
                     if config.critical {
                         return Err(anyhow!(
-                            "critical stop hook failed (command '{}'): {}",
-                            command,
+                            "critical stop hook failed (hook '{}'): {}",
+                            hook_label,
                             e
                         ));
                     } else {
                         warn!(
-                            command = command,
+                            hook = %hook_label,
                             error = %e,
                             "optional stop hook error, continuing"
                         );
@@ -263,22 +253,80 @@ pub async fn run_event_hooks(
         }
 
         for entry in &config.hooks {
-            let HookEntry::Command { command, timeout } = entry;
+            let hook_label = hook_entry_label(entry);
+            debug!(event = event_name, hook = %hook_label, "running event hook");
 
-            debug!(event = event_name, command = command, "running event hook");
-
-            match execute_command_hook(command, payload, *timeout).await {
+            match execute_event_entry(entry, event_name, payload).await {
                 Ok(output) => {
                     last_output = output;
                 }
                 Err(e) => {
-                    warn!(event = event_name, command = command, error = %e, "event hook error");
+                    warn!(event = event_name, hook = %hook_label, error = %e, "event hook error");
                 }
             }
         }
     }
 
     Ok(last_output)
+}
+
+async fn execute_event_entry(
+    entry: &HookEntry,
+    event_name: &str,
+    payload: &Value,
+) -> Result<HookOutput> {
+    match entry {
+        HookEntry::Command {
+            command,
+            timeout,
+            shell,
+            ..
+        } => execute_command_hook(command, payload, *timeout, shell.as_deref()).await,
+        HookEntry::Http {
+            url,
+            timeout,
+            headers,
+            allowed_env_vars,
+            ..
+        } => {
+            let result = exec_http_hook(
+                url,
+                event_name,
+                payload,
+                headers.as_ref(),
+                allowed_env_vars.as_deref(),
+                None,
+                Some(*timeout),
+            )
+            .await;
+            if !result.ok {
+                anyhow::bail!(
+                    "HTTP hook failed{}{}",
+                    result
+                        .status_code
+                        .map(|code| format!(" with status {code}"))
+                        .unwrap_or_default(),
+                    result
+                        .error
+                        .map(|error| format!(": {error}"))
+                        .unwrap_or_default()
+                );
+            }
+            parse_hook_output(&result.body)
+        }
+        HookEntry::Prompt { .. } | HookEntry::Agent { .. } => {
+            anyhow::bail!("prompt and agent hooks are not wired into the runtime yet")
+        }
+    }
+}
+
+fn hook_entry_label(entry: &HookEntry) -> String {
+    match entry {
+        HookEntry::Command { command, .. } => format!("command:{command}"),
+        HookEntry::Http { url, .. } => format!("http:{url}"),
+        HookEntry::Prompt { .. } => "prompt".to_string(),
+        HookEntry::Agent { .. } => "agent".to_string(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +371,8 @@ mod tests {
             hooks: vec![HookEntry::Command {
                 command: command.to_string(),
                 timeout: 10,
+                shell: None,
+                if_condition: None,
             }],
         }
     }
@@ -339,6 +389,8 @@ mod tests {
             hooks: vec![HookEntry::Command {
                 command: command.to_string(),
                 timeout,
+                shell: None,
+                if_condition: None,
             }],
         }
     }
@@ -385,6 +437,8 @@ mod tests {
             hooks: vec![HookEntry::Command {
                 command: r#"echo '{"continue":false,"reason":"should not fire"}'"#.to_string(),
                 timeout: 10,
+                shell: None,
+                if_condition: None,
             }],
         }];
 
@@ -548,6 +602,8 @@ mod tests {
             hooks: vec![HookEntry::Command {
                 command: r#"echo '{"continue":false,"stop_reason":"not done yet"}'"#.to_string(),
                 timeout: 10,
+                shell: None,
+                if_condition: None,
             }],
         }];
 

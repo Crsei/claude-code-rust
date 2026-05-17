@@ -15,6 +15,7 @@ pub mod agent_runtime;
 pub mod codex_exec;
 pub mod command_runtime;
 pub mod effort;
+pub mod hooks;
 pub mod input_processing;
 pub mod ipc_compat;
 pub mod lifecycle;

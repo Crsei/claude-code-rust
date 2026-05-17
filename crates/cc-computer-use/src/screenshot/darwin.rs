@@ -3,15 +3,19 @@
 use super::ScreenshotResult;
 
 pub async fn capture_full_screen() -> anyhow::Result<ScreenshotResult> {
-    use std::path::PathBuf;
-
-    // Create a temp file for the screenshot
-    let tmp_dir = std::env::temp_dir();
-    let tmp_file = tmp_dir.join(format!("cc_rust_screenshot_{}.png", std::process::id()));
+    let tmp_file = tempfile::Builder::new()
+        .prefix("cc_rust_screenshot_")
+        .suffix(".png")
+        .tempfile()?;
+    let tmp_path = tmp_file
+        .path()
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("screenshot temp path is not valid UTF-8"))?
+        .to_string();
 
     // Capture screenshot using screencapture
     let output = tokio::process::Command::new("screencapture")
-        .args(["-x", "-C", tmp_file.to_str().unwrap()])
+        .args(["-x", "-C", &tmp_path])
         .output()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to run screencapture: {}", e))?;
@@ -22,8 +26,7 @@ pub async fn capture_full_screen() -> anyhow::Result<ScreenshotResult> {
     }
 
     // Read the file and convert to base64
-    let png_bytes = tokio::fs::read(&tmp_file).await?;
-    let _ = tokio::fs::remove_file(&tmp_file).await;
+    let png_bytes = tokio::fs::read(tmp_file.path()).await?;
 
     // Get dimensions from the PNG header (width at bytes 16-19, height at 20-23, big-endian)
     let (width, height) = parse_png_dimensions(&png_bytes).unwrap_or((1920, 1080));

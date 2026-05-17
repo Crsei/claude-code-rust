@@ -52,6 +52,12 @@ mod tests {
         for tool in &tools {
             let name = tool.user_facing_name(None);
             assert!(
+                tool.name()
+                    .starts_with(crate::detection::COMPUTER_USE_PREFIX),
+                "runtime tool name '{}' should have mcp__computer-use__ prefix",
+                tool.name()
+            );
+            assert!(
                 name.starts_with(crate::detection::COMPUTER_USE_PREFIX),
                 "tool '{}' should have mcp__computer-use__ prefix, got '{}'",
                 tool.name(),
@@ -75,7 +81,7 @@ mod tests {
         let tools = register_cu_tools();
         let screenshot = tools
             .iter()
-            .find(|t| t.name() == "screenshot")
+            .find(|t| t.name() == "mcp__computer-use__screenshot")
             .expect("screenshot tool");
         assert!(screenshot.is_read_only(&serde_json::Value::Null));
     }
