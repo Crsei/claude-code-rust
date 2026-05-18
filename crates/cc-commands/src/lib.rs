@@ -106,6 +106,7 @@ pub mod runtime {
     type Installer = fn();
     type LspServersProvider = fn() -> Vec<LspServerInfo>;
     type LspRecommendationSettingsProvider = fn() -> LspRecommendationSettings;
+    type LspRecommendationsProvider = fn() -> Vec<LspPluginRecommendationInfo>;
     type BuiltinAgentsProvider = fn() -> Vec<BuiltinAgentEntry>;
     type BuiltinAgentPromptProvider = fn(&str) -> Option<String>;
     type TaskListProvider = fn() -> Vec<TaskEntry>;
@@ -186,9 +187,23 @@ pub mod runtime {
         pub permission_mode: String,
     }
 
+    /// Lightweight recommendation info returned by the LSP recommendation provider.
+    #[derive(Debug, Clone)]
+    pub struct LspPluginRecommendationInfo {
+        pub plugin_id: String,
+        pub plugin_name: String,
+        pub description: String,
+        pub languages: Vec<String>,
+        pub confidence: f64,
+        pub is_already_installed: bool,
+        pub is_dismissed: bool,
+    }
+
     static INSTALLER: OnceLock<RwLock<Option<Installer>>> = OnceLock::new();
     static LSP_SERVERS_PROVIDER: OnceLock<RwLock<Option<LspServersProvider>>> = OnceLock::new();
     static LSP_SETTINGS_PROVIDER: OnceLock<RwLock<Option<LspRecommendationSettingsProvider>>> =
+        OnceLock::new();
+    static LSP_RECOMMENDATIONS_PROVIDER: OnceLock<RwLock<Option<LspRecommendationsProvider>>> =
         OnceLock::new();
     static BUILTIN_AGENTS_PROVIDER: OnceLock<RwLock<Option<BuiltinAgentsProvider>>> =
         OnceLock::new();
@@ -236,6 +251,13 @@ pub mod runtime {
         let settings_slot = LSP_SETTINGS_PROVIDER.get_or_init(|| RwLock::new(None));
         if let Ok(mut guard) = settings_slot.write() {
             *guard = Some(settings);
+        }
+    }
+
+    pub fn set_lsp_recommendations_provider(provider: LspRecommendationsProvider) {
+        let slot = LSP_RECOMMENDATIONS_PROVIDER.get_or_init(|| RwLock::new(None));
+        if let Ok(mut guard) = slot.write() {
+            *guard = Some(provider);
         }
     }
 
@@ -328,6 +350,15 @@ pub mod runtime {
     pub(crate) fn lsp_recommendation_settings() -> LspRecommendationSettings {
         ensure_runtime_installed();
         LSP_SETTINGS_PROVIDER
+            .get()
+            .and_then(|slot| slot.read().ok().and_then(|guard| *guard))
+            .map(|provider| provider())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn lsp_recommendations() -> Vec<LspPluginRecommendationInfo> {
+        ensure_runtime_installed();
+        LSP_RECOMMENDATIONS_PROVIDER
             .get()
             .and_then(|slot| slot.read().ok().and_then(|guard| *guard))
             .map(|provider| provider())

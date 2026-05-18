@@ -57,6 +57,13 @@ pub(crate) fn install_command_runtime_providers() {
             register_plugin: cc_plugins::register_plugin,
             emit_event_external: emit_plugin_event_external_for_commands,
             uninstall_plugin: cc_plugins::uninstall_plugin,
+            // Marketplace / installation / validation — stub until Lane D
+            install_plugin: stub_install_plugin,
+            list_marketplace: stub_list_marketplace,
+            refresh_marketplace_cache: stub_refresh_marketplace_cache,
+            update_plugin: stub_update_plugin,
+            validate_plugin: stub_validate_plugin,
+            get_plugin_info: stub_get_plugin_info,
         },
     );
     cc_commands::reload_plugins_cmd::set_reload_plugins_runtime(
@@ -469,4 +476,45 @@ fn remote_stop_run_for_commands(
             diagnostic: response.diagnostic,
         })
     })
+}
+
+// ---------------------------------------------------------------------------
+// Stub functions for PluginCommandRuntime marketplace/installation extensions
+// These will be replaced by proper implementations from Lane D.
+// ---------------------------------------------------------------------------
+
+fn stub_install_plugin(_source: &str, _version: Option<&str>) -> Result<String, anyhow::Error> {
+    Err(anyhow::anyhow!(
+        "Plugin installation is not yet implemented (Lane D in progress)"
+    ))
+}
+
+fn stub_list_marketplace(_query: &str) -> Result<Vec<String>, anyhow::Error> {
+    Err(anyhow::anyhow!(
+        "Marketplace listing is not yet implemented (Lane D in progress)"
+    ))
+}
+
+fn stub_refresh_marketplace_cache() -> Result<String, anyhow::Error> {
+    Err(anyhow::anyhow!(
+        "Marketplace cache refresh is not yet implemented (Lane D in progress)"
+    ))
+}
+
+fn stub_update_plugin(_plugin_id: &str) -> Result<String, anyhow::Error> {
+    Err(anyhow::anyhow!(
+        "Plugin update is not yet implemented (Lane D in progress)"
+    ))
+}
+
+fn stub_validate_plugin(_plugin_id: &str) -> Result<Vec<String>, anyhow::Error> {
+    Err(anyhow::anyhow!(
+        "Plugin validation is not yet implemented (Lane D in progress)"
+    ))
+}
+
+fn stub_get_plugin_info(_plugin_id: &str) -> Result<String, anyhow::Error> {
+    Err(anyhow::anyhow!(
+        "Plugin info is not yet implemented (Lane D in progress)"
+    ))
 }

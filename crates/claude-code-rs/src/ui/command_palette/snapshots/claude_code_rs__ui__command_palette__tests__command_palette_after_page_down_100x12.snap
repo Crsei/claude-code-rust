@@ -1,16 +1,17 @@
 ---
 source: crates/claude-code-rs/src/ui/command_palette/tests.rs
+assertion_line: 203
 expression: "render_palette_snapshot(\"/\", &cwd, 100, 12, &[KeyCode::PageDown])"
 ---
 "┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
 "│query=/  matches=73  mode=insert                                                                  │"
 "│Commands                       Command details                                                    │"
+"│  ─ Builtin ─                                                                                     │"
 "│/assistant              (kairos)                                                                  │"
 "│/audit-export           (audit)                                                                   │"
 "│/branch                 (br)        Fork the current conversation into a new br...                │"
 "│                                                                                                  │"
 "│Behavior                                                                                          │"
 "│  Enter inserts: /branch                                                                          │"
-"│  usage: /branch [title]                                                                          │"
-"│  example: /branch                                                                                │"
+"│  ghost: /branch                                                                                  │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"

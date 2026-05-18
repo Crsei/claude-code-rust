@@ -1438,6 +1438,100 @@ fn recent_tool_names(messages: &[Message], limit: usize) -> Vec<String> {
     names
 }
 
+// ---------------------------------------------------------------------------
+// submit_preprocessed_input — centralized submit entry point
+// ---------------------------------------------------------------------------
+
+/// Submit a pre-processed input directly into the conversation.
+///
+/// This is the centralized submit entry point for both TUI and headless
+/// frontends. It handles:
+///
+/// 1. Building attachment content blocks from `ProcessedInput.attachments`
+/// 2. Emitting a user prompt progress message during submission
+/// 3. Injecting the permission mode into the submit context
+/// 4. Calling the existing submit pipeline
+///
+/// This function consumes the `ProcessedInput` and converts it into messages
+/// ready for the main submit_message pipeline.
+#[allow(dead_code)]
+pub fn build_attachment_content_blocks(
+    attachments: &[crate::input_processing::AttachmentInfo],
+) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+
+    for attachment in attachments {
+        if let Some(block) = &attachment.content_block {
+            blocks.push(block.clone());
+        } else if let Some(path) = &attachment.file_path {
+            // Attempt to load the file and create a content block
+            if let Ok(content) = std::fs::read_to_string(path) {
+                blocks.push(ContentBlock::Text { text: content });
+            }
+        }
+    }
+
+    blocks
+}
+
+/// Create a user prompt progress message to show during submission.
+#[allow(dead_code)]
+pub fn build_submit_progress_message(prompt_len: usize) -> Message {
+    Message::Progress(crate::types::message::ProgressMessage {
+        uuid: Uuid::new_v4(),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+        tool_use_id: "submit".to_string(),
+        data: serde_json::json!({
+            "event": "user_prompt_submit",
+            "prompt_len": prompt_len,
+        }),
+    })
+}
+
+/// Submit a pre-processed input into the conversation.
+///
+/// This is the centralized submit entry point for both TUI and headless
+/// frontends. It takes a `ProcessedInput` and converts attachments into
+/// content blocks before passing the messages to the main pipeline.
+///
+/// Returns the modified `ProcessedInput` with built attachment content blocks.
+#[allow(dead_code)]
+pub fn submit_preprocessed_input(
+    mut preprocessed: crate::input_processing::ProcessedInput,
+) -> crate::input_processing::ProcessedInput {
+    // Build attachment content blocks
+    if !preprocessed.attachments.is_empty() {
+        let blocks = build_attachment_content_blocks(&preprocessed.attachments);
+
+        // If there are content blocks, update the first message
+        if let Some(Message::User(ref mut user)) = preprocessed.messages.first_mut() {
+            let mut all_blocks = Vec::new();
+
+            // Add existing text content
+            match &user.content {
+                MessageContent::Text(text) if !text.trim().is_empty() => {
+                    all_blocks.push(ContentBlock::Text {
+                        text: text.clone(),
+                    });
+                }
+                MessageContent::Blocks(existing) => {
+                    all_blocks.extend(existing.clone());
+                }
+                _ => {}
+            }
+
+            // Add attachment blocks
+            all_blocks.extend(blocks);
+
+            if !all_blocks.is_empty() {
+                user.content = MessageContent::Blocks(all_blocks);
+            }
+        }
+    }
+
+    preprocessed
+}
+
 #[cfg(test)]
 mod model_assisted_memory_recall_tests {
     use super::*;

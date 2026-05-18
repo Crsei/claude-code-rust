@@ -1035,6 +1035,102 @@ pub fn get_hook_event_metadata() -> HashMap<HookEvent, HookEventMetadata> {
     );
 
     m.insert(
+        HookEvent::PermissionDenied,
+        HookEventMetadata {
+            summary: "When a permission request is denied".into(),
+            description: "Input to command is JSON with tool_name, reason, and tool_use_id.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only".into(),
+            matcher_metadata: Some(MatcherMetadata {
+                field_to_match: "tool_name".into(),
+                values: Vec::new(),
+            }),
+        },
+    );
+
+    m.insert(
+        HookEvent::InstructionsLoaded,
+        HookEventMetadata {
+            summary: "When AGENTS.md/CLAUDE.md instructions are loaded".into(),
+            description: "Input to command is JSON with file_path and instruction_count.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only".into(),
+            matcher_metadata: Some(MatcherMetadata {
+                field_to_match: "file_path".into(),
+                values: Vec::new(),
+            }),
+        },
+    );
+
+    m.insert(
+        HookEvent::TeammateIdle,
+        HookEventMetadata {
+            summary: "When teammate is detected as idle".into(),
+            description: "Input to command is JSON with teammate_id and idle_duration.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only".into(),
+            matcher_metadata: Some(MatcherMetadata {
+                field_to_match: "teammate_id".into(),
+                values: Vec::new(),
+            }),
+        },
+    );
+
+    m.insert(
+        HookEvent::TaskCreated,
+        HookEventMetadata {
+            summary: "When a task is created".into(),
+            description: "Input to command is JSON with task_id, title, and description.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only".into(),
+            matcher_metadata: Some(MatcherMetadata {
+                field_to_match: "task_id".into(),
+                values: Vec::new(),
+            }),
+        },
+    );
+
+    m.insert(
+        HookEvent::TaskCompleted,
+        HookEventMetadata {
+            summary: "When a task is completed".into(),
+            description: "Input to command is JSON with task_id and result.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only".into(),
+            matcher_metadata: Some(MatcherMetadata {
+                field_to_match: "task_id".into(),
+                values: Vec::new(),
+            }),
+        },
+    );
+
+    m.insert(
+        HookEvent::Elicitation,
+        HookEventMetadata {
+            summary: "When user elicitation is triggered".into(),
+            description: "Input to command is JSON with elicitation_type and prompt.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only".into(),
+            matcher_metadata: Some(MatcherMetadata {
+                field_to_match: "elicitation_type".into(),
+                values: Vec::new(),
+            }),
+        },
+    );
+
+    m.insert(
+        HookEvent::ElicitationResult,
+        HookEventMetadata {
+            summary: "When elicitation result is received".into(),
+            description: "Input to command is JSON with elicitation_type and response.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only".into(),
+            matcher_metadata: Some(MatcherMetadata {
+                field_to_match: "elicitation_type".into(),
+                values: Vec::new(),
+            }),
+        },
+    );
+
+    m.insert(
+        HookEvent::ConfigChange,
+        HookEventMetadata {
+            summary: "When configuration changes".into(),
+            description: "Input to command is JSON with changed_keys and source.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only".into(),
+            matcher_metadata: Some(MatcherMetadata {
+                field_to_match: "source".into(),
+                values: vec!["user".into(), "managed".into(), "project".into()],
+            }),
+        },
+    );
+
+    m.insert(
         HookEvent::Setup,
         HookEventMetadata {
             summary: "Repo setup hooks for init and maintenance".into(),

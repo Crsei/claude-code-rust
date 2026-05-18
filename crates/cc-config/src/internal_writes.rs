@@ -106,30 +106,28 @@ pub fn clear_all_writes() {
 mod tests {
     use super::*;
 
+    /// All global-state tests are combined into one function because
+    /// `clear_all_writes` and the shared `ACTIVE_WRITES` set create races
+    /// when run in parallel with other tests.
     #[test]
-    fn test_begin_write_registers_path() {
+    fn test_global_state_operations() {
+        // --- begin_write registers path ---
         let path = PathBuf::from("/tmp/test-settings.json");
         {
             let guard = begin_write(&path);
             assert!(guard.is_some());
             assert!(is_active_write(&path));
         }
-        // After guard is dropped, path should be unregistered.
         assert!(!is_active_write(&path));
-    }
 
-    #[test]
-    fn test_commit_write_ends_tracking() {
+        // --- commit_write ends tracking ---
         let path = PathBuf::from("/tmp/test-settings2.json");
         let guard = begin_write(&path).unwrap();
         assert!(is_active_write(&path));
-
         commit_write(guard);
         assert!(!is_active_write(&path));
-    }
 
-    #[test]
-    fn test_multiple_writes_tracked_independently() {
+        // --- multiple writes tracked independently ---
         let path_a = PathBuf::from("/tmp/a.json");
         let path_b = PathBuf::from("/tmp/b.json");
 
@@ -145,27 +143,23 @@ mod tests {
 
         drop(guard_b);
         assert!(!is_active_write(&path_b));
-    }
 
-    #[test]
-    fn test_clear_all_writes() {
+        // --- clear_all_writes ---
         let path = PathBuf::from("/tmp/clear-test.json");
         let _guard = begin_write(&path).unwrap();
         assert!(is_active_write(&path));
-
         clear_all_writes();
         assert!(!is_active_write(&path));
-    }
 
-    #[test]
-    fn test_nonexistent_path() {
-        assert!(!is_active_write(Path::new("/nonexistent/path.json")));
-    }
-
-    #[test]
-    fn test_guard_path_accessor() {
+        // --- guard path accessor ---
         let path = PathBuf::from("/tmp/guard-path.json");
         let guard = begin_write(&path).unwrap();
         assert_eq!(guard.path(), Path::new("/tmp/guard-path.json"));
+    }
+
+    /// This test doesn't interact with global state, so it can run in parallel.
+    #[test]
+    fn test_nonexistent_path() {
+        assert!(!is_active_write(Path::new("/nonexistent/path.json")));
     }
 }

@@ -10,6 +10,9 @@ use super::theme::Theme;
 ///
 /// Handles common editing key bindings (arrows, home/end, ctrl shortcuts)
 /// and returns `Some(text)` from [`handle_key`] when the user presses Enter.
+///
+/// Supports ghost suffix rendering: dimmed text shown after the cursor that
+/// represents the active completion candidate.
 pub struct PromptInput {
     /// Current input text.
     pub input: String,
@@ -21,6 +24,10 @@ pub struct PromptInput {
     pub is_active: bool,
     /// Summary of the most recent large paste, shown by the app chrome only.
     large_paste_notice: Option<String>,
+    /// Optional ghost suffix text shown dimmed after the cursor.
+    ghost_suffix: Option<String>,
+    /// Whether to show the ghost suffix.
+    show_ghost: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -37,7 +44,28 @@ impl PromptInput {
             cursor_position: 0,
             is_active: true,
             large_paste_notice: None,
+            ghost_suffix: None,
+            show_ghost: false,
         }
+    }
+
+    /// Set the ghost suffix text (dimmed text shown after the cursor).
+    /// Pass `None` to clear.
+    pub fn set_ghost_suffix(&mut self, text: Option<String>) {
+        self.ghost_suffix = text;
+    }
+
+    /// Set whether to show the ghost suffix.
+    pub fn set_show_ghost(&mut self, show: bool) {
+        self.show_ghost = show;
+    }
+
+    pub fn ghost_suffix(&self) -> Option<&str> {
+        self.ghost_suffix.as_deref()
+    }
+
+    pub fn show_ghost(&self) -> bool {
+        self.show_ghost
     }
 
     /// Handle a key event. Returns `Some(submitted_text)` when the user
@@ -268,6 +296,14 @@ impl PromptInput {
                     .bg(ratatui::style::Color::White),
             ));
             spans.push(Span::raw(after_cursor));
+            // Ghost suffix: dimmed text after cursor showing completion
+            if self.show_ghost {
+                if let Some(suffix) = &self.ghost_suffix {
+                    if !suffix.is_empty() && cursor_in_visible >= visible_text.len() {
+                        spans.push(Span::styled(suffix.clone(), theme.dim));
+                    }
+                }
+            }
             if let Some(hint) = context
                 .hint
                 .filter(|_| cursor_in_visible >= visible_text.len())

@@ -20,6 +20,11 @@
 //! - `/plugin disable <plugin-id>`        — flip status to Disabled
 //! - `/plugin uninstall <plugin-id>`      — drop from installed_plugins.json
 //! - `/plugin uninstall <id> --purge`     — also delete the cache dir
+//! - `/plugin install <source>`           — install plugin from marketplace/source
+//! - `/plugin marketplace [list|refresh|search <q>]` — browse/refresh marketplace
+//! - `/plugin update [id]`                — update plugin(s)
+//! - `/plugin validate [id]`              — validate installed plugin(s)
+//! - `/plugin info <id>`                  — detailed plugin info
 
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
@@ -39,6 +44,13 @@ pub struct PluginCommandRuntime {
     pub register_plugin: fn(PluginEntry),
     pub emit_event_external: fn(cc_ipc_protocol::subsystem_events::SubsystemEvent),
     pub uninstall_plugin: fn(&str, bool) -> Result<Option<PluginEntry>>,
+    // Marketplace / installation / validation extensions
+    pub install_plugin: fn(&str, Option<&str>) -> Result<String>,
+    pub list_marketplace: fn(&str) -> Result<Vec<String>>,
+    pub refresh_marketplace_cache: fn() -> Result<String>,
+    pub update_plugin: fn(&str) -> Result<String>,
+    pub validate_plugin: fn(&str) -> Result<Vec<String>>,
+    pub get_plugin_info: fn(&str) -> Result<String>,
 }
 
 static PLUGIN_RUNTIME: OnceLock<RwLock<Option<PluginCommandRuntime>>> = OnceLock::new();
@@ -90,6 +102,34 @@ impl CommandHandler for PluginHandler {
                 let purge = parts.iter().skip(2).any(|p| *p == "--purge");
                 handle_uninstall(id, purge)
             }
+            Some("install") => {
+                let source = parts.get(1).copied().unwrap_or("");
+                let scope = parts.get(2).copied();
+                handle_install(source, scope)
+            }
+            Some("marketplace") | Some("mp") => {
+                let sub = parts.get(1).copied().unwrap_or("list");
+                match sub {
+                    "refresh" | "reload" | "sync" => handle_marketplace_refresh(),
+                    "search" => {
+                        let query = parts.get(2).copied().unwrap_or("");
+                        handle_marketplace_search(query)
+                    }
+                    _ => handle_marketplace_list(),
+                }
+            }
+            Some("update") | Some("upgrade") => {
+                let id = parts.get(1).copied().unwrap_or("");
+                handle_update(id)
+            }
+            Some("validate") => {
+                let id = parts.get(1).copied().unwrap_or("");
+                handle_validate(id)
+            }
+            Some("info") | Some("inspect") => {
+                let id = parts.get(1).copied().unwrap_or("");
+                handle_info(id)
+            }
             Some("help") => Ok(handle_help()),
             Some(sub) => Ok(CommandResult::Output(format!(
                 "Unknown plugin subcommand: '{}'\n{}",
@@ -114,7 +154,14 @@ fn usage_block() -> &'static str {
        /plugin enable <plugin-id>       -- enable plugin\n  \
        /plugin disable <plugin-id>      -- disable plugin\n  \
        /plugin uninstall <plugin-id>    -- remove from installed_plugins.json\n  \
-       /plugin uninstall <id> --purge   -- also delete the cache directory"
+       /plugin uninstall <id> --purge   -- also delete the cache directory\n  \
+       /plugin install <source>         -- install plugin from source/marketplace\n  \
+       /plugin marketplace              -- list marketplace sources\n  \
+       /plugin marketplace refresh      -- refresh marketplace cache\n  \
+       /plugin marketplace search <q>   -- search marketplace\n  \
+       /plugin update [id]              -- update plugin(s)\n  \
+       /plugin validate [id]            -- validate installed plugin(s)\n  \
+       /plugin info <id>                -- detailed plugin information"
 }
 
 fn handle_help() -> CommandResult {
@@ -454,6 +501,145 @@ fn handle_uninstall(plugin_id: &str, purge: bool) -> Result<CommandResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Install
+// ---------------------------------------------------------------------------
+
+fn handle_install(source: &str, scope: Option<&str>) -> Result<CommandResult> {
+    if source.trim().is_empty() {
+        bail!("Usage: /plugin install <source> [scope]");
+    }
+
+    let runtime = plugin_runtime()?;
+    match (runtime.install_plugin)(source, scope) {
+        Ok(msg) => Ok(CommandResult::Output(msg)),
+        Err(e) => Ok(CommandResult::Output(format!("Install failed: {}", e))),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace
+// ---------------------------------------------------------------------------
+
+fn handle_marketplace_list() -> Result<CommandResult> {
+    let runtime = plugin_runtime()?;
+    match (runtime.list_marketplace)("") {
+        Ok(entries) => {
+            if entries.is_empty() {
+                Ok(CommandResult::Output(
+                    "No marketplace sources configured.".to_string(),
+                ))
+            } else {
+                let mut lines = vec!["Marketplace sources:".to_string()];
+                for entry in entries {
+                    lines.push(format!("  - {}", entry));
+                }
+                Ok(CommandResult::Output(lines.join("\n")))
+            }
+        }
+        Err(e) => Ok(CommandResult::Output(format!(
+            "Failed to list marketplaces: {}",
+            e
+        ))),
+    }
+}
+
+fn handle_marketplace_refresh() -> Result<CommandResult> {
+    let runtime = plugin_runtime()?;
+    match (runtime.refresh_marketplace_cache)() {
+        Ok(msg) => Ok(CommandResult::Output(msg)),
+        Err(e) => Ok(CommandResult::Output(format!(
+            "Marketplace refresh failed: {}",
+            e
+        ))),
+    }
+}
+
+fn handle_marketplace_search(query: &str) -> Result<CommandResult> {
+    if query.trim().is_empty() {
+        bail!("Usage: /plugin marketplace search <query>");
+    }
+    let runtime = plugin_runtime()?;
+    match (runtime.list_marketplace)(query) {
+        Ok(results) => {
+            if results.is_empty() {
+                Ok(CommandResult::Output(format!(
+                    "No marketplace results for '{}'.",
+                    query
+                )))
+            } else {
+                let mut lines = vec![format!("Marketplace results for '{}':", query)];
+                for entry in results {
+                    lines.push(format!("  - {}", entry));
+                }
+                Ok(CommandResult::Output(lines.join("\n")))
+            }
+        }
+        Err(e) => Ok(CommandResult::Output(format!("Search failed: {}", e))),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------------------
+
+fn handle_update(plugin_id: &str) -> Result<CommandResult> {
+    let runtime = plugin_runtime()?;
+    match (runtime.update_plugin)(plugin_id) {
+        Ok(msg) => Ok(CommandResult::Output(msg)),
+        Err(e) => Ok(CommandResult::Output(format!("Update failed: {}", e))),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Validate
+// ---------------------------------------------------------------------------
+
+fn handle_validate(plugin_id: &str) -> Result<CommandResult> {
+    let runtime = plugin_runtime()?;
+    match (runtime.validate_plugin)(plugin_id) {
+        Ok(errors) => {
+            if errors.is_empty() {
+                let id = if plugin_id.trim().is_empty() {
+                    "all plugins"
+                } else {
+                    plugin_id
+                };
+                Ok(CommandResult::Output(format!(
+                    "{}: no validation issues found.",
+                    id
+                )))
+            } else {
+                let mut lines = vec![format!("Validation issues:")];
+                for err in &errors {
+                    lines.push(format!("  - {}", err));
+                }
+                Ok(CommandResult::Output(lines.join("\n")))
+            }
+        }
+        Err(e) => Ok(CommandResult::Output(format!("Validation failed: {}", e))),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Info
+// ---------------------------------------------------------------------------
+
+fn handle_info(plugin_id: &str) -> Result<CommandResult> {
+    if plugin_id.trim().is_empty() {
+        bail!("Usage: /plugin info <plugin-id>");
+    }
+
+    let runtime = plugin_runtime()?;
+    match (runtime.get_plugin_info)(plugin_id) {
+        Ok(info) => Ok(CommandResult::Output(info)),
+        Err(e) => Ok(CommandResult::Output(format!(
+            "Failed to get plugin info: {}",
+            e
+        ))),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -591,6 +777,46 @@ mod tests {
             Ok(Some(removed))
         }
 
+        pub fn install_plugin_stub(_source: &str, _scope: Option<&str>) -> Result<String> {
+            Ok("Plugin installed (stub).".to_string())
+        }
+
+        pub fn list_marketplace_stub(_query: &str) -> Result<Vec<String>> {
+            Ok(vec!["official-marketplace".to_string()])
+        }
+
+        pub fn refresh_marketplace_cache_stub() -> Result<String> {
+            Ok("Marketplace cache refreshed (stub).".to_string())
+        }
+
+        pub fn update_plugin_stub(_id: &str) -> Result<String> {
+            Ok("Plugin updated (stub).".to_string())
+        }
+
+        pub fn validate_plugin_stub(_id: &str) -> Result<Vec<String>> {
+            Ok(Vec::new())
+        }
+
+        pub fn get_plugin_info_stub(id: &str) -> Result<String> {
+            let plugin = find_plugin(id)
+                .or_else(|| {
+                    lock_vec(disk())
+                        .iter()
+                        .find(|p| p.id == id)
+                        .cloned()
+                });
+            match plugin {
+                Some(p) => Ok(format!(
+                    "ID: {}\nName: {}\nVersion: {}\nStatus: {:?}\nTools: {}\nSkills: {}\nMCP: {}",
+                    p.id, p.name, p.version, p.status,
+                    p.tools.join(", "),
+                    p.skills.join(", "),
+                    p.mcp_servers.join(", "),
+                )),
+                None => Ok(format!("Plugin '{}' not found.", id)),
+            }
+        }
+
         pub fn install_runtime() {
             clear_plugins();
             set_plugin_command_runtime(PluginCommandRuntime {
@@ -603,6 +829,12 @@ mod tests {
                 register_plugin,
                 emit_event_external,
                 uninstall_plugin,
+                install_plugin: install_plugin_stub,
+                list_marketplace: list_marketplace_stub,
+                refresh_marketplace_cache: refresh_marketplace_cache_stub,
+                update_plugin: update_plugin_stub,
+                validate_plugin: validate_plugin_stub,
+                get_plugin_info: get_plugin_info_stub,
             });
         }
     }

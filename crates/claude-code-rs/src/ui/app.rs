@@ -151,6 +151,10 @@ pub struct App {
     voice_supported: bool,
     /// Normalized STT language passed to the controller on press.
     voice_language: String,
+
+    // Completion state (Lane E)
+    /// Tracks the active completion session for the input prompt.
+    completion_state: input::CompletionState,
 }
 
 impl App {
@@ -205,6 +209,7 @@ impl App {
             voice_enabled: false,
             voice_supported: false,
             voice_language: "en".to_string(),
+            completion_state: input::CompletionState::new(),
         }
     }
 

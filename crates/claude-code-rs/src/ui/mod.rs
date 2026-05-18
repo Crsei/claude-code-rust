@@ -142,6 +142,18 @@ pub mod slash_command;
 #[allow(dead_code)]
 #[path = "input/vim.rs"]
 pub mod vim;
+#[allow(dead_code)]
+#[path = "input/completions.rs"]
+pub mod completions;
+#[allow(dead_code)]
+#[path = "input/path_completion.rs"]
+pub mod path_completion;
+#[allow(dead_code)]
+#[path = "input/shell_history_completion.rs"]
+pub mod shell_history_completion;
+#[allow(dead_code)]
+#[path = "input/slack_channel_completion.rs"]
+pub mod slack_channel_completion;
 
 // Rendering: shared text shaping, visual effects, styles, scroll calculation,
 // and message/tool presentation helpers.

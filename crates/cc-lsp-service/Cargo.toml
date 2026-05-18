@@ -8,6 +8,7 @@ description = "Standalone LSP client service and tool adapter."
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 cc-config = { workspace = true }
+chrono = { workspace = true }
 cc-ipc-protocol = { workspace = true }
 cc-mcp = { workspace = true }
 cc-tools = { path = "../cc-tools", default-features = false, features = ["contract"] }

@@ -10,7 +10,7 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 /// Top-level plugin.json structure.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PluginManifest {
     /// Plugin identifier (unique within marketplace).
     pub name: String,
@@ -53,6 +53,15 @@ pub struct PluginManifest {
     /// Configuration schema (user-configurable settings).
     #[serde(default)]
     pub configuration: Option<serde_json::Value>,
+    /// Agent definitions contributed by this plugin.
+    #[serde(default)]
+    pub agents: Option<Vec<serde_json::Value>>,
+    /// Hook definitions contributed by this plugin.
+    #[serde(default)]
+    pub hooks: Option<Vec<serde_json::Value>>,
+    /// Output style definitions contributed by this plugin.
+    #[serde(default, rename = "outputStyles", alias = "output_styles")]
+    pub output_styles: Option<Vec<serde_json::Value>>,
 }
 
 /// A tool contributed by a plugin.
@@ -237,6 +246,9 @@ mod tests {
             commands: vec![],
             dependencies: HashMap::new(),
             configuration: None,
+            agents: None,
+            hooks: None,
+            output_styles: None,
         }
     }
 

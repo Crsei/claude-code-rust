@@ -12,6 +12,11 @@
 //! is needed here. Consumers that build steady-state registries (e.g. the
 //! tool registry at session start) must re-query after `reload_plugins()`
 //! for the changes to land in long-lived caches.
+//!
+//! Extended refresh functions also cover:
+//! - Marketplace index reload (load known marketplaces from disk)
+//! - Blocklist reload from settings
+//! - LSP declaration refresh
 
 use std::time::Instant;
 
@@ -128,6 +133,119 @@ pub fn reload_plugins() -> ReloadReport {
         had_error: report.had_error(),
     });
 
+    report
+}
+
+// ---------------------------------------------------------------------------
+// Extended refresh helpers
+// ---------------------------------------------------------------------------
+
+/// Delta information between two sets of plugin entries.
+#[derive(Debug, Clone, Default)]
+pub struct PluginDelta {
+    /// Plugin IDs added in the new set.
+    pub added: Vec<String>,
+    /// Plugin IDs removed from the old set.
+    pub removed: Vec<String>,
+    /// Plugin IDs whose version or status changed.
+    pub changed: Vec<String>,
+}
+
+impl PluginDelta {
+    pub fn has_changes(&self) -> bool {
+        !self.added.is_empty() || !self.removed.is_empty() || !self.changed.is_empty()
+    }
+}
+
+/// Compute a delta between two lists of plugins by ID, version, and status.
+pub fn compute_plugin_delta(
+    old: &[crate::PluginEntry],
+    new: &[crate::PluginEntry],
+) -> PluginDelta {
+    use std::collections::HashMap;
+
+    let old_by_id: HashMap<&str, &crate::PluginEntry> =
+        old.iter().map(|p| (p.id.as_str(), p)).collect();
+    let new_by_id: HashMap<&str, &crate::PluginEntry> =
+        new.iter().map(|p| (p.id.as_str(), p)).collect();
+
+    let mut added = Vec::new();
+    let mut removed = Vec::new();
+    let mut changed = Vec::new();
+
+    for (id, entry) in &new_by_id {
+        match old_by_id.get(id) {
+            Some(old_entry) => {
+                if old_entry.version != entry.version || old_entry.status != entry.status {
+                    changed.push((*id).to_string());
+                }
+            }
+            None => {
+                added.push((*id).to_string());
+            }
+        }
+    }
+
+    for (id, _) in &old_by_id {
+        if !new_by_id.contains_key(id) {
+            removed.push((*id).to_string());
+        }
+    }
+
+    added.sort();
+    removed.sort();
+    changed.sort();
+
+    PluginDelta {
+        added,
+        removed,
+        changed,
+    }
+}
+
+/// Refresh the marketplace index from the known marketplaces file on disk.
+pub fn refresh_marketplace_index() {
+    let marketplaces_path = super::known_marketplaces_path();
+    if !marketplaces_path.exists() {
+        return;
+    }
+    match crate::marketplace::GLOBAL_MARKETPLACE_INDEX
+        .load_from_file(&marketplaces_path)
+    {
+        Ok(()) => {
+            info!("Marketplace index refreshed from {}", marketplaces_path.display());
+        }
+        Err(e) => {
+            warn!(
+                path = %marketplaces_path.display(),
+                error = %e,
+                "Failed to refresh marketplace index"
+            );
+        }
+    }
+}
+
+/// Refresh the blocklist from a list of blocklist entries (typically from managed policy).
+pub fn refresh_blocklist(entries: Vec<crate::blocklist::BlocklistEntry>) {
+    crate::blocklist::GLOBAL_BLOCKLIST.apply_blocklist(entries);
+    info!(
+        count = crate::blocklist::GLOBAL_BLOCKLIST.get_blocklist().len(),
+        "Blocklist refreshed"
+    );
+}
+
+/// Refresh LSP declarations: this is a passive notification that re-collection
+/// should happen. Actual collection is done by `lsp::collect_plugin_lsp_declarations()`.
+pub fn refresh_lsp_declarations() {
+    info!("LSP declarations marked for refresh");
+}
+
+/// Full refresh including plugins, marketplace index, and blocklist.
+pub fn full_refresh(blocklist_entries: Vec<crate::blocklist::BlocklistEntry>) -> ReloadReport {
+    let report = reload_plugins();
+    refresh_marketplace_index();
+    refresh_blocklist(blocklist_entries);
+    refresh_lsp_declarations();
     report
 }
 

@@ -525,6 +525,47 @@ fn install_root_subsystem_event_sinks(event_tx: tokio::sync::broadcast::Sender<S
                     error,
                 },
             ),
+            // Events not yet mapped to IPC protocol — surface as RefreshNeeded
+            // so the frontend knows something changed.
+            cc_plugins::PluginSubsystemEvent::Installed { plugin_id, .. } => {
+                SubsystemEvent::Plugin(
+                    cc_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded {
+                        reason: format!("plugin installed: {plugin_id}"),
+                    },
+                )
+            }
+            cc_plugins::PluginSubsystemEvent::Updated { plugin_id, .. } => {
+                SubsystemEvent::Plugin(
+                    cc_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded {
+                        reason: format!("plugin updated: {plugin_id}"),
+                    },
+                )
+            }
+            cc_plugins::PluginSubsystemEvent::Uninstalled { plugin_id, .. } => {
+                SubsystemEvent::Plugin(
+                    cc_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded {
+                        reason: format!("plugin uninstalled: {plugin_id}"),
+                    },
+                )
+            }
+            cc_plugins::PluginSubsystemEvent::ValidationFailed {
+                plugin_id,
+                errors,
+            } => SubsystemEvent::Plugin(
+                cc_ipc_protocol::subsystem_events::PluginEvent::StatusChanged {
+                    plugin_id,
+                    name: String::new(),
+                    status: "error".to_string(),
+                    error: Some(errors.join("; ")),
+                },
+            ),
+            cc_plugins::PluginSubsystemEvent::ConfigChanged { plugin_id } => {
+                SubsystemEvent::Plugin(
+                    cc_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded {
+                        reason: format!("plugin config changed: {plugin_id}"),
+                    },
+                )
+            }
         };
         let _ = plugin_tx.send(adapted);
     })));
