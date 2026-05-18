@@ -120,10 +120,16 @@ mod tests {
         lines
             .iter()
             .map(|l| {
-                l.spans
+                let text = l
+                    .spans
                     .iter()
                     .map(|s| s.content.as_ref())
-                    .collect::<String>()
+                    .collect::<String>();
+                if !text.is_empty() && text.trim().is_empty() {
+                    format!("<blank:{}>", text.len())
+                } else {
+                    text
+                }
             })
             .collect()
     }
