@@ -17,6 +17,7 @@ serde_json = { workspace = true }
 
 cc-types = { workspace = true }
 cc-config = { workspace = true }
+cc-shell-command = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }

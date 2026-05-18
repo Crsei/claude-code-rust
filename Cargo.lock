@@ -708,6 +708,7 @@ dependencies = [
  "cc-permissions",
  "cc-sandbox",
  "cc-session",
+ "cc-shell-command",
  "cc-skills",
  "cc-tasks",
  "cc-tools",
@@ -876,6 +877,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cc-bootstrap",
+ "cc-shell-command",
  "cc-types",
  "cc-utils",
  "parking_lot",
@@ -956,6 +958,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cc-config",
+ "cc-shell-command",
  "cc-types",
  "cc-utils",
  "dirs",
@@ -1026,6 +1029,19 @@ dependencies = [
  "tracing",
  "uuid",
  "walkdir",
+]
+
+[[package]]
+name = "cc-shell-command"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "regex",
+ "serde",
+ "shell-words",
+ "thiserror 2.0.18",
+ "tree-sitter",
+ "tree-sitter-bash",
 ]
 
 [[package]]
@@ -1182,6 +1198,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cc-config",
+ "cc-shell-command",
  "cc-types",
  "chrono",
  "git2",
@@ -4514,6 +4531,16 @@ dependencies = [
  "regex-syntax",
  "streaming-iterator",
  "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-bash"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5244703ad2e08a616d859a0557d7aa290adcd5e0990188a692e628ffe9dce40"
+dependencies = [
+ "cc",
+ "tree-sitter",
 ]
 
 [[package]]

@@ -9,4 +9,5 @@ pub mod bash_matcher;
 pub mod dangerous;
 pub mod decision;
 pub mod path_validation;
+pub mod read_only_shell;
 pub mod rules;
