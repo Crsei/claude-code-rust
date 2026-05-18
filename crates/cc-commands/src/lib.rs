@@ -116,6 +116,7 @@ pub mod runtime {
     type RemoteTokenPathProvider = fn() -> PathBuf;
     type ToolPolicyNamesProvider = fn(CommandToolPolicy) -> Vec<String>;
     type ToolListProvider = fn() -> Tools;
+    type TeamContextForSessionProvider = fn(&str) -> Option<cc_types::teams::TeamContext>;
     type ForkRunner = fn(
         CommandForkParams,
     ) -> Pin<
@@ -207,6 +208,9 @@ pub mod runtime {
     static TOOL_POLICY_NAMES_PROVIDER: OnceLock<RwLock<Option<ToolPolicyNamesProvider>>> =
         OnceLock::new();
     static TOOL_LIST_PROVIDER: OnceLock<RwLock<Option<ToolListProvider>>> = OnceLock::new();
+    static TEAM_CONTEXT_FOR_SESSION_PROVIDER: OnceLock<
+        RwLock<Option<TeamContextForSessionProvider>>,
+    > = OnceLock::new();
     static FORK_RUNNER: OnceLock<RwLock<Option<ForkRunner>>> = OnceLock::new();
     static TEAM_COMMAND_EXECUTOR: OnceLock<RwLock<Option<TeamCommandExecutor>>> = OnceLock::new();
 
@@ -280,6 +284,10 @@ pub mod runtime {
 
     pub fn set_tool_list_provider(provider: ToolListProvider) {
         set_provider(&TOOL_LIST_PROVIDER, provider);
+    }
+
+    pub fn set_team_context_for_session_provider(provider: TeamContextForSessionProvider) {
+        set_provider(&TEAM_CONTEXT_FOR_SESSION_PROVIDER, provider);
     }
 
     pub fn set_fork_runner(runner: ForkRunner) {
@@ -407,6 +415,13 @@ pub mod runtime {
         get_provider(&TOOL_LIST_PROVIDER)
             .map(|provider| provider())
             .unwrap_or_default()
+    }
+
+    pub(crate) fn team_context_for_session(
+        session_id: &str,
+    ) -> Option<cc_types::teams::TeamContext> {
+        ensure_runtime_installed();
+        get_provider(&TEAM_CONTEXT_FOR_SESSION_PROVIDER).and_then(|provider| provider(session_id))
     }
 
     pub(crate) async fn run_fork(params: CommandForkParams) -> anyhow::Result<CommandForkOutcome> {

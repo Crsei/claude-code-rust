@@ -77,13 +77,19 @@ Rust 对应: `cc-teams/`, `cc-engine/teams/` (空目录)
 - 平台能力检测
 - 后端选择策略
 
-### 6. 布局管理 (107 行) — 缺失
-- 队友 UI 布局管理
-- SwarmView 渲染
+### 6. 布局管理 (107 行) — ✅ 已实现 (layout_manager.rs)
+- 队友颜色分配 (round-robin, 会话内缓存)
+- 颜色查询与重置
+- `/team spawn` 与 `TeamSpawn` 已接入 `assign_color_for_teammate()`，不再只是孤立 helper
+- **注意**: 窗格管理 (tmux/iTerm2 pane splitting, pane border status, 命令发送至 pane) 属于设计决策裁剪，未移植
+- 共 ~90 行，包含测试覆盖
 
-### 7. 重连处理 (119 行) — 缺失
-- Swarm 断线重连逻辑
-- 会话恢复
+### 7. 重连处理 (119 行) — ✅ 已实现 (reconnection.rs)
+- `compute_team_context()` — 从团队配置文件读取并构建 TeamContext，支持 Leader/Teammate 角色判定
+- `restore_team_context()` — 从团队配置文件恢复 Teammate 的 TeamContext（会话恢复场景）
+- `restore_team_context_for_session()` — 通过 team file 中的 session 绑定恢复 CLI 启动和 `/resume` 的 TeamContext
+- 缺失 team file 时降级为无 context；成员已移除时保留 resumed `agentName`
+- 共 ~280 行（含 9 个测试用例）
 
 ## 设计决策差异
 
@@ -108,4 +114,5 @@ Rust 版本有意识地**只保留了 InProcess 后端**，裁剪了 tmux/iTerm2
 | **Window Terminal** | **237 行** | **被裁剪** | **设计决策** |
 | **窗格管理** | **~1,200 行** | **无** | **设计决策** |
 | **后端注册表/检测** | **~740 行** | **无** | **设计决策** |
-| 重连处理 | reconnection.ts | 无 | 功能缺口 |
+| **布局管理** | **107 行** | **layout_manager.rs** | **✅ 已实现 (颜色部分)** |
+| **重连处理** | **119 行** | **reconnection.rs** | **✅ 已实现** |

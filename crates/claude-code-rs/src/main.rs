@@ -713,7 +713,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         sources.insert("sandbox".into(), settings::SettingsSource::Cli);
     }
 
-    let app_state = AppState {
+    let mut app_state = AppState {
         settings: SettingsJson {
             model: Some(model.clone()),
             backend: Some(backend.clone()),
@@ -776,28 +776,31 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     }
 
     // B.6: Handle session resume (before engine creation)
-    let resume_messages: Option<Vec<cc_types::message::Message>> = if cli.resume {
+    let (resume_messages, resumed_session_id): (
+        Option<Vec<cc_types::message::Message>>,
+        Option<String>,
+    ) = if cli.resume {
         match cc_session::resume::get_last_session(std::path::Path::new(&cwd)) {
             Ok(Some(info)) => {
                 info!(session = %info.session_id, "resuming last session");
                 match cc_session::resume::resume_session(&info.session_id) {
                     Ok(msgs) => {
                         info!(count = msgs.len(), "loaded messages from previous session");
-                        Some(msgs)
+                        (Some(msgs), Some(info.session_id))
                     }
                     Err(e) => {
                         warn!(error = %e, "failed to load session messages");
-                        None
+                        (None, None)
                     }
                 }
             }
             Ok(None) => {
                 warn!("no session to resume");
-                None
+                (None, None)
             }
             Err(e) => {
                 warn!(error = %e, "failed to find session to resume");
-                None
+                (None, None)
             }
         }
     } else if let Some(ref session_id) = cli.continue_session {
@@ -805,16 +808,32 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         match cc_session::resume::resume_session(session_id) {
             Ok(msgs) => {
                 info!(count = msgs.len(), "loaded messages for --continue");
-                Some(msgs)
+                (Some(msgs), Some(session_id.clone()))
             }
             Err(e) => {
                 warn!(error = %e, "failed to load session {}", session_id);
-                None
+                (None, None)
             }
         }
     } else {
-        None
+        (None, None)
     };
+
+    if let Some(session_id) = resumed_session_id.as_deref() {
+        match cc_teams::reconnection::restore_team_context_for_session(session_id) {
+            Ok(Some(team_context)) => {
+                app_state.team_context = Some(team_context);
+            }
+            Ok(None) => {}
+            Err(err) => {
+                warn!(
+                    session_id,
+                    error = %err,
+                    "failed to restore team context for resumed session"
+                );
+            }
+        }
+    }
 
     // Install root runtime adapters before QueryEngine can spawn agents. This
     // keeps cc-engine free of direct cc-ipc dependencies while preserving the

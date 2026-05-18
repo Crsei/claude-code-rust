@@ -74,3 +74,9 @@
 | ID | Severity | Status | Scope | Summary | Detail |
 | --- | --- | --- | --- | --- | --- |
 | UI-005 | Low | Open | line endings | `git diff --check` passes but reports CRLF-to-LF normalization warnings for several touched files. | The warnings are not whitespace errors, but commit packaging should expect Git normalization on touched Rust/docs files. |
+
+## 10. Agent Teams / Swarm residuals (2026-05-18)
+
+| ID | Severity | Status | Scope | Summary | Detail |
+| --- | --- | --- | --- | --- | --- |
+| TEAMS-001 | Medium | Open | teammate session resume | TeamContext resume by session id is wired for team leads, but teammate self-session resume still depends on persisting `TeamMember.session_id`. | `restore_team_context_for_session()` matches `TeamFile.lead_session_id` and member `session_id`. Current in-process spawn records teammate members with `session_id: None`, so a teammate's own saved session cannot be restored by session id until runner/spawn records the child session id back into the team file. |

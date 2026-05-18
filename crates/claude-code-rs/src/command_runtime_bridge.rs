@@ -21,6 +21,7 @@ pub(crate) fn install_command_runtime_providers() {
         team_task_snapshots_for_commands,
     );
     cc_commands::runtime::set_team_command_executor(team_command_for_commands);
+    cc_commands::runtime::set_team_context_for_session_provider(team_context_for_session);
     cc_commands::runtime::set_command_metadata_provider(command_metadata_for_commands);
     cc_commands::runtime::set_worktree_status_provider(
         crate::ui::status_line_resolver::current_worktree_status,
@@ -162,6 +163,20 @@ fn team_command_for_commands<'a>(
     ctx: &'a mut CommandContext,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = String> + Send + 'a>> {
     Box::pin(cc_teams::command::execute_team_command(args, ctx))
+}
+
+fn team_context_for_session(session_id: &str) -> Option<cc_types::teams::TeamContext> {
+    cc_teams::reconnection::restore_team_context_for_session(session_id)
+        .map_err(|err| {
+            tracing::warn!(
+                session_id,
+                error = %err,
+                "failed to restore team context for session"
+            );
+            err
+        })
+        .ok()
+        .flatten()
 }
 
 fn command_metadata_for_commands() -> Vec<cc_commands::CommandMetadata> {
