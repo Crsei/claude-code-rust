@@ -44,6 +44,9 @@
 | UI-002 | 中 | Fixed | Rust TUI shell output | 最新 Bash/PowerShell tool result 现在由 runtime context 自动展开；历史长输出默认折叠，选中后可展开/折叠查看 detail。 | 历史 #21 |
 | UI-003 | 中 | Fixed | Rust TUI Ctrl+R | Ctrl+R 现在按当前 workspace 读取跨会话持久 prompt history，条目带 session/title/cwd 来源和时间；无后端数据时显示明确空态。 | 历史 #22 |
 | UI-004 | 中 | Evidence pending | Browser MCP | Browser MCP / Chrome native host / Chrome MCP bridge 已有 fake bridge/native-host 端到端证据；真实第三方 Browser MCP server 与 Chrome extension 仍是 release 手动证据，缺失时不声称 live server 已验证。 | 历史 Browser MCP |
+| UI-006 | 中 | Open | Rust TUI theme parity | 组件层主题接线已补齐，但 `/config theme` 允许的 `solarized`、`monokai`、`nord` 等主题名尚未映射到新的 design theme palette。 | 当前未知主题会按 fallback 主题渲染；完成组件 parity 前需要补齐所有配置主题名到 `ThemeProvider`/design palette 的映射与快照覆盖。 |
+| UI-007 | 中 | Open | Rust TUI dialog overlays | 通用 `Dialog` 已有按键处理 helper，但 overlay stack 仍主要保存 overlay metadata，尚未集中派发实际 dialog key events。 | 真实弹窗路径需要接入 Esc/取消/确认与连续 Ctrl+C/Ctrl+D 保护逻辑后，才能声明 dialog component parity 完整覆盖 runtime 行为。 |
+| UI-008 | 中 | Open | Rust TUI tabs parity | `Tabs` 当前覆盖 header/selection 渲染，但尚未覆盖 content panes、受控 selection callback、键盘切换、content height 与 header focus effects。 | 这些行为在上游组件 parity 文档中属于 tabs 的交互契约；后续应在具体调用方和组件测试中补齐。 |
 
 ## 6. 文档状态问题
 

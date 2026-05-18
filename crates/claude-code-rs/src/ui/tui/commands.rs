@@ -141,6 +141,7 @@ fn sync_app_runtime_from_state(
     app.set_backend_name(state.main_loop_backend.clone());
     app.set_status_line_settings(state.settings.status_line.clone());
     app.set_output_style(state.settings.output_style.clone());
+    app.set_theme_setting(state.settings.theme.as_deref());
     app.set_editor_mode(state.settings.editor_mode.as_deref());
     app.set_keybindings(state.keybindings.clone());
     app.sync_status_context_from_state(state);
