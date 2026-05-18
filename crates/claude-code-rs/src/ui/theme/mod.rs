@@ -598,6 +598,7 @@ impl Theme {
                 .add_modifier(Modifier::BOLD),
             border: Style::default().fg(colors.border),
             code: Style::default().fg(colors.code).bg(colors.codeBg),
+            code_bg: colors.codeBg,
             thinking: Style::default()
                 .fg(colors.dim)
                 .add_modifier(Modifier::ITALIC),
@@ -612,6 +613,17 @@ impl Theme {
             link: Style::default()
                 .fg(colors.link)
                 .add_modifier(Modifier::UNDERLINED),
+            syntax_keyword: Style::default().fg(colors.syntaxKeyword),
+            syntax_string: Style::default().fg(colors.syntaxString),
+            syntax_comment: Style::default()
+                .fg(colors.syntaxComment)
+                .add_modifier(Modifier::ITALIC),
+            syntax_type: Style::default().fg(colors.syntaxType),
+            syntax_function: Style::default().fg(colors.syntaxFunction),
+            syntax_number: Style::default().fg(colors.syntaxNumber),
+            syntax_operator: Style::default().fg(colors.syntaxOperator),
+            syntax_builtin: Style::default().fg(colors.syntaxBuiltin),
+            syntax_punctuation: Style::default().fg(colors.syntaxPunctuation),
             diff_add: Style::default().fg(colors.diffAdd),
             diff_remove: Style::default().fg(colors.diffRemove),
             diff_context: Style::default().fg(colors.diffContext),
@@ -623,6 +635,8 @@ impl Theme {
                 .bg(colors.selection)
                 .add_modifier(Modifier::BOLD),
             unselected: Style::default().fg(colors.inactiveText),
+            progress_fill: Style::default().fg(colors.success),
+            progress_empty: Style::default().fg(colors.inactive),
         }
     }
 }
