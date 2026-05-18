@@ -15,6 +15,10 @@ use futures::Stream;
 use uuid::Uuid;
 
 use crate::compact::compaction::build_post_compact_messages_with_boundary;
+use crate::permissions::decision::{
+    AutoClassifierDecision, AutoClassifierStage, DenialTracker, PermissionDecision,
+    PermissionDecisionReason,
+};
 use crate::tool_runtime::execution::{
     find_tool, is_plan_mode_plan_file_write, sandbox_allowed_command_applies, security_validate,
     ToolExecutionResult,
@@ -28,7 +32,7 @@ use cc_engine::query::deps::{
 };
 
 use super::helpers::{build_messages_request, format_conversation_for_summary};
-use super::QueryEngineState;
+use super::{AutoClassifierFn, QueryEngineState};
 
 /// Dependency injection bridge: provides the query loop with access to the
 /// engine's shared state (abort flag, app state, tools) and, optionally, a
@@ -67,6 +71,11 @@ pub(crate) struct QueryEngineDeps {
     /// Command dispatcher — forwarded into `ToolUseContext` for tools that
     /// spawn child engines (e.g. Agent).
     pub(crate) command_dispatcher: Arc<dyn cc_types::commands::CommandDispatcher>,
+    /// Async callback for computing auto-mode classifier decisions.
+    /// Called with (tool_name, tool_input, classifier_input, messages, cwd)
+    /// when mode is Auto.
+    /// Returns `None` if the classifier is unavailable or skipped.
+    pub(crate) auto_classifier_fn: Option<AutoClassifierFn>,
 }
 
 fn auto_compact_trigger_tracking(tracking: Option<&AutoCompactTracking>) -> AutoCompactTracking {
@@ -92,15 +101,15 @@ fn exact_auto_compact_triggered(
     exact_report.map_or(heuristic_triggered, |report| report.over_threshold)
 }
 
-fn central_permission_result_for_tool(
+fn central_permission_decision_for_tool(
     tool_name: &str,
-    input: &mut serde_json::Value,
+    input: &serde_json::Value,
     app_state: &AppState,
     hook_decision: Option<&crate::permissions::decision::HookPermissionDecision>,
-) -> crate::types::tool::PermissionResult {
-    use crate::permissions::decision::{
-        self, PermissionBehavior, PermissionDecision, PermissionDecisionReason,
-    };
+    auto_classifier: Option<&AutoClassifierDecision>,
+    denial_tracker: Option<&mut DenialTracker>,
+) -> PermissionDecision {
+    use crate::permissions::decision::{self, PermissionBehavior};
 
     let plan_file_write_allowed = app_state.tool_permission_context.mode == PermissionMode::Plan
         && is_plan_mode_plan_file_write(tool_name, input);
@@ -115,12 +124,13 @@ fn central_permission_result_for_tool(
             },
         }
     } else {
-        decision::has_permissions_to_use_tool_with_hook(
+        decision::has_permissions_to_use_tool_with_hook_and_auto_classifier(
             tool_name,
             input,
             &app_state.tool_permission_context,
             hook_decision,
-            None,
+            auto_classifier,
+            denial_tracker,
         )
     };
     if matches!(&decision.behavior, PermissionBehavior::Ask)
@@ -137,6 +147,26 @@ fn central_permission_result_for_tool(
             },
         };
     }
+    decision
+}
+
+fn auto_classifier_needed(decision: &PermissionDecision) -> bool {
+    matches!(
+        (&decision.behavior, &decision.reason),
+        (
+            crate::permissions::decision::PermissionBehavior::Allow,
+            PermissionDecisionReason::Mode { mode }
+        ) if mode == "auto"
+    )
+}
+
+fn permission_result_from_decision(
+    tool_name: &str,
+    input: &mut serde_json::Value,
+    decision: PermissionDecision,
+) -> crate::types::tool::PermissionResult {
+    use crate::permissions::decision::PermissionBehavior;
+
     let behavior = decision.behavior;
     let message = decision.message;
     if let Some(updated_input) = decision.updated_input {
@@ -154,6 +184,25 @@ fn central_permission_result_for_tool(
             message: message.unwrap_or_else(|| format!("Allow tool '{}'?", tool_name)),
         },
     }
+}
+
+#[cfg(test)]
+fn central_permission_result_for_tool(
+    tool_name: &str,
+    input: &mut serde_json::Value,
+    app_state: &AppState,
+    hook_decision: Option<&crate::permissions::decision::HookPermissionDecision>,
+    auto_classifier: Option<&AutoClassifierDecision>,
+) -> crate::types::tool::PermissionResult {
+    let decision = central_permission_decision_for_tool(
+        tool_name,
+        input,
+        app_state,
+        hook_decision,
+        auto_classifier,
+        None,
+    );
+    permission_result_from_decision(tool_name, input, decision)
 }
 
 fn hook_error_is_critical(
@@ -282,6 +331,61 @@ fn record_request_snapshot(
         cc_session::request_snapshot::record_api_request_snapshot(session_id, provider, &value)
     {
         tracing::warn!(session_id, %provider, %error, "failed to record API request snapshot");
+    }
+}
+
+/// Tools that are always allowed in Auto mode without classifier classification.
+const AUTO_MODE_ALLOWLISTED_TOOLS: &[&str] = &[
+    "Read",
+    "Grep",
+    "Glob",
+    "LSP",
+    "Sleep",
+    "TaskCreate",
+    "TaskUpdate",
+    "TaskGet",
+    "TaskList",
+    "Plan",
+    "WebSearch",
+    "WebFetch",
+];
+
+impl QueryEngineDeps {
+    /// Compute an auto-mode classifier decision if the classifier is configured
+    /// and the mode is Auto. Returns `None` for non-Auto modes or when no
+    /// classifier callback is installed.
+    async fn compute_auto_classifier(
+        &self,
+        tool_name: &str,
+        tool_input: &serde_json::Value,
+        tool_classifier_input: &serde_json::Value,
+    ) -> Option<AutoClassifierDecision> {
+        let fn_ref = self.auto_classifier_fn.as_ref()?;
+
+        // Scope the lock guard so it's dropped before the async call.
+        let (cwd, messages) = {
+            let state = self.state.read();
+            if state.app_state.tool_permission_context.mode != PermissionMode::Auto {
+                return None;
+            }
+            // Allowlisted tools bypass the classifier entirely in Auto mode.
+            if AUTO_MODE_ALLOWLISTED_TOOLS.contains(&tool_name) {
+                return Some(AutoClassifierDecision::allow(
+                    "allowlisted-tool",
+                    AutoClassifierStage::Fast,
+                ));
+            }
+            (self.cwd.clone(), state.messages.clone())
+        };
+
+        fn_ref(
+            tool_name.to_string(),
+            tool_input.clone(),
+            tool_classifier_input.clone(),
+            messages,
+            cwd,
+        )
+        .await
     }
 }
 
@@ -950,11 +1054,62 @@ impl QueryDeps for QueryEngineDeps {
                 PermissionResult::Allow { updated_input } => {
                     effective_input = updated_input;
                     let app_state = self.state.read().app_state.clone();
-                    central_permission_result_for_tool(
+                    let mut decision = central_permission_decision_for_tool(
                         &request.tool_name,
-                        &mut effective_input,
+                        &effective_input,
                         &app_state,
                         hook_decision.as_ref(),
+                        None,
+                        None,
+                    );
+
+                    if auto_classifier_needed(&decision) {
+                        let mut classifier_input = tool.to_auto_classifier_input(&effective_input);
+                        if matches!(&classifier_input, serde_json::Value::String(s) if s.is_empty())
+                        {
+                            classifier_input = effective_input.clone();
+                        }
+                        if self
+                            .state
+                            .read()
+                            .auto_denial_tracker
+                            .should_fallback_to_interactive()
+                        {
+                            let mut state = self.state.write();
+                            let app_state = state.app_state.clone();
+                            decision = central_permission_decision_for_tool(
+                                &request.tool_name,
+                                &effective_input,
+                                &app_state,
+                                hook_decision.as_ref(),
+                                None,
+                                Some(&mut state.auto_denial_tracker),
+                            );
+                        } else if let Some(auto_classifier) = self
+                            .compute_auto_classifier(
+                                &request.tool_name,
+                                &effective_input,
+                                &classifier_input,
+                            )
+                            .await
+                        {
+                            let mut state = self.state.write();
+                            let app_state = state.app_state.clone();
+                            decision = central_permission_decision_for_tool(
+                                &request.tool_name,
+                                &effective_input,
+                                &app_state,
+                                hook_decision.as_ref(),
+                                Some(&auto_classifier),
+                                Some(&mut state.auto_denial_tracker),
+                            );
+                        }
+                    }
+
+                    permission_result_from_decision(
+                        &request.tool_name,
+                        &mut effective_input,
+                        decision,
                     )
                 }
                 other => other,
@@ -1672,6 +1827,7 @@ mod tests {
             pending_bg_results: crate::agent_runtime::PendingBackgroundResults::new(),
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
             command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
+            auto_classifier_fn: None,
         }
     }
 
@@ -1988,7 +2144,7 @@ mod tests {
         let app_state = AppState::default();
         let mut input = json!({"command": "rm -rf F:/temp/gomoku_subagent/*"});
 
-        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None);
+        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None, None);
 
         assert!(
             matches!(result, PermissionResult::Ask { .. }),
@@ -2005,7 +2161,7 @@ mod tests {
             .insert("test".into(), vec!["Bash(prefix:git)".into()]);
         let mut input = json!({"command": "git status"});
 
-        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None);
+        let result = central_permission_result_for_tool("Bash", &mut input, &app_state, None, None);
 
         assert!(matches!(result, PermissionResult::Allow { .. }));
     }
@@ -2020,7 +2176,7 @@ mod tests {
 
         let result = crate::tool_runtime::execution::with_sandbox_availability_override(
             crate::sandbox::Availability::Available(crate::sandbox::Mechanism::Bubblewrap),
-            || central_permission_result_for_tool("Bash", &mut input, &app_state, None),
+            || central_permission_result_for_tool("Bash", &mut input, &app_state, None, None),
         );
 
         assert!(matches!(result, PermissionResult::Allow { .. }));
@@ -2039,7 +2195,7 @@ mod tests {
                 platform: "test",
                 reason: "forced unavailable".to_string(),
             },
-            || central_permission_result_for_tool("Bash", &mut input, &app_state, None),
+            || central_permission_result_for_tool("Bash", &mut input, &app_state, None, None),
         );
 
         assert!(matches!(result, PermissionResult::Ask { .. }));
@@ -2059,7 +2215,7 @@ mod tests {
 
         let result = crate::tool_runtime::execution::with_sandbox_availability_override(
             crate::sandbox::Availability::Available(crate::sandbox::Mechanism::Bubblewrap),
-            || central_permission_result_for_tool("Bash", &mut input, &app_state, None),
+            || central_permission_result_for_tool("Bash", &mut input, &app_state, None, None),
         );
 
         assert!(matches!(result, PermissionResult::Ask { .. }));
@@ -2076,7 +2232,7 @@ mod tests {
 
         let result = crate::tool_runtime::execution::with_sandbox_availability_override(
             crate::sandbox::Availability::Available(crate::sandbox::Mechanism::Bubblewrap),
-            || central_permission_result_for_tool("Bash", &mut input, &app_state, None),
+            || central_permission_result_for_tool("Bash", &mut input, &app_state, None, None),
         );
 
         assert!(matches!(result, PermissionResult::Ask { .. }));
@@ -2101,6 +2257,7 @@ mod tests {
             &mut input,
             &app_state,
             Some(&hook_decision),
+            None,
         );
 
         assert!(matches!(result, PermissionResult::Ask { .. }));
@@ -2516,6 +2673,180 @@ mod tests {
         assert!(
             seen_input.lock().is_none(),
             "permission denial must stop before Tool::call"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_tool_auto_mode_does_not_classify_when_rule_denies() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = canonical_tool("DenyMe", seen_input.clone());
+        let mut deps = make_deps(vec![tool], PermissionMode::Auto);
+        deps.state
+            .write()
+            .app_state
+            .tool_permission_context
+            .always_deny_rules
+            .insert("test".to_string(), vec!["DenyMe".to_string()]);
+
+        let classifier_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        deps.auto_classifier_fn = Some(Arc::new({
+            let classifier_calls = classifier_calls.clone();
+            move |_, _, _, _, _| {
+                classifier_calls.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async {
+                    Some(AutoClassifierDecision::allow(
+                        "test-classifier",
+                        AutoClassifierStage::Fast,
+                    ))
+                })
+            }
+        }));
+
+        let result = deps
+            .execute_tool(
+                tool_request("DenyMe", json!({"value": true})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_error);
+        assert_eq!(classifier_calls.load(Ordering::SeqCst), 0);
+        assert!(
+            seen_input.lock().is_none(),
+            "central deny rule must stop before Tool::call"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_tool_auto_classifier_denials_fall_back_to_prompt() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = canonical_tool("NeedsClassifier", seen_input.clone());
+        let mut deps = make_deps(vec![tool], PermissionMode::Auto);
+        let classifier_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        deps.auto_classifier_fn = Some(Arc::new({
+            let classifier_calls = classifier_calls.clone();
+            move |_, _, _, _, _| {
+                classifier_calls.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async {
+                    Some(AutoClassifierDecision::deny(
+                        "test-classifier",
+                        AutoClassifierStage::Thinking,
+                        "blocked by classifier",
+                    ))
+                })
+            }
+        }));
+        let callback: PermissionCallback =
+            Arc::new(|_, _, _, _| Box::pin(async { "allow".to_string() }));
+        deps.permission_callback = Some(callback);
+
+        for _ in 0..2 {
+            let result = deps
+                .execute_tool(
+                    tool_request("NeedsClassifier", json!({"value": true})),
+                    &deps.get_tools(),
+                    &parent_message(),
+                    None,
+                )
+                .await
+                .unwrap();
+            assert!(result.is_error);
+        }
+        assert!(
+            seen_input.lock().is_none(),
+            "classifier denials must stop before Tool::call"
+        );
+
+        let result = deps
+            .execute_tool(
+                tool_request("NeedsClassifier", json!({"value": true})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        assert_eq!(classifier_calls.load(Ordering::SeqCst), 3);
+        assert_eq!(seen_input.lock().clone(), Some(json!({"value": true})));
+
+        *seen_input.lock() = None;
+        let result = deps
+            .execute_tool(
+                tool_request("NeedsClassifier", json!({"value": true})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        assert_eq!(
+            classifier_calls.load(Ordering::SeqCst),
+            3,
+            "interactive fallback should avoid further classifier calls"
+        );
+        assert_eq!(seen_input.lock().clone(), Some(json!({"value": true})));
+    }
+
+    #[tokio::test]
+    async fn execute_tool_auto_classifier_uses_tool_specific_input() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("classifier-input.txt");
+        let path_string = path.to_string_lossy().into_owned();
+        let captured = Arc::new(parking_lot::Mutex::new(None::<(Value, Value)>));
+        let mut deps = make_deps(
+            vec![Arc::new(cc_tools::fs::file_write::FileWriteTool::new())],
+            PermissionMode::Auto,
+        );
+        deps.auto_classifier_fn = Some(Arc::new({
+            let captured = captured.clone();
+            move |_, raw_input, classifier_input, _, _| {
+                *captured.lock() = Some((raw_input, classifier_input));
+                Box::pin(async {
+                    Some(AutoClassifierDecision::allow(
+                        "test-classifier",
+                        AutoClassifierStage::Fast,
+                    ))
+                })
+            }
+        }));
+
+        let result = deps
+            .execute_tool(
+                tool_request(
+                    "Write",
+                    json!({
+                        "file_path": path_string,
+                        "content": "secret body that should not be in classifier_input",
+                    }),
+                ),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        let (raw_input, classifier_input) = captured.lock().clone().expect("classifier called");
+        assert_eq!(
+            raw_input.get("content").and_then(Value::as_str),
+            Some("secret body that should not be in classifier_input")
+        );
+        assert_eq!(
+            classifier_input.get("file_path"),
+            raw_input.get("file_path")
+        );
+        assert_eq!(classifier_input.get("content"), None);
+        assert_eq!(
+            classifier_input.get("operation"),
+            Some(&json!("write_file"))
         );
     }
 

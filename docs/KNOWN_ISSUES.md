@@ -1,6 +1,6 @@
 # cc-rust 当前问题汇总
 
-> 更新日期: 2026-05-17
+> 更新日期: 2026-05-18
 
 本文是当前开放问题、代码审查发现和文档状态问题的唯一活跃入口。已修复、已失效或只具历史价值的问题已迁移到：
 
@@ -21,6 +21,8 @@
 | SAFETY-003 | 高 | Fixed | Sandbox `allowedCommands` | `allowedCommands` 仅在 workspace sandbox 且 OS-level sandbox 可用时预批准；匹配改为 argv 结构化检查，链式/管道命令中未显式允许的子命令不会搭车放行。 | 同上 |
 | SAFETY-004 | 高 | Fixed | classifier redaction | classifier redaction 覆盖 JSON/object-like secret 字段，包括 `password`、`apiKey`、`api_key`、`token`、`accessToken`、`refreshToken`、`secret` 等。 | 同上 |
 | SAFETY-005 | 中 | Fixed | Plan approval UI | ExitPlanMode 审批提示现在列出将写入的去重后 transient allowed prompt rules，而不是只显示数量。 | 同上 |
+| SAFETY-006 | 中 | Fixed | Auto classifier Thinking stage | ApiClient-backed classifier 的 Thinking stage 不能用 `budget_tokens=2048` 搭配 `max_tokens=512`，否则 Anthropic thinking 请求会被 provider 拒绝；现已把 Thinking 请求上限提高到大于 thinking budget。 | 2026-05-18 permission classifier review follow-up |
+| SAFETY-007 | 低 | Fixed | Auto classifier policy context | Runtime 接线最初传入空 `AutoModeSettings`，导致 `permissions.autoMode` 中的 environment/allow/softDeny 说明不会进入 classifier prompt；现已把合并后的配置传入 classifier request。 | 2026-05-18 permission classifier review follow-up |
 
 ## 3. 模型与 provider 文档/兼容性
 
