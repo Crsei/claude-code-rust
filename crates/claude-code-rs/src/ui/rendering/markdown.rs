@@ -4,10 +4,12 @@ use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 
 use lru::LruCache;
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
+use unicode_width::UnicodeWidthChar;
 
+use super::syntax_highlight::highlight_code_block;
 use super::theme::Theme;
 
 // ---------------------------------------------------------------------------
@@ -45,7 +47,21 @@ pub fn markdown_to_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
 }
 
 // ---------------------------------------------------------------------------
-// Inner implementation (unchanged logic)
+// Table rendering state
+// ---------------------------------------------------------------------------
+
+#[derive(Default)]
+struct TableBuffer {
+    alignments: Vec<Alignment>,
+    head: Option<TableRow>,
+    body: Vec<TableRow>,
+}
+
+type TableCell = Vec<Span<'static>>;
+type TableRow = Vec<TableCell>;
+
+// ---------------------------------------------------------------------------
+// Inner implementation
 // ---------------------------------------------------------------------------
 
 /// Supported elements:
@@ -58,9 +74,11 @@ pub fn markdown_to_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
 /// - Ordered lists (prefixed with "  N. ")
 /// - Links (rendered underlined)
 /// - Paragraphs (separated by blank lines)
+/// - Tables (column-aligned grid with borders)
 fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_STRIKETHROUGH);
+    opts.insert(Options::ENABLE_TABLES);
     let parser = Parser::new_ext(text, opts);
 
     let mut lines: Vec<Line<'static>> = Vec::new();
@@ -69,7 +87,16 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
     // Style stack: the most recent style is applied to incoming text events.
     let mut style_stack: Vec<Style> = vec![Style::default()];
     let mut in_code_block = false;
+    let mut code_block_lang = String::new();
+    let mut code_block_buf = String::new();
     let mut list_stack: Vec<ListKind> = Vec::new();
+
+    // Table rendering state
+    let mut in_table = false;
+    let mut table = TableBuffer::default();
+    let mut current_row_cells: TableRow = Vec::new();
+    let mut current_cell_spans: TableCell = Vec::new();
+    let mut in_table_head = false;
 
     for event in parser {
         match event {
@@ -95,20 +122,54 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
                 flush_line(&mut current_spans, &mut lines);
             }
             Event::End(TagEnd::Paragraph) => {
-                flush_line(&mut current_spans, &mut lines);
-                lines.push(Line::from(""));
+                if !in_table {
+                    flush_line(&mut current_spans, &mut lines);
+                    lines.push(Line::from(""));
+                }
             }
 
             // ── Code blocks ─────────────────────────────────────────
-            Event::Start(Tag::CodeBlock(_)) => {
+            Event::Start(Tag::CodeBlock(kind)) => {
                 flush_line(&mut current_spans, &mut lines);
                 in_code_block = true;
+                code_block_lang = match kind {
+                    CodeBlockKind::Fenced(info) => {
+                        info.split_whitespace().next().unwrap_or("").to_string()
+                    }
+                    CodeBlockKind::Indented => String::new(),
+                };
+                code_block_buf.clear();
                 style_stack.push(theme.code);
             }
             Event::End(TagEnd::CodeBlock) => {
-                flush_line(&mut current_spans, &mut lines);
                 in_code_block = false;
                 style_stack.pop();
+
+                // Apply syntax highlighting to the buffered code.
+                if code_block_buf.is_empty() {
+                    flush_line(&mut current_spans, &mut lines);
+                } else {
+                    let highlighted =
+                        highlight_code_block(&code_block_buf, &code_block_lang, theme);
+                    // Split highlighted spans into lines
+                    let mut line_spans: Vec<Span<'static>> = Vec::new();
+                    for span in highlighted {
+                        let text = span.content.to_string();
+                        if text == "\n" {
+                            if !line_spans.is_empty() {
+                                lines.push(Line::from(std::mem::take(&mut line_spans)));
+                            }
+                        } else {
+                            line_spans.push(Span::styled(text, span.style));
+                        }
+                    }
+                    if !line_spans.is_empty() {
+                        lines.push(Line::from(line_spans));
+                    }
+                    current_spans.clear();
+                }
+                code_block_buf.clear();
+                code_block_lang.clear();
                 lines.push(Line::from(""));
             }
 
@@ -179,21 +240,21 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
 
             // ── Inline code ─────────────────────────────────────────
             Event::Code(code) => {
-                current_spans.push(Span::styled(format!("`{}`", code), theme.code));
+                let span = Span::styled(format!("`{}`", code), theme.code);
+                if in_table {
+                    current_cell_spans.push(span);
+                } else {
+                    current_spans.push(span);
+                }
             }
 
             // ── Text ────────────────────────────────────────────────
             Event::Text(text) => {
                 let style = current_style(&style_stack);
                 if in_code_block {
-                    for (i, line_text) in text.split('\n').enumerate() {
-                        if i > 0 {
-                            flush_line(&mut current_spans, &mut lines);
-                        }
-                        if !line_text.is_empty() {
-                            current_spans.push(Span::styled(line_text.to_string(), style));
-                        }
-                    }
+                    code_block_buf.push_str(&text);
+                } else if in_table {
+                    current_cell_spans.push(Span::styled(text.to_string(), style));
                 } else {
                     current_spans.push(Span::styled(text.to_string(), style));
                 }
@@ -201,10 +262,18 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
 
             // ── Soft / Hard break ───────────────────────────────────
             Event::SoftBreak => {
-                current_spans.push(Span::raw(" "));
+                if in_table {
+                    current_cell_spans.push(Span::raw(" "));
+                } else {
+                    current_spans.push(Span::raw(" "));
+                }
             }
             Event::HardBreak => {
-                flush_line(&mut current_spans, &mut lines);
+                if in_table {
+                    current_cell_spans.push(Span::raw(" "));
+                } else {
+                    flush_line(&mut current_spans, &mut lines);
+                }
             }
 
             // ── Horizontal rule ─────────────────────────────────────
@@ -217,11 +286,73 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
                 lines.push(Line::from(""));
             }
 
+            // ── Tables ──────────────────────────────────────────────
+            Event::Start(Tag::Table(alignments)) => {
+                flush_line(&mut current_spans, &mut lines);
+                in_table = true;
+                table = TableBuffer {
+                    alignments: alignments.clone(),
+                    head: None,
+                    body: Vec::new(),
+                };
+                current_row_cells = Vec::new();
+                current_cell_spans = Vec::new();
+            }
+            Event::End(TagEnd::Table) => {
+                in_table = false;
+                in_table_head = false;
+                render_table(&table, theme, &mut lines);
+                table = TableBuffer::default();
+                current_row_cells = Vec::new();
+                current_cell_spans = Vec::new();
+                lines.push(Line::from(""));
+            }
+            Event::Start(Tag::TableHead) => {
+                in_table_head = true;
+                current_row_cells = Vec::new();
+                current_cell_spans = Vec::new();
+            }
+            Event::End(TagEnd::TableHead) => {
+                flush_cell_spans(&mut current_cell_spans, &mut current_row_cells);
+                if !current_row_cells.is_empty() {
+                    table.head = Some(std::mem::take(&mut current_row_cells));
+                }
+                current_row_cells = Vec::new();
+                current_cell_spans = Vec::new();
+                in_table_head = false;
+            }
+            Event::Start(Tag::TableRow) => {
+                current_row_cells = Vec::new();
+                current_cell_spans = Vec::new();
+            }
+            Event::End(TagEnd::TableRow) => {
+                flush_cell_spans(&mut current_cell_spans, &mut current_row_cells);
+                if !current_row_cells.is_empty() {
+                    if in_table_head {
+                        table.head = Some(std::mem::take(&mut current_row_cells));
+                    } else {
+                        table.body.push(std::mem::take(&mut current_row_cells));
+                    }
+                }
+                current_row_cells = Vec::new();
+                current_cell_spans = Vec::new();
+            }
+            Event::Start(Tag::TableCell) => {
+                current_cell_spans = Vec::new();
+            }
+            Event::End(TagEnd::TableCell) => {
+                current_row_cells.push(std::mem::take(&mut current_cell_spans));
+                current_cell_spans = Vec::new();
+            }
+
             _ => {}
         }
     }
 
-    flush_line(&mut current_spans, &mut lines);
+    // Flush any remaining spans outside table context.
+    if !in_table {
+        flush_line(&mut current_spans, &mut lines);
+    }
 
     // Remove trailing blank lines.
     while lines
@@ -232,6 +363,168 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
     }
 
     lines
+}
+
+// ---------------------------------------------------------------------------
+// Table rendering
+// ---------------------------------------------------------------------------
+
+/// Render a complete Markdown table as styled ratatui lines.
+///
+/// ┌───────┬───────┐
+/// │ Head1 │ Head2 │
+/// ├───────┼───────┤
+/// │ Cell1 │ Cell2 │
+/// └───────┴───────┘
+fn render_table(table: &TableBuffer, theme: &Theme, lines: &mut Vec<Line<'static>>) {
+    let ncols = compute_column_count(table);
+    if ncols == 0 {
+        return;
+    }
+
+    // Build rows: head + body
+    let mut rows: Vec<TableRow> = Vec::new();
+    if let Some(head) = &table.head {
+        rows.push(pad_row(head, ncols));
+    }
+    for row in &table.body {
+        rows.push(pad_row(row, ncols));
+    }
+
+    // Compute column widths
+    let col_widths = compute_column_widths(&rows, ncols);
+
+    // Render header separator
+    render_table_separator(&col_widths, theme, lines, true);
+
+    // Render body rows
+    let header_len = usize::from(table.head.is_some());
+    for (idx, row) in rows.iter().enumerate() {
+        render_table_row(row, &col_widths, &table.alignments, theme, lines);
+        if header_len > 0 && idx + 1 == header_len {
+            // After header: render header/body separator
+            render_table_separator(&col_widths, theme, lines, false);
+        }
+    }
+
+    // Render bottom separator
+    render_table_bottom(&col_widths, theme, lines);
+}
+
+fn compute_column_count(table: &TableBuffer) -> usize {
+    let head_cols = table.head.as_ref().map(|r| r.len()).unwrap_or(0);
+    let body_cols = table.body.first().map(|r| r.len()).unwrap_or(0);
+    head_cols.max(body_cols)
+}
+
+fn pad_row(row: &[TableCell], ncols: usize) -> TableRow {
+    let mut r = row.to_vec();
+    while r.len() < ncols {
+        r.push(vec![Span::raw("")]);
+    }
+    r
+}
+
+fn compute_column_widths(rows: &[TableRow], ncols: usize) -> Vec<usize> {
+    let mut widths = vec![0usize; ncols];
+    for row in rows {
+        for (col, cell) in row.iter().enumerate() {
+            let cell_width: usize = cell
+                .iter()
+                .map(|span| {
+                    span.content
+                        .chars()
+                        .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+                        .sum::<usize>()
+                })
+                .sum();
+            widths[col] = widths[col].max(cell_width);
+        }
+    }
+    // Minimum width: at least 1 character per column
+    for w in &mut widths {
+        *w = (*w).max(1);
+    }
+    widths
+}
+
+fn render_table_separator(
+    col_widths: &[usize],
+    theme: &Theme,
+    lines: &mut Vec<Line<'static>>,
+    is_top: bool,
+) {
+    let left = if is_top { "┌" } else { "├" };
+    const RIGHT: &str = "┤";
+    const MID: &str = "┬";
+    const SEP_MID: &str = "┼";
+    let mid_sep = if is_top { MID } else { SEP_MID };
+    let right = if is_top { "┐" } else { RIGHT };
+
+    let mut spans = Vec::with_capacity(col_widths.len() * 2 + 1);
+    spans.push(Span::styled(left.to_string(), theme.border));
+    for (i, w) in col_widths.iter().enumerate() {
+        let line = "─".repeat(*w + 2); // +2 for padding
+        spans.push(Span::styled(line, theme.border));
+        if i < col_widths.len() - 1 {
+            spans.push(Span::styled(mid_sep.to_string(), theme.border));
+        }
+    }
+    spans.push(Span::styled(right.to_string(), theme.border));
+    lines.push(Line::from(spans));
+}
+
+fn render_table_bottom(col_widths: &[usize], theme: &Theme, lines: &mut Vec<Line<'static>>) {
+    let mut spans = Vec::with_capacity(col_widths.len() * 2 + 1);
+    spans.push(Span::styled("└".to_string(), theme.border));
+    for (i, w) in col_widths.iter().enumerate() {
+        let line = "─".repeat(*w + 2);
+        spans.push(Span::styled(line, theme.border));
+        if i < col_widths.len() - 1 {
+            spans.push(Span::styled("┴".to_string(), theme.border));
+        }
+    }
+    spans.push(Span::styled("┘".to_string(), theme.border));
+    lines.push(Line::from(spans));
+}
+
+fn render_table_row(
+    row: &[TableCell],
+    col_widths: &[usize],
+    alignments: &[Alignment],
+    theme: &Theme,
+    lines: &mut Vec<Line<'static>>,
+) {
+    let mut spans = Vec::with_capacity(col_widths.len() * 2 + 1);
+    spans.push(Span::styled("│".to_string(), theme.border));
+
+    for (col, w) in col_widths.iter().enumerate() {
+        let content = row.get(col).cloned().unwrap_or_default();
+        let content_width: usize = content
+            .iter()
+            .flat_map(|s| s.content.chars())
+            .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+            .sum();
+
+        let padding = w.saturating_sub(content_width);
+        let align = alignments.get(col).copied().unwrap_or(Alignment::None);
+
+        let (left_pad, right_pad) = match align {
+            Alignment::Left | Alignment::None => (1, padding + 1),
+            Alignment::Center => {
+                let left = padding / 2;
+                (left + 1, padding - left + 1)
+            }
+            Alignment::Right => (padding + 1, 1),
+        };
+
+        spans.push(Span::raw(" ".repeat(left_pad)));
+        spans.extend(content);
+        spans.push(Span::raw(" ".repeat(right_pad)));
+        spans.push(Span::styled("│".to_string(), theme.border));
+    }
+
+    lines.push(Line::from(spans));
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +542,12 @@ fn flush_line(current_spans: &mut Vec<Span<'static>>, lines: &mut Vec<Line<'stat
     }
 }
 
+fn flush_cell_spans(current_cell_spans: &mut TableCell, current_row_cells: &mut TableRow) {
+    if !current_cell_spans.is_empty() {
+        current_row_cells.push(std::mem::take(current_cell_spans));
+    }
+}
+
 fn line_is_empty(line: &Line) -> bool {
     line.spans.iter().all(|s| s.content.trim().is_empty())
 }
@@ -256,4 +555,50 @@ fn line_is_empty(line: &Line) -> bool {
 enum ListKind {
     Unordered,
     Ordered(usize),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plain_lines(lines: Vec<Line<'static>>) -> Vec<String> {
+        lines
+            .into_iter()
+            .map(|line| {
+                line.spans
+                    .into_iter()
+                    .map(|span| span.content.into_owned())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn renders_table_header_and_body_cells() {
+        let lines = plain_lines(markdown_to_lines(
+            "| Name | Lang |\n| --- | --- |\n| Ada | Rust |\n| Grace | TS |",
+            &Theme::default(),
+        ));
+        let rendered = lines.join("\n");
+
+        assert!(rendered.contains("Name"));
+        assert!(rendered.contains("Lang"));
+        assert!(rendered.contains("Ada"));
+        assert!(rendered.contains("Rust"));
+        assert!(rendered.contains("Grace"));
+        assert!(rendered.contains("TS"));
+    }
+
+    #[test]
+    fn table_body_rows_are_not_overwritten_as_header() {
+        let lines = plain_lines(markdown_to_lines(
+            "| H |\n| - |\n| one |\n| two |",
+            &Theme::default(),
+        ));
+        let rendered = lines.join("\n");
+
+        assert!(rendered.contains("H"));
+        assert!(rendered.contains("one"));
+        assert!(rendered.contains("two"));
+    }
 }

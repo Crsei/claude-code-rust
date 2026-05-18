@@ -1,4 +1,8 @@
+use ratatui::text::{Line, Span};
+
 use super::truncate_by_width;
+use crate::ui::syntax_highlight::highlight_code_block;
+use crate::ui::theme::Theme;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructuredDiffHunk {
@@ -142,39 +146,16 @@ pub fn render_structured_diff_hunks(
     width: usize,
     max_lines: usize,
 ) -> Vec<String> {
-    if hunks.is_empty() || max_lines == 0 {
-        return Vec::new();
-    }
-
-    let number_width = line_number_width(hunks);
-    let mut rendered = Vec::new();
-    for (hunk_index, hunk) in hunks.iter().enumerate() {
-        if hunk_index > 0 {
-            push_truncated(&mut rendered, "...", width, max_lines);
-        }
-        push_truncated(&mut rendered, &hunk.header(), width, max_lines);
-        for line in &hunk.lines {
-            let raw = render_structured_line(line, number_width);
-            push_truncated(&mut rendered, &raw, width, max_lines);
-        }
-        if rendered.len() >= max_lines {
-            break;
-        }
-    }
-    rendered
+    render_structured_diff_hunks_styled(hunks, width, max_lines, &Theme::default(), None)
+        .into_iter()
+        .map(line_to_plain)
+        .collect()
 }
 
-fn push_truncated(lines: &mut Vec<String>, raw: &str, width: usize, max_lines: usize) {
-    if lines.len() >= max_lines {
-        return;
-    }
-    lines.push(truncate_by_width(raw, width));
-}
-
-fn render_structured_line(line: &StructuredDiffLine, number_width: usize) -> String {
+fn render_structured_prefix(line: &StructuredDiffLine, number_width: usize) -> String {
     if line.kind == StructuredDiffLineKind::NoNewline {
         let gutter_width = number_width * 2 + 4;
-        return format!("{:gutter_width$}{}", "", line.content);
+        return format!("{:gutter_width$}", "");
     }
 
     let old = format_optional_line(line.old_line, number_width);
@@ -185,7 +166,7 @@ fn render_structured_line(line: &StructuredDiffLine, number_width: usize) -> Str
         StructuredDiffLineKind::Remove => '-',
         StructuredDiffLineKind::NoNewline => ' ',
     };
-    format!("{old} {new} {sigil} {}", line.content)
+    format!("{old} {new} {sigil} ")
 }
 
 fn format_optional_line(line: Option<usize>, width: usize) -> String {
@@ -242,6 +223,263 @@ fn parse_range(raw: &str) -> Option<(usize, usize)> {
     } else {
         Some((raw.parse().ok()?, 1))
     }
+}
+
+// ---------------------------------------------------------------------------
+// Styled rendering (word-level diff + syntax highlighting)
+// ---------------------------------------------------------------------------
+
+/// Render structured diff hunks as styled ratatui lines with word-level
+/// diff and syntax highlighting.
+///
+/// Each line gets appropriate diff coloring (add/remove/context) with
+/// inline word-level highlights for changed lines. When a `lang` hint
+/// is provided (e.g., from the file extension), syntax highlighting is
+/// applied to context lines.
+pub fn render_structured_diff_hunks_styled(
+    hunks: &[StructuredDiffHunk],
+    width: usize,
+    max_lines: usize,
+    theme: &Theme,
+    lang: Option<&str>,
+) -> Vec<Line<'static>> {
+    if hunks.is_empty() || max_lines == 0 {
+        return Vec::new();
+    }
+
+    let number_width = line_number_width(hunks);
+    let mut rendered = Vec::new();
+    for (hunk_index, hunk) in hunks.iter().enumerate() {
+        if hunk_index > 0 {
+            if rendered.len() >= max_lines {
+                break;
+            }
+            push_styled_truncated(
+                &mut rendered,
+                vec![Span::styled("...", theme.dim)],
+                width,
+                max_lines,
+            );
+        }
+
+        if rendered.len() < max_lines {
+            push_styled_truncated(
+                &mut rendered,
+                vec![Span::styled(hunk.header(), theme.diff_header)],
+                width,
+                max_lines,
+            );
+        }
+
+        let mut i = 0;
+        while i < hunk.lines.len() && rendered.len() < max_lines {
+            let line = &hunk.lines[i];
+
+            match line.kind {
+                StructuredDiffLineKind::Context => {
+                    push_styled_truncated(
+                        &mut rendered,
+                        render_context_line_spans(line, number_width, theme, lang),
+                        width,
+                        max_lines,
+                    );
+                    i += 1;
+                }
+                StructuredDiffLineKind::Add => {
+                    if i + 1 < hunk.lines.len()
+                        && hunk.lines[i + 1].kind == StructuredDiffLineKind::Remove
+                    {
+                        let remove_line = &hunk.lines[i + 1];
+                        let add_line = &hunk.lines[i];
+                        push_paired_change_lines(
+                            &mut rendered,
+                            remove_line,
+                            add_line,
+                            number_width,
+                            width,
+                            max_lines,
+                            theme,
+                        );
+                        i += 2;
+                    } else {
+                        push_styled_truncated(
+                            &mut rendered,
+                            render_structured_line_spans(line, number_width, theme),
+                            width,
+                            max_lines,
+                        );
+                        i += 1;
+                    }
+                }
+                StructuredDiffLineKind::Remove => {
+                    if i + 1 < hunk.lines.len()
+                        && hunk.lines[i + 1].kind == StructuredDiffLineKind::Add
+                    {
+                        let remove_line = &hunk.lines[i];
+                        let add_line = &hunk.lines[i + 1];
+                        push_paired_change_lines(
+                            &mut rendered,
+                            remove_line,
+                            add_line,
+                            number_width,
+                            width,
+                            max_lines,
+                            theme,
+                        );
+                        i += 2;
+                    } else {
+                        push_styled_truncated(
+                            &mut rendered,
+                            render_structured_line_spans(line, number_width, theme),
+                            width,
+                            max_lines,
+                        );
+                        i += 1;
+                    }
+                }
+                StructuredDiffLineKind::NoNewline => {
+                    push_styled_truncated(
+                        &mut rendered,
+                        render_structured_line_spans(line, number_width, theme),
+                        width,
+                        max_lines,
+                    );
+                    i += 1;
+                }
+            }
+        }
+
+        if rendered.len() >= max_lines {
+            break;
+        }
+    }
+
+    rendered
+}
+
+fn push_paired_change_lines(
+    rendered: &mut Vec<Line<'static>>,
+    remove_line: &StructuredDiffLine,
+    add_line: &StructuredDiffLine,
+    number_width: usize,
+    width: usize,
+    max_lines: usize,
+    theme: &Theme,
+) {
+    if rendered.len() < max_lines {
+        let mut remove_spans = vec![Span::styled(
+            render_structured_prefix(remove_line, number_width),
+            theme.diff_remove,
+        )];
+        remove_spans.extend(super::render_word_diff_line(
+            &remove_line.content,
+            &add_line.content,
+            false,
+            theme,
+        ));
+        push_styled_truncated(rendered, remove_spans, width, max_lines);
+    }
+
+    if rendered.len() < max_lines {
+        let mut add_spans = vec![Span::styled(
+            render_structured_prefix(add_line, number_width),
+            theme.diff_add,
+        )];
+        add_spans.extend(super::render_word_diff_line(
+            &remove_line.content,
+            &add_line.content,
+            true,
+            theme,
+        ));
+        push_styled_truncated(rendered, add_spans, width, max_lines);
+    }
+}
+
+fn render_context_line_spans(
+    line: &StructuredDiffLine,
+    number_width: usize,
+    theme: &Theme,
+    lang: Option<&str>,
+) -> Vec<Span<'static>> {
+    let mut spans = vec![Span::styled(
+        render_structured_prefix(line, number_width),
+        theme.diff_context,
+    )];
+    let content_spans = if let Some(lang) = lang {
+        let highlighted = highlight_code_block(&line.content, lang, theme)
+            .into_iter()
+            .filter(|span| span.content.as_ref() != "\n")
+            .collect::<Vec<_>>();
+        if highlighted.is_empty() {
+            vec![Span::styled(line.content.clone(), theme.diff_context)]
+        } else {
+            highlighted
+        }
+    } else {
+        vec![Span::styled(line.content.clone(), theme.diff_context)]
+    };
+    spans.extend(content_spans);
+    spans
+}
+
+fn render_structured_line_spans(
+    line: &StructuredDiffLine,
+    number_width: usize,
+    theme: &Theme,
+) -> Vec<Span<'static>> {
+    let style = match line.kind {
+        StructuredDiffLineKind::Context => theme.diff_context,
+        StructuredDiffLineKind::Add => theme.diff_add,
+        StructuredDiffLineKind::Remove => theme.diff_remove,
+        StructuredDiffLineKind::NoNewline => theme.dim,
+    };
+    vec![
+        Span::styled(render_structured_prefix(line, number_width), style),
+        Span::styled(line.content.clone(), style),
+    ]
+}
+
+fn push_styled_truncated(
+    lines: &mut Vec<Line<'static>>,
+    spans: Vec<Span<'static>>,
+    width: usize,
+    max_lines: usize,
+) {
+    if lines.len() >= max_lines {
+        return;
+    }
+    lines.push(Line::from(truncate_spans_by_width(spans, width)));
+}
+
+fn truncate_spans_by_width(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
+    if width == 0 {
+        return Vec::new();
+    }
+
+    let mut remaining_width = width;
+    let mut out = Vec::new();
+    for span in spans {
+        if remaining_width == 0 {
+            break;
+        }
+        let text = truncate_by_width(span.content.as_ref(), remaining_width);
+        if !text.is_empty() {
+            let text_width = text
+                .chars()
+                .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0))
+                .sum::<usize>();
+            remaining_width = remaining_width.saturating_sub(text_width);
+            out.push(Span::styled(text, span.style));
+        }
+    }
+    out
+}
+
+fn line_to_plain(line: Line<'static>) -> String {
+    line.spans
+        .into_iter()
+        .map(|span| span.content.into_owned())
+        .collect()
 }
 
 #[cfg(test)]

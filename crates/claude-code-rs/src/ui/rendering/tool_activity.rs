@@ -1,6 +1,9 @@
 //! Tool activity and progress rendering.
 
-use crate::ui::progress_bar::render_progress_bar;
+use ratatui::text::{Line, Span};
+
+use super::progress_bar::{render_progress_bar, render_styled_progress_bar};
+use super::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolState {
@@ -97,6 +100,75 @@ impl ToolActivity {
         parts.join(" | ")
     }
 
+    /// Render a theme-styled compact line for display in ratatui buffers.
+    ///
+    /// Uses theme colors for status, tool name, errors, and progress.
+    pub fn compact_styled_line(&self, theme: &Theme) -> Line<'static> {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+
+        let status_style = match self.state {
+            ToolState::Queued => theme.dim,
+            ToolState::Running => theme.info,
+            ToolState::Succeeded => theme.diff_add,
+            ToolState::Failed => theme.error,
+            ToolState::Cancelled => theme.warning,
+        };
+        spans.push(Span::styled(
+            format!("[{}]", self.state.label()),
+            status_style,
+        ));
+        spans.push(Span::raw(" | "));
+
+        spans.push(Span::styled(format_elapsed(self.elapsed_ms), theme.dim));
+        spans.push(Span::raw(" | "));
+
+        let name_style = match self.state {
+            ToolState::Succeeded => theme.diff_add,
+            _ => theme.tool_name,
+        };
+        let display = self.display_call();
+        spans.push(Span::styled(display, name_style));
+
+        if let Some((done, total)) = self.progress {
+            spans.push(Span::raw(" | "));
+            let ratio = if total == 0 {
+                0.0
+            } else {
+                done.min(total) as f64 / total as f64
+            };
+            spans.push(Span::styled(
+                format!("{}/{} [", done.min(total), total),
+                theme.dim,
+            ));
+            spans.extend(render_styled_progress_bar(ratio, 10, theme).spans);
+            spans.push(Span::styled("]".to_string(), theme.dim));
+        }
+
+        let has_error = self
+            .error_summary
+            .as_ref()
+            .is_some_and(|value| !value.is_empty());
+        if has_error {
+            if let Some(error) = &self.error_summary {
+                spans.push(Span::raw(" | "));
+                spans.push(Span::styled(format!("error: {error}"), theme.error));
+            }
+        } else if !self.summary.is_empty() {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(self.summary.clone(), theme.dim));
+        }
+
+        if self.output_lines > 0 {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(
+                format!("{} output lines", self.output_lines),
+                theme.dim,
+            ));
+        }
+
+        Line::from(spans)
+    }
+
     pub fn transcript_block(&self) -> String {
         let mut lines = vec![
             format!("tool: {}", self.name),
@@ -164,15 +236,33 @@ impl ToolActivity {
 }
 
 pub fn render_grouped_activity(activities: &[ToolActivity]) -> String {
+    render_grouped_styled_activity(activities, &Theme::default())
+        .into_iter()
+        .map(line_to_plain)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Render grouped tool activities as styled ratatui lines.
+pub fn render_grouped_styled_activity(
+    activities: &[ToolActivity],
+    theme: &Theme,
+) -> Vec<Line<'static>> {
     if activities.is_empty() {
-        return "No tool activity".to_string();
+        return vec![Line::from(Span::styled("No tool activity", theme.dim))];
     }
 
     activities
         .iter()
-        .map(ToolActivity::compact_line)
-        .collect::<Vec<_>>()
-        .join("\n")
+        .map(|a| a.compact_styled_line(theme))
+        .collect()
+}
+
+fn line_to_plain(line: Line<'static>) -> String {
+    line.spans
+        .into_iter()
+        .map(|span| span.content.into_owned())
+        .collect()
 }
 
 fn tool_label_and_args(tool_name: &str, input: &str) -> (String, Option<String>) {

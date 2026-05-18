@@ -146,6 +146,9 @@ pub mod shimmer;
 #[path = "rendering/spinner.rs"]
 pub mod spinner;
 #[allow(dead_code)]
+#[path = "rendering/syntax_highlight.rs"]
+pub mod syntax_highlight;
+#[allow(dead_code)]
 #[path = "rendering/theme.rs"]
 pub mod theme;
 #[allow(dead_code)]
