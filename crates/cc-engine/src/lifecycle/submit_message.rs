@@ -611,6 +611,7 @@ impl QueryEngine {
         let hook_runner = self.hook_runner.clone();
         let command_dispatcher = self.command_dispatcher.clone();
         let command_executor = self.command_executor.clone();
+        let auto_classifier_fn = self.auto_classifier_fn.clone();
 
         let stream = async_stream::stream! {
             let mut submit_turn = SubmitTurnState::new();
@@ -910,6 +911,7 @@ impl QueryEngine {
                 pending_bg_results: pending_bg_results.clone(),
                 hook_runner: hook_runner.clone(),
                 command_dispatcher: command_dispatcher.clone(),
+                auto_classifier_fn: auto_classifier_fn.clone(),
             });
 
             // Run the query loop

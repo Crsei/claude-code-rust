@@ -18,6 +18,7 @@
 // Core modules
 mod app_runtime_adapters;
 mod app_subsystem_handlers;
+mod classifier_model;
 mod cli;
 mod command_runtime_bridge;
 mod ui;
@@ -639,7 +640,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
     let is_codex_backend = cc_engine::codex_exec::is_codex_backend(&backend);
     let detected_client = cc_api::api::client::ApiClient::from_backend_result(Some(&backend))
-        .context("invalid API provider configuration")?;
+        .context("invalid API provider configuration")?
+        .map(Arc::new);
     let provider_default_model = detected_client.as_ref().and_then(|client| {
         matches!(
             client.config().provider,
@@ -853,14 +855,58 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     };
 
     // B.8: Create QueryEngine
-    let engine = Arc::new({
+    let engine = {
         let mut e = QueryEngine::new(engine_config);
         e.set_hook_runner(Arc::new(cc_tools::hooks::ShellHookRunner::new()));
         e.set_command_dispatcher(Arc::new(
             cc_commands::DefaultCommandDispatcher::for_full_registry(),
         ));
-        e
-    });
+
+        // Wire auto-mode classifier if an API client is available.
+        if let Some(ref client) = detected_client {
+            let auto_mode_policy = Arc::new(
+                merged_config
+                    .permissions
+                    .auto_mode
+                    .clone()
+                    .unwrap_or_default(),
+            );
+            let classifier_model = Arc::new(classifier_model::ApiClientClassifierModel {
+                client: client.clone(),
+                model: model.clone(),
+            });
+            let shared_classifier = Arc::new(cc_safety::classifier::SharedSafetyClassifier::new(
+                classifier_model,
+            ));
+
+            e.set_auto_classifier_fn(Some(Arc::new(
+                move |tool_name: String,
+                      tool_input: serde_json::Value,
+                      tool_classifier_input: serde_json::Value,
+                      messages: Vec<cc_engine::types::message::Message>,
+                      cwd: String| {
+                    let classifier = shared_classifier.clone();
+                    let auto_mode_policy = auto_mode_policy.clone();
+                    Box::pin(async move {
+                        use cc_safety::classifier::SafetyClassifierRequest;
+                        let request = SafetyClassifierRequest::auto_mode_tool_with_classifier_input(
+                            tool_name,
+                            tool_input,
+                            tool_classifier_input,
+                            messages,
+                            std::path::PathBuf::from(cwd),
+                            cc_types::permissions::PermissionMode::Auto,
+                            None,
+                            auto_mode_policy.as_ref().clone(),
+                        );
+                        Some(classifier.classify(&request).await)
+                    })
+                },
+            )));
+        }
+
+        Arc::new(e)
+    };
     info!(session = %engine.session_id, "QueryEngine created");
     crate::dashboard::init_session_id(engine.session_id.as_str());
 

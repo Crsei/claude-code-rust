@@ -385,6 +385,34 @@ impl Tool for FileEditTool {
             .map(|s| s.to_string())
     }
 
+    fn to_auto_classifier_input(&self, input: &Value) -> Value {
+        let file_path = input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let old_string = input
+            .get("old_string")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let new_string = input
+            .get("new_string")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let replace_all = input
+            .get("replace_all")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        json!({
+            "file_path": file_path,
+            "old_bytes": old_string.len(),
+            "old_lines": old_string.lines().count(),
+            "new_bytes": new_string.len(),
+            "new_lines": new_string.lines().count(),
+            "replace_all": replace_all,
+            "operation": "edit_file"
+        })
+    }
+
     fn backfill_observable_input(&self, input: &mut serde_json::Map<String, Value>) {
         crate::observable_input::backfill_file_path(input);
     }

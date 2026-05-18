@@ -25,6 +25,8 @@ pub use types::AbortReason;
 
 use parking_lot::RwLock;
 use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -40,6 +42,22 @@ use crate::types::app_state::AppState;
 use crate::types::config::QueryEngineConfig;
 use crate::types::message::{ContentBlock, Message, MessageContent};
 use crate::types::tool::Tools;
+
+pub(crate) type AutoClassifierFn = Arc<
+    dyn Fn(
+            String,
+            serde_json::Value,
+            serde_json::Value,
+            Vec<Message>,
+            String,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Option<crate::permissions::decision::AutoClassifierDecision>>
+                    + Send,
+            >,
+        > + Send
+        + Sync,
+>;
 
 // ---------------------------------------------------------------------------
 // QueryEngineState — consolidated mutable session state
@@ -92,6 +110,8 @@ pub(crate) struct QueryEngineState {
     pub(crate) session_memory: SessionMemoryService,
     /// Runtime audit context for emitting structured events.
     pub(crate) audit_ctx: AuditContext,
+    /// Auto-mode classifier denial state for interactive fallback.
+    pub(crate) auto_denial_tracker: crate::permissions::decision::DenialTracker,
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +156,11 @@ pub struct QueryEngine {
     pub(crate) command_dispatcher: Arc<dyn cc_types::commands::CommandDispatcher>,
     /// Slash-command executor used after the dispatcher has parsed input.
     pub(crate) command_executor: Arc<dyn crate::command_runtime::CommandExecutor>,
+    /// Async callback for computing auto-mode classifier decisions.
+    /// Called with (tool_name, tool_input, classifier_input, messages, cwd)
+    /// when mode is Auto.
+    /// Returns `None` if the classifier is unavailable or skipped.
+    pub(crate) auto_classifier_fn: Option<AutoClassifierFn>,
 }
 
 impl QueryEngine {
@@ -188,12 +213,14 @@ impl QueryEngine {
                 sleep_until: None,
                 session_memory,
                 audit_ctx: AuditContext::noop("pending"),
+                auto_denial_tracker: crate::permissions::decision::DenialTracker::default(),
             })),
             aborted: Arc::new(AtomicBool::new(false)),
             pending_bg_results: crate::agent_runtime::PendingBackgroundResults::new(),
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
             command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
             command_executor: crate::command_runtime::global_command_executor(),
+            auto_classifier_fn: None,
         }
     }
 
@@ -235,6 +262,14 @@ impl QueryEngine {
 
     pub fn command_executor(&self) -> Arc<dyn crate::command_runtime::CommandExecutor> {
         self.command_executor.clone()
+    }
+
+    /// Install an auto-mode classifier callback.
+    ///
+    /// When set, the engine will call this closure in Auto mode for
+    /// non-allowlisted tools to decide whether to allow/deny/ask.
+    pub fn set_auto_classifier_fn(&mut self, f: Option<AutoClassifierFn>) {
+        self.auto_classifier_fn = f;
     }
 
     pub fn pending_background_results(&self) -> crate::agent_runtime::PendingBackgroundResults {

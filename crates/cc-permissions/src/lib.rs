@@ -9,4 +9,6 @@ pub mod bash_matcher;
 pub mod dangerous;
 pub mod decision;
 pub mod path_validation;
+pub mod permission_update;
 pub mod rules;
+pub mod shadowed_rules;

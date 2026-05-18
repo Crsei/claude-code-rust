@@ -88,6 +88,20 @@ impl Tool for FileWriteTool {
             .map(|s| s.to_string())
     }
 
+    fn to_auto_classifier_input(&self, input: &Value) -> Value {
+        let file_path = input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let content = input.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        json!({
+            "file_path": file_path,
+            "content_bytes": content.len(),
+            "content_lines": content.lines().count(),
+            "operation": "write_file"
+        })
+    }
+
     fn backfill_observable_input(&self, input: &mut serde_json::Map<String, Value>) {
         crate::observable_input::backfill_file_path(input);
     }
