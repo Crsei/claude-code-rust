@@ -54,21 +54,39 @@ pub mod command_surface;
 #[path = "components/cwd_prompt.rs"]
 pub mod cwd_prompt;
 #[allow(dead_code)]
+#[path = "components/divider.rs"]
+pub mod divider;
+#[allow(dead_code)]
 #[path = "components/feature_panels.rs"]
 pub mod feature_panels;
 #[allow(dead_code)]
 #[path = "components/fuzzy_match.rs"]
 pub mod fuzzy_match;
 #[allow(dead_code)]
+#[path = "components/fuzzy_picker.rs"]
+pub mod fuzzy_picker;
+#[allow(dead_code)]
 #[path = "components/history_search_dialog.rs"]
 pub mod history_search_dialog;
 #[path = "components/keyboard_shortcut.rs"]
 pub mod keyboard_shortcut;
 #[allow(dead_code)]
+#[path = "components/list_item.rs"]
+pub mod list_item;
+#[allow(dead_code)]
+#[path = "components/loading_state.rs"]
+pub mod loading_state;
+#[allow(dead_code)]
 #[path = "components/pager_overlay.rs"]
 pub mod pager_overlay;
 #[allow(dead_code)]
+#[path = "components/pane.rs"]
+pub mod pane;
+#[allow(dead_code)]
 pub mod prompt_input;
+#[allow(dead_code)]
+#[path = "components/ratchet.rs"]
+pub mod ratchet;
 #[allow(dead_code)]
 #[path = "components/resume_picker.rs"]
 pub mod resume_picker;
@@ -84,6 +102,12 @@ pub mod status_icon;
 pub mod status_widget;
 #[path = "components/tabs.rs"]
 pub mod tabs;
+#[allow(dead_code)]
+#[path = "components/themed_box.rs"]
+pub mod themed_box;
+#[allow(dead_code)]
+#[path = "components/themed_text.rs"]
+pub mod themed_text;
 #[allow(dead_code)]
 #[path = "components/tooltops.rs"]
 pub mod tooltops;
@@ -140,14 +164,14 @@ pub mod markdown_stream;
 #[path = "rendering/progress_bar.rs"]
 pub mod progress_bar;
 #[allow(dead_code)]
+#[path = "rendering/theme.rs"]
+pub mod rendering_theme;
+#[allow(dead_code)]
 #[path = "rendering/shimmer.rs"]
 pub mod shimmer;
 #[allow(dead_code)]
 #[path = "rendering/spinner.rs"]
 pub mod spinner;
-#[allow(dead_code)]
-#[path = "rendering/theme.rs"]
-pub mod theme;
 #[allow(dead_code)]
 #[path = "rendering/tool_activity.rs"]
 pub mod tool_activity;
@@ -208,3 +232,11 @@ pub mod skills_helpers;
 pub use cc_engine::status_line;
 #[path = "status/status_line_resolver.rs"]
 pub mod status_line_resolver;
+
+// Design-system theme provider.
+#[allow(dead_code)]
+pub mod theme;
+
+// Overlay / modal infrastructure.
+#[allow(dead_code)]
+pub mod overlays;

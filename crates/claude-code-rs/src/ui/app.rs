@@ -39,7 +39,7 @@ use super::prompt_input::PromptInput;
 use super::spinner::SpinnerState;
 use super::status_line::StatusLineRunner;
 use super::terminal_env::TerminalEnvConfig;
-use super::theme::Theme;
+use super::theme::{Theme, ThemeProvider};
 use super::transcript::{TranscriptState, ViewMode};
 use super::vim::VimState;
 use super::virtual_scroll::VirtualScroll;
@@ -77,6 +77,7 @@ pub struct App {
     spinner_state: SpinnerState,
     permission_dialog: Option<PermissionDialog>,
     should_quit: bool,
+    design_theme_provider: ThemeProvider,
     theme: Theme,
     model_name: String,
     backend_name: String,
@@ -154,6 +155,8 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
+        let design_theme_provider = ThemeProvider::from_user_settings();
+        let theme = design_theme_provider.legacy_theme();
         Self {
             messages: Vec::new(),
             selected_message: None,
@@ -164,7 +167,8 @@ impl App {
             spinner_state: SpinnerState::new(),
             permission_dialog: None,
             should_quit: false,
-            theme: Theme::default(),
+            design_theme_provider,
+            theme,
             model_name: String::new(),
             backend_name: String::new(),
             session_id: String::new(),
@@ -359,6 +363,12 @@ impl App {
 
     pub fn set_output_style(&mut self, output_style: Option<String>) {
         self.output_style = output_style;
+        self.dirty = true;
+    }
+
+    pub fn set_theme_setting(&mut self, theme: Option<&str>) {
+        self.design_theme_provider = ThemeProvider::from_setting_str(theme);
+        self.theme = self.design_theme_provider.legacy_theme();
         self.dirty = true;
     }
 

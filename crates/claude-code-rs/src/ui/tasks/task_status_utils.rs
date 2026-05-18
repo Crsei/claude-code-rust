@@ -1,7 +1,8 @@
 //! Shared task status formatting helpers.
 
 use super::{TaskKind, TaskState, TaskStatus};
-use crate::ui::progress_bar::render_progress_bar;
+use crate::ui::progress_bar::{ProgressBar, render_progress_bar};
+use crate::ui::theme::ThemeColors;
 
 pub fn state_label(state: TaskState) -> &'static str {
     match state {
@@ -44,6 +45,25 @@ pub fn progress_bar(task: &TaskStatus, width: usize) -> String {
         done.min(total) as f64 / total as f64
     };
     render_progress_bar(ratio, width)
+}
+
+/// Theme-aware variant returning styled progress-bar spans.
+///
+/// Uses the new `ProgressBar` widget with the provided theme colors.
+/// The progress bar uses accent color for the filled portion.
+pub fn progress_bar_styled(
+    task: &TaskStatus,
+    width: usize,
+    colors: &ThemeColors,
+) -> ratatui::text::Line<'static> {
+    let ratio = task.progress.map_or(0.0, |(done, total)| {
+        if total == 0 {
+            0.0
+        } else {
+            done.min(total) as f64 / total as f64
+        }
+    });
+    ProgressBar::new(ratio, width).render(colors)
 }
 
 pub fn progress_detail(task: &TaskStatus) -> String {

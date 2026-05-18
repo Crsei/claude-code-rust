@@ -203,6 +203,7 @@ pub async fn run_tui(
         app.set_keybindings(app_state.keybindings.clone());
         app.set_editor_mode(app_state.settings.editor_mode.as_deref());
         app.set_output_style(app_state.settings.output_style.clone());
+        app.set_theme_setting(app_state.settings.theme.as_deref());
         app.sync_status_context_from_state(&app_state);
     }
 
