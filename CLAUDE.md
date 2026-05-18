@@ -1,239 +1,191 @@
-# CLAUDE.md — cc-rust (全量构建 / Full Build)
+# AGENTS.md - cc-rust (Full Build)
 
-This file provides guidance to Claude Code when working with the Rust port in `rust/`.
+This file provides guidance to Codex when working with the Rust port in `rust/`.
 
 ## 当前阶段：全量构建（Full Build）
 
 > **重要**：本分支历史上曾标记为 `rust-lite`（完整版的精简版）。现已进入**全量构建阶段**，目标是与上游完整版 (`master` / TypeScript `cc/src/`) 行为对齐。
 >
 > 书写与审阅规则：
-> - **不再按 Lite 缩减**。任何新代码都应覆盖上游对应模块的完整行为，不再以"精简版"为由省略分支、截断、错误恢复、沙箱、UI 细节等。
-> - **已有的缩减实现视为 TODO**，不是既定边界。具体清单见 [`docs/IMPLEMENTATION_GAPS.md`](docs/IMPLEMENTATION_GAPS.md) §2 与 [`docs/archive/COMPLETED_SIMPLIFIED.md`](docs/archive/COMPLETED_SIMPLIFIED.md)；补齐后请把条目迁移到 [`docs/archive/COMPLETED_FULL.md`](docs/archive/COMPLETED_FULL.md)。
-> - **历史 `Deferred` 清单需重评**。[`docs/WORK_STATUS.md`](docs/WORK_STATUS.md) §3 "显式延期"不再默认等于"不做"；新工作如触及这些条目，按上游完整实现对齐，除非另有书面确认。
-> - **上游参考**：需要对照行为时，读 `F:\AIclassmanager\cc\src\**`（TypeScript 原版）或 `F:\AIclassmanager\cc\claude-code-bun\**`（Bun 版），不要只参照本仓库历史的 Rust 简化版。
-> - **如确需保留某项缩减**（平台差异、许可、明确不做），必须在 PR 描述中显式说明，并在对应文档标注为"故意保留"（Intentional），而不是沉默地继续按简化版写。
+> - **不再按 Lite 缩减**。新代码应覆盖上游对应模块的完整行为，不要以“精简版”为由省略分支、截断、错误恢复、沙箱、Rust TUI 细节等。
+> - **已有的缩减实现视为 TODO**，不是既定边界。清单见 [`docs/IMPLEMENTATION_GAPS.md`](docs/IMPLEMENTATION_GAPS.md) §2 与 [`docs/archive/COMPLETED_SIMPLIFIED.md`](docs/archive/COMPLETED_SIMPLIFIED.md)；补齐后迁移到 [`docs/archive/COMPLETED_FULL.md`](docs/archive/COMPLETED_FULL.md)。
+> - **历史 `Deferred` 清单需重评**。[`docs/WORK_STATUS.md`](docs/WORK_STATUS.md) §3 不再默认等于“不做”；触及这些条目时按上游完整实现对齐，除非另有书面确认。
+> - **上游参考**：对照行为时读 `F:\AIclassmanager\cc\src\**`（TypeScript 原版）或 `F:\AIclassmanager\cc\claude-code-bun\**`（Bun 版）。
+> - **如确需保留某项缩减**，在 PR 描述中显式说明，并在文档标注为“故意保留”（Intentional），而不是沉默继续按简化版写。
 
-历史名称 `rust-lite` 仍保留在分支名与部分文档链接中，仅作为版本标识，不再承担"按精简版维护"的语义。
 
 ## Path Isolation (Critical)
 
-cc-rust 和原版 Claude Code (TypeScript) 共存于同一台机器上，**所有持久化路径必须隔离**：
+cc-rust 和原版 Codex (TypeScript) 共存于同一台机器上，**所有持久化路径必须隔离**：
 
-| 用途 | 原版 Claude Code | cc-rust (本项目) |
+| 用途 | 原版 Codex | cc-rust (本项目) |
 |------|-----------------|-----------------|
-| 全局数据目录 | `~/.claude/` | `~/.cc-rust/` |
-| 项目配置 | `.claude/settings.json` | `.cc-rust/settings.json` |
-| 项目技能 | `.claude/skills/` | `.cc-rust/skills/` |
-| Keychain 服务名 | `"claude-code"` | `"cc-rust"` |
-| 项目指令文件 | `CLAUDE.md` | `CLAUDE.md` (共享) |
+| 全局数据目录 | `~/.Codex/` | `~/.cc-rust/` |
+| 项目配置 | `.Codex/settings.json` | `.cc-rust/settings.json` |
+| 项目技能 | `.Codex/skills/` | `.cc-rust/skills/` |
+| Keychain 服务名 | `"Codex"` | `"cc-rust"` |
+| 项目指令文件 | `AGENTS.md` | `AGENTS.md` (共享) |
 
-### `CC_RUST_HOME` override
+## Cargo / Build
 
-To place all runtime data somewhere other than `~/.cc-rust/`, set the
-`CC_RUST_HOME` environment variable. See [docs/STORAGE.md](docs/STORAGE.md)
-for the canonical path reference and fallback behavior.
-
-## Build
+Do not assume `cargo` is available from the default shell `PATH` on this
+machine. The Rust toolchain for this project is installed under the workspace
+parent directory:
 
 ```bash
-# Rust 后端
-cargo build --release
-
-# 当前终端 UI (OpenTUI)
-cd ui && bun install && bun run dev
+export CARGO_HOME=/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/.rust/cargo
+export RUSTUP_HOME=/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/.rust/rustup
+export PATH="$CARGO_HOME/bin:$PATH"
 ```
 
-### 构建前资源检查（多 worktree 并行开发）
+Use the commands below from the repository root:
 
-- 在执行任何 `cargo build` / `cargo check` / `cargo test` / `cargo clippy` 之前，先检查整机内存占用与当前 `rust-analyzer` 进程数。
-- 多个 worktree 并行开发时，全机**最多只能同时运行 2 个 `rust-analyzer`**。如果准备打开第 3 个 Rust worktree，必须先关闭一个已有 worktree 的编辑器 / LSP，或显式停掉对应 `rust-analyzer`。
-- 如果当前内存压力已经偏高，不要继续叠加新的 `cargo` 编译任务；先释放内存，再开始构建、测试或 `clippy`。
-- Windows / PowerShell 下优先用下面的命令做快速检查：
+```bash
+cd /data2-HDD-SATA-20T/Digital_avatar/haoweiyao/claude-code-rust
 
-```powershell
-Get-CimInstance Win32_OperatingSystem |
-  Select-Object @{Name='TotalGB';Expression={[math]::Round($_.TotalVisibleMemorySize / 1MB, 1)}},
-                @{Name='FreeGB';Expression={[math]::Round($_.FreePhysicalMemory / 1MB, 1)}}
+# Verify the local toolchain.
+cargo --version
+rustc --version
+rustup show active-toolchain
 
-Get-Process rust-analyzer -ErrorAction SilentlyContinue |
-  Select-Object Id, ProcessName,
-                @{Name='WorkingSetGB';Expression={[math]::Round($_.WorkingSet64 / 1GB, 2)}},
-                Path
+# Build the whole workspace in release mode.
+cargo build --workspace --release
 ```
 
-如果发现 `rust-analyzer` 已经达到 2 个，默认先不要再开新的 Rust worktree IDE 会话，也不要在新的 worktree 里直接跑 `cargo`，先回收已有工作树的 LSP / 内存占用。
+The repository currently selects toolchain `1.91.1` via rustup. A separate
+stable toolchain is also installed in the same local `.rust/` root, but builds
+inside this repo should follow the repository-selected toolchain.
 
-### 全局快捷启动
+Known build warnings on this machine:
 
-在 PowerShell `$PROFILE` 中添加：
+- `npm` is not installed, so the `claude-code-rs` build script skips web-ui
+  dependency installation as a warning.
+- `cc-browser/src/mcp_bridge.rs` currently has an unused `Context` import.
+- `crates/claude-code-rs/src/tools/exec/process_control.rs` currently has an
+  unused Unix `CommandExt` import.
 
-```powershell
-function cc-rust { & "F:\AIclassmanager\cc\rust\ui\run.ps1" @args }
+## Commit And Push Automation
+
+本仓库使用本地 Git 身份：
+
+```bash
+git config user.name "Crsei"
+git config user.email "Crsei@protonmail.com"
 ```
 
-之后在任意目录输入 `cc-rust` 即可启动。
+Rust 工具链安装在仓库父目录的 `.rust/` 下。构建或提交前需要使用这套本地工具链：
+
+```bash
+export CARGO_HOME=/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/.rust/cargo
+export RUSTUP_HOME=/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/.rust/rustup
+export PATH="$CARGO_HOME/bin:$PATH"
+```
+
+常规提交流程：
+
+```bash
+git status --short
+cargo build --workspace --release
+git add <files>
+git commit -m "<short imperative summary>"
+```
+
+推送 `tui` 分支时继续使用
+`/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/github_token.txt`。不要读取、打印、提交或复制该 token 文件内容。使用临时 `GIT_ASKPASS` 脚本向 Git 提供认证，并在命令结束后删除脚本：
+
+```bash
+set +x
+ASKPASS_SCRIPT=$(mktemp)
+cat > "$ASKPASS_SCRIPT" <<'EOF'
+#!/bin/sh
+case "$1" in
+  *Username*) printf '%s\n' 'Crsei' ;;
+  *Password*) cat /data2-HDD-SATA-20T/Digital_avatar/haoweiyao/github_token.txt ;;
+  *) printf '%s\n' 'Crsei' ;;
+esac
+EOF
+chmod 700 "$ASKPASS_SCRIPT"
+GIT_CONFIG_GLOBAL=/dev/null \
+GIT_ASKPASS="$ASKPASS_SCRIPT" \
+GIT_TERMINAL_PROMPT=0 \
+git -c credential.helper= push https://github.com/Crsei/claude-code-rust.git tui
+status=$?
+rm -f "$ASKPASS_SCRIPT"
+exit $status
+```
+
+`GIT_CONFIG_GLOBAL=/dev/null` is intentional here: this machine has a global
+GitHub URL rewrite through `gh.llkk.cc`, and authenticated push should use the
+canonical GitHub URL directly.
 
 ## Project Structure
 
 ```
 rust/
 ├── src/                     Rust 后端
-│   ├── main.rs              入口 (Phase A/B/I lifecycle, --headless/--daemon flag)
+│   ├── main.rs              入口 (Phase A/B/I lifecycle, --headless flag)
 │   ├── types/               核心类型
 │   ├── engine/              QueryEngine + 系统提示词
 │   │   └── lifecycle/       QueryEngine 生命周期 (mod, types, submit_message, deps, helpers)
 │   ├── query/               异步流式查询循环 (loop_impl + loop_helpers)
-│   ├── tools/               30 个工具 + background_agents (后台代理类型)
+│   ├── tools/               工具系统（含 Agent / LSP / Web / Brief / Sleep）
 │   ├── skills/              技能系统 (内置 + 用户自定义)
 │   ├── compact/             上下文压缩管道
-│   ├── commands/            36 个斜杠命令
-│   ├── api/                 API 客户端 (Anthropic, OpenAI, Google)
-│   ├── auth/                认证 (API Key + Keychain + OAuth PKCE)
-│   │   └── oauth/           OAuth 子模块 (pkce, config, client)
+│   ├── commands/            斜杠命令系统
+│   ├── api/                 API 客户端 (Anthropic / OpenAI / Google / Azure / OpenAI Codex)
+│   ├── auth/                认证 (API Key + Keychain + OAuth + Codex CLI fallback)
 │   ├── permissions/         权限系统
-│   ├── config/              配置管理 + Feature Gate (features.rs)
+│   ├── config/              配置管理
 │   ├── session/             会话持久化
-│   ├── daemon/              KAIROS daemon (HTTP server + tick loop + channels + team_memory_proxy)
-│   ├── lsp_service/         LSP 服务 (JSON-RPC 传输 + 客户端 + 类型转换, 9 操作全实现)
 │   ├── ipc/                 IPC 协议 + headless 模式 (JSONL over stdio)
-│   ├── ui/                  TUI legacy (ratatui + crossterm)
+│   ├── daemon/              daemon + Team Memory 代理
+│   ├── web/                 Web 模式静态资源与路由支持
+│   ├── services/            tool_use_summary / session_memory / prompt_suggestion / lsp_lifecycle
+│   ├── crates/claude-code-rs/src/ui/  Rust TUI (ratatui + crossterm)
 │   ├── utils/               工具函数
 │   └── shutdown.rs          优雅关闭
-│
-├── ui/                      OpenTUI 前端
-│   ├── src/
-│   │   ├── components/      14 个 React 组件
-│   │   ├── ipc/             IPC 客户端 + 协议类型 (与 Rust 端一致)
-│   │   ├── store/           状态管理 (useReducer)
-│   │   ├── vim/             Vim 模式状态机
-│   │   └── main.tsx         前端入口
-│   ├── team-memory-server/  Team Memory TS 服务 (Bun + SQLite)
-│   │   ├── index.ts         HTTP server 入口 (Bun.serve, 密钥认证)
-│   │   ├── db.ts            SQLite 数据层 (bun:sqlite, WAL, 事务)
-│   │   └── routes.ts        GET/PUT 端点 (ETag, 304, 412, 413)
-│   └── run.sh               启动脚本
-│
-├── docs/
-│   ├── KNOWN_ISSUES.md      已知 UI/UX 问题跟踪
-│   └── ...
-└── architecture/
-    └── ink-terminal-frontend.md  终端前端演进历史说明
+└── docs/
+    ├── WORK_STATUS.md       当前完成度 / 未完成项总览
+    ├── IMPLEMENTATION_GAPS.md  注意点 / 缩减实现 / 设计限制总入口
+    ├── KNOWN_ISSUES.md      用户可感知问题跟踪
+    └── archive/             已完成功能的历史设计 / 计划 / 变更记录
 ```
-
-### Terminal Frontend
-
-`ui/` 是当前默认终端前端，基于 `@opentui/core` + `@opentui/react`。
-
-`ink-ui/` / `ui/ink-terminal/` 路线已退役，不再作为当前仓库主线依赖保留。
 
 ### IPC 架构
 
-两种前后端通信模式:
-
-**Headless 模式** (`--headless`): JSONL over stdio
-- Rust 端: `src/ipc/protocol.rs` (协议类型) + `src/ipc/headless.rs` (事件循环, `tokio::select!` 多路复用)
-- TS 端: `ui/src/ipc/client.ts` (spawn + JSONL) + `ui/src/ipc/protocol.ts`
-- 详见: `architecture/ink-terminal-frontend.md`（历史演进说明）
-
-**Daemon 模式** (`--daemon`, KAIROS): HTTP/SSE over localhost
-- Rust 端: `src/daemon/server.rs` (axum HTTP) + `src/daemon/sse.rs` (SSE 事件流) + `src/daemon/routes.rs` (12 个端点)
-- TS 端: `ui/src/ipc/daemon-client.ts` (fetch + EventSource)
-- 前端可随时 attach/detach，daemon 持续运行
-
-### KAIROS — 常驻助手模式
-
-通过 `FEATURE_*` 环境变量启用，`--daemon` 启动 daemon 进程:
-
-```
-src/daemon/
-├── mod.rs                  入口
-├── state.rs                DaemonState (共享状态, SSE 客户端管理, 事件缓冲, team_memory_port/secret)
-├── server.rs               axum HTTP server (127.0.0.1:19836)
-├── routes.rs               REST 端点 (submit, abort, attach, detach, webhook, team_memory...)
-├── team_memory_proxy.rs    Team Memory 代理 (spawn Bun 子进程 + reqwest 转发)
-├── sse.rs                  SSE 事件流 (断线重连, Last-Event-ID)
-├── tick.rs                 Proactive tick 循环 (30s 间隔, 自主执行)
-├── channels.rs             ChannelManager (MCP + Webhook 消息路由, allowlist)
-├── webhook.rs              Webhook 签名验证 (GitHub HMAC-SHA256, Slack)
-├── notification.rs         推送通知 (Windows Toast + Webhook 回调)
-└── memory_log.rs           每日日志 (~/.cc-rust/logs/YYYY/MM/YYYY-MM-DD.md)
-```
-
-Feature Gate 系统: `src/config/features.rs`
-- `FEATURE_KAIROS` — 主开关
-- `FEATURE_KAIROS_BRIEF` — BriefTool 结构化输出
-- `FEATURE_KAIROS_CHANNELS` — 外部 MCP Channel 消息
-- `FEATURE_KAIROS_PUSH_NOTIFICATION` — 推送通知
-- `FEATURE_KAIROS_GITHUB_WEBHOOKS` — GitHub Webhook
-- `FEATURE_PROACTIVE` — 自主 tick 循环 (可独立启用，KAIROS 隐含启用)
-- `FEATURE_TEAMMEM` — Team Memory 团队共享记忆 (独立于 KAIROS)
-
-新增工具: `Sleep` (tick 休眠控制), `Brief` (结构化输出)
-新增命令: `/brief`, `/sleep`, `/assistant`, `/daemon`, `/notify`, `/channels`, `/dream`
-MCP Channel: `src/mcp/channel.rs` (capabilities 检测 + 通知解析)
-
-设计文档: `docs/superpowers/specs/2026-04-11-kairos-design.md`
-
-### Team Memory — 团队共享记忆
-
-通过 `FEATURE_TEAMMEM=1` 启用，需配合 `--daemon` 模式。
-
-架构: Rust daemon 代理转发 → 独立 Bun TS 服务 → SQLite 存储
-
-```
-前端 → Rust Daemon (:19836) → TS Server (:19837) → ~/.cc-rust/team-memory.db
-         /api/claude_code/team_memory (GET/PUT)
-```
-
-Rust 端:
-- `src/daemon/team_memory_proxy.rs` — spawn Bun 子进程 + reqwest HTTP 转发
-- 共享密钥认证 (`X-Team-Memory-Secret` header, UUID v4)
-- 启动时健康检查 (5s 超时, 100ms 轮询)
-
-TS 端:
-```
-ui/team-memory-server/
-├── index.ts     Bun.serve 入口 (CLI 参数, 密钥中间件, 优雅关闭)
-├── db.ts        bun:sqlite (team_memory + repo_meta 表, WAL 模式, 事务写入)
-└── routes.ts    GET (全量/hashes/304) + PUT (upsert, ETag 乐观锁, 412/413)
-```
-
-API 端点:
-- `GET  /api/claude_code/team_memory?repo={owner/repo}` — 全量/条件请求
-- `GET  ...&view=hashes` — 仅 checksums
-- `PUT  /api/claude_code/team_memory?repo={owner/repo}` — upsert (If-Match ETag)
-
-设计文档: `docs/superpowers/specs/2026-04-11-team-memory-design.md`
+Rust TUI 通过 `--headless` 模式与 Rust 后端通信:
+- Rust 端: `src/ipc/protocol.rs` (协议类型) + `src/ipc/headless.rs` (事件循环)
+- 这里仅指 `crates/claude-code-rs/src/ui/` 中的 Rust TUI；不要再引入其他非 Rust TUI 的表述
 
 ### 已移除的模块 (完整版有)
 
 analytics, remote
 
-### 新增服务模块
+### 文档入口
 
-services/ — tool_use_summary, session_memory, prompt_suggestion, lsp_lifecycle
+- `docs/WORK_STATUS.md`：当前完成度、未完成项、延期范围
+- `docs/IMPLEMENTATION_GAPS.md`：注意事项、缩减实现、设计限制统一入口
+- `docs/KNOWN_ISSUES.md`：用户可感知问题，持续追加
+- `docs/archive/`：已经落地功能的历史方案、设计、日报、变更记录
 
 ### Auth Flow
 
 ```
-ApiClient::from_auth()
-  ├─ from_env(): 环境变量检测 (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...)
-  └─ auth::resolve_auth():
-       1. ANTHROPIC_API_KEY env → ApiKey
-       2. ANTHROPIC_AUTH_TOKEN env → ExternalToken
-       3. ~/.cc-rust/credentials.json → OAuthToken (自动刷新过期 token)
-       4. 系统 Keychain ("cc-rust") → ApiKey
-       5. None
+ApiClient::from_backend()
+  ├─ native  → auth::resolve_auth()
+  │            ├─ ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN
+  │            └─ ~/.cc-rust/credentials.json / 系统 Keychain ("cc-rust")
+  └─ codex   → auth::resolve_codex_auth_token()
+               ├─ OPENAI_CODEX_AUTH_TOKEN
+               ├─ ~/.cc-rust/credentials.json
+               └─ ~/.codex/auth.json
 ```
-
-OAuth 登录流程 (`/login 2|3` + `/login-code`):
-- PKCE: `src/auth/oauth/pkce.rs` (code_verifier + code_challenge + state)
-- 端点: `src/auth/oauth/config.rs` (platform.claude.com OAuth endpoints)
-- HTTP: `src/auth/oauth/client.rs` (token exchange + refresh + create_api_key)
-- 状态: `src/commands/login_code.rs` (PENDING_OAUTH static, 两步流程)
 
 ### 注意事项
 
-- 每次写完代码，编译过后查看有没有 warning，解决 warning（必须保证未使用的都在代码中起作用），然后构建相应的 e2e test
-- 运行任何 `cargo` 相关命令前，先检查内存占用和 `rust-analyzer` 数量；多 worktree 并行时全机最多 2 个 `rust-analyzer`
-- UI 已知问题记录在 `docs/KNOWN_ISSUES.md`，用户反馈的问题追加到该文件
+- 每次写完代码，编译过后查有没有 warning，解决 warning（必须保证未使用的都在代码中起作用），然后构建相应的 e2e test
+- Rust TUI 已知问题记录在 `docs/KNOWN_ISSUES.md`，用户反馈的问题追加到该文件
+- Codex backend 当前行为看 `docs/codex-backend.md`；历史调研笔记已归档到 `docs/archive/implemented/codex-agent.md`
+- 注意目前阶段修改 UI 代码只修改 `crates/claude-code-rs/src/ui/` 端的代码
+- Windows 环境下如果 `omx explore` 的只读 harness 不可用，直接用 PowerShell + `rg` 做等价只读定位，不要把它当成仓库问题
+- 文档更新按任务拆分，每完成一个文档更新任务就单独 commit；commit 描述保持一句话，直接说明这次提交的目的即可
