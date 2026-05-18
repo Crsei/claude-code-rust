@@ -1,43 +1,43 @@
 # 组件对等性对比：Rust vs TypeScript UI
 
-**日期**：2026-05-17  
-**范围**：Ratatui 后端（`rust/crates/claude-code-rs/src/ui/`）、OpenTUI 前端（`rust/ui/`）、TypeScript 设计系统（`src/components/design-system/`）以及下游 Ink 主题组件（`claude-code-bun/packages/@ant/ink/src/theme/`）
+**日期**：2026-05-18
+**范围**：Ratatui 后端（`rust/crates/claude-code-rs/src/ui/`）、TypeScript 设计系统（`src/components/design-system/`）以及下游 Ink 主题组件（`claude-code-bun/packages/@ant/ink/src/theme/`）
 
 ---
 
 ## 汇总表
 
-| 组件 | Rust ratatui | Rust OpenTUI | TS design-system | @ant/ink theme | 评级 |
-|-----------|:----------:|:----------:|:--------------:|:-------------:|:------:|
-| Dialog | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| Divider | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| Pane | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| ThemedBox | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| ThemedText | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| ThemeProvider | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| KeyboardShortcutHint | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| ListItem | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| ProgressBar | 缺失 | 部分 | 完整 | 完整 | 2/5 |
-| Byline | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| LoadingState | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| FuzzyPicker | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| Ratchet | 缺失 | 缺失 | 完整 | 完整 | 1/5 |
-| StatusIcon | 1/5 | 部分 | 完整 | 完整 | 2/5 |
-| Tabs | 1/5 | 部分 | 完整 | 完整 | 3/5 |
-| Spinner | 缺失 | 3/5 | 缺失 | 完整 | 不适用 |
-| SearchBox | 4/5 | 缺失 | 缺失 | 完整 | 不适用 |
-| 欢迎屏幕 | 4/5 | 完整 | 缺失 | 缺失 | 不适用 |
-| 状态组件/状态行 | 3/5 | 完整 | 缺失 | 缺失 | 不适用 |
-| 批准/权限 UI | 3/5 | 完整 | 缺失 | 缺失 | 不适用 |
-| 底部面板堆栈 | 1/5 | 缺失 | 缺失 | 缺失 | 不适用 |
-| 聊天组件 | 2/5 | 完整 | 缺失 | 缺失 | 不适用 |
-| 分页器/滚动覆盖层 | 4/5 | 缺失 | 缺失 | 缺失 | 不适用 |
-| 功能面板 | 2/5 | 完整 | 缺失 | 缺失 | 不适用 |
-| 会话恢复选择器 | 2/5 | 缺失 | 缺失 | 缺失 | 不适用 |
+| 组件 | Rust ratatui | TS design-system | @ant/ink theme | 评级 |
+|-----------|:----------:|:--------------:|:-------------:|:------:|
+| Dialog | 部分 | 完整 | 完整 | 4/5 |
+| Divider | 完整 | 完整 | 完整 | 5/5 |
+| Pane | 部分 | 完整 | 完整 | 4/5 |
+| ThemedBox | 部分 | 完整 | 完整 | 4/5 |
+| ThemedText | 部分 | 完整 | 完整 | 4/5 |
+| ThemeProvider | 部分 | 完整 | 完整 | 3/5 |
+| KeyboardShortcutHint | 部分 | 完整 | 完整 | 4/5 |
+| ListItem | 部分 | 完整 | 完整 | 4/5 |
+| ProgressBar | 完整 | 完整 | 完整 | 5/5 |
+| Byline | 部分 | 完整 | 完整 | 4/5 |
+| LoadingState | 部分 | 完整 | 完整 | 4/5 |
+| FuzzyPicker | 部分 | 完整 | 完整 | 4/5 |
+| Ratchet | 部分 | 完整 | 完整 | 4/5 |
+| StatusIcon | 完整 | 完整 | 完整 | 5/5 |
+| Tabs | 部分 | 完整 | 完整 | 3/5 |
+| Spinner | 缺失 | 缺失 | 完整 | 不适用 |
+| SearchBox | 4/5 | 缺失 | 完整 | 不适用 |
+| 欢迎屏幕 | 4/5 | 缺失 | 缺失 | 不适用 |
+| 状态组件/状态行 | 3/5 | 缺失 | 缺失 | 不适用 |
+| 批准/权限 UI | 3/5 | 缺失 | 缺失 | 不适用 |
+| 底部面板堆栈 | 1/5 | 缺失 | 缺失 | 不适用 |
+| 聊天组件 | 2/5 | 缺失 | 缺失 | 不适用 |
+| 分页器/滚动覆盖层 | 4/5 | 缺失 | 缺失 | 不适用 |
+| 功能面板 | 2/5 | 缺失 | 缺失 | 不适用 |
+| 会话恢复选择器 | 2/5 | 缺失 | 缺失 | 不适用 |
 
 **图例**：1=桩/缺失，2=部分状态，3=功能可用但有限，4=接近完整，5=功能完整
 
-**补齐计划**：详见 [`plans/plan-02-design-system.md`](plans/plan-02-design-system.md)——16 个组件分 3 个冲刺实现，总工作量约 17-21 天。
+**补齐状态**：第一轮 Rust ratatui 设计系统原语已落地。剩余差距集中在配置主题名映射、Dialog overlay 事件派发和 Tabs 完整交互契约，已记录到 [`../../KNOWN_ISSUES.md`](../../KNOWN_ISSUES.md) 的 `UI-006`、`UI-007`、`UI-008`。
 
 ---
 
@@ -47,169 +47,150 @@
 
 ### 组件：Dialog
 
-**Rust ratatui 路径**：缺失  
-**Rust OpenTUI 路径**：缺失  
-**TS design-system 路径**：`src/components/design-system/Dialog.tsx`  
-**Rust 完整度**：1/5
+**Rust ratatui 路径**：`crates/claude-code-rs/src/ui/overlays/dialog.rs`
+**TS design-system 路径**：`src/components/design-system/Dialog.tsx`
+**Rust 完整度**：4/5
 
 #### Rust 实现状态
-两个 Rust UI 后端均不存在 Dialog 组件。最接近的类似物是批准覆盖层（`approval_overlay.rs`）中使用的 `Pane` 包装器，但它缺乏完整的 Dialog 语义。
+Rust 现在有通用 Dialog 组件，覆盖标题/副标题、主题色 accent、可选边框、输入指南、`Pane` 包装、Esc/n 取消，以及 Ctrl+C/Ctrl+D 连续触发保护。`Dialog::handle_key()` 已提供组件级按键路由 helper。
 
-#### 缺失功能
-- 支持主题颜色的标题/副标题渲染
-- 退出时 Ctrl+C/D 行为与待处理状态显示（"再按一次 X 退出"）
-- 用于取消的 `confirm:no`（Esc/n）快捷键集成
-- 可配置的输入指南（byline 风格的键盘提示）
-- 可选边框切换（`hideBorder`）
-- 用于边框显示的 `Pane` 包装
-- 嵌入文本字段兼容性的 `isCancelActive` 属性
+#### 剩余差距
+- `OverlayStack` 仍主要保存 overlay metadata，尚未集中持有具体 Dialog 并派发真实 key events。
+- 真实权限/确认弹窗路径还需要接入 `DialogEvent::Cancel` / `DialogEvent::Exit` 后才能声明 runtime parity。
+- 详见 [`../../KNOWN_ISSUES.md`](../../KNOWN_ISSUES.md) `UI-007`。
 
 #### 影响
-用户看不到一致统一的对话框容器。权限提示、设置屏幕和确认对话框在没有共享框架、键盘提示和"再按一次退出"安全网的情况下临时拼凑渲染。
-
-> **补齐计划**: [plan-02 冲刺 2](plans/plan-02-design-system.md#冲刺-2-week-3-4-复合组件--核心增强)
+组件层容器已补齐，但调用方还不能默认获得统一的 Dialog 事件语义。
 
 ---
 
 ### 组件：Divider
 
-**Rust ratatui 路径**：缺失  
-**Rust OpenTUI 路径**：缺失  
-**TS design-system 路径**：`src/components/design-system/Divider.tsx`  
-**Rust 完整度**：1/5
+**Rust ratatui 路径**：`crates/claude-code-rs/src/ui/components/divider.rs`
+**TS design-system 路径**：`src/components/design-system/Divider.tsx`
+**Rust 完整度**：5/5
 
 #### Rust 实现状态
-任何 Rust UI 代码库中均不存在 Divider 组件。水平分隔线在需要时手动编写。
+Rust 现在有共享 Divider 组件，支持主题颜色 key、自定义重复字符、宽度、左右 padding、标题居中和窄宽度回退，并有单元测试覆盖。
 
-#### 缺失功能
-- 主题感知颜色解析（接受 `keyof Theme`）
-- 可配置宽度（默认终端宽度），填充支持
-- 支持 ANSI 的居中对齐标题（`<Ansi>{title}</Ansi>`）
-- 自定义重复字符（默认 `─`）
-- 用于全宽计算的 `useTerminalSize()` 集成
-- 针对多宽 Unicode 字符的 `stringWidth()` 正确测量
+#### 剩余差距
+当前没有独立开放差距；后续只需要在更多调用方替换手写分隔线。
 
 #### 影响
-缺乏一致的视觉分隔符。功能面板、状态显示和设置屏幕中的区域边界缺少专业的间距。
+共享视觉分隔符已经可用，后续收益取决于调用方迁移覆盖率。
 
 ---
 
 ### 组件：Pane
 
-**Rust ratatui 路径**：缺失  
-**Rust OpenTUI 路径**：缺失  
-**TS design-system 路径**：`src/components/design-system/Pane.tsx`  
-**Rust 完整度**：1/5
+**Rust ratatui 路径**：`crates/claude-code-rs/src/ui/components/pane.rs`
+**TS design-system 路径**：`src/components/design-system/Pane.tsx`
+**Rust 完整度**：4/5
 
 #### Rust 实现状态
-不存在 Pane 组件。`approval_overlay.rs` 调用了 `BetterViewPanel::new()`，这是一个本地的 ratatui 实现，但不是通用 Pane。
+Rust 现在有通用 Pane 组件，委托 Divider 渲染顶部边界，支持主题色、水平 padding、顶部 padding、modal 内部跳过分隔线，并作为 Dialog/ThemedBox 的共享容器基础。
 
-#### 缺失功能
-- 主题着色顶部分隔线（委托给 `<Divider>`）
-- 模态框感知渲染（在模态框内部时跳过分隔线以避免双重边框）
-- 水平填充（`paddingX=2`）
-- 顶部边距（`paddingTop=1`）
-- 模态框插槽内的 `flexShrink=0` 以确保高度稳定
+#### 剩余差距
+- ratatui 没有 Ink/React 的 `flexShrink` 布局模型；高度稳定性需要由调用方布局约束保证。
+- 现有 `/config`、`/permissions` 等调用方还未全部迁移到 Pane。
 
 #### 影响
-斜杠命令屏幕（`/config`、`/help`、`/plugins`、`/sandbox`、`/stats`、`/permissions`）在渲染时缺少标准的彩色顶部边框和一致的填充。
+共享容器已存在，但斜杠命令屏幕仍需要逐步迁移到它，才能获得一致的彩色顶部边框和填充。
 
 ---
 
 ### 组件：ThemeProvider / ThemedBox / ThemedText
 
-**Rust ratatui 路径**：缺失  
-**Rust OpenTUI 路径**：缺失（使用静态 `theme.ts`，包含硬编码的十六进制颜色）  
-**TS design-system 路径**：`src/components/design-system/ThemeProvider.tsx`、`ThemedBox.tsx`、`ThemedText.tsx`  
-**Rust 完整度**：1/5
+**Rust ratatui 路径**：`crates/claude-code-rs/src/ui/theme/`、`crates/claude-code-rs/src/ui/components/themed_box.rs`、`crates/claude-code-rs/src/ui/components/themed_text.rs`
+**TS design-system 路径**：`src/components/design-system/ThemeProvider.tsx`、`ThemedBox.tsx`、`ThemedText.tsx`
+**Rust 完整度**：3/5
 
 #### Rust 实现状态
-OpenTUI 前端使用 `rust/ui/src/theme.ts`——一个静态调色板对象（`c`），包含硬编码的十六进制值和一个旧版 `theme` 对象。没有运行时主题切换，没有基于终端主题检测的 `auto` 模式，没有 `ThemeProvider` React 上下文，也没有主题键到颜色的解析层。
+Rust 现在有 design theme 层：`ThemeName`、`ThemeSetting::Auto`、`ThemeProvider`、完整 `ThemeColors` 表、`resolve_color()`、`dim_style()`、settings 读写 helper，以及 `ThemedBox` / `ThemedText`。`App` 会从用户 settings 初始化主题，TUI 会按 `app_state.settings.theme` 同步当前主题。
 
-ratatui 后端各处使用内联硬编码的 ANSI/RGB 颜色（例如 `welcome.rs` 中的 `Color::Rgb(190, 140, 255)`、`ACCENT_DIM`、`MUTED`、`LIGHT` 常量）。
-
-#### 缺失功能
-- 包含 `useTheme()` / `useThemeSetting()` / `usePreviewTheme()` 钩子的 `ThemeProvider` 上下文
-- 主题设置持久化（`saveGlobalConfig`）
-- 带有 `$COLORFGBG` 种子和 OSC 11 实时监视器的 `auto` 模式
-- 主题选择器的预览/取消工作流
-- `ThemedBox`——将 `keyof Theme` 的边框/背景颜色解析为原始颜色
-- `ThemedText`——解析 `keyof Theme` 的文本颜色，支持 `TextHoverColorContext`
-- 处理 `rgb()`、`#hex`、`ansi256()`、`ansi:` 原始格式的 `resolveColor()` 辅助函数
-- 使用主题的 `inactive` 颜色的 `dimColor`（与粗体兼容，不同于 ANSI 的 dim）
-- `claude-code-bun/packages/@ant/ink/src/theme/theme-types.ts` 用于 TypeScript 主题类型安全
-- 用于实时终端背景检测的 `systemTheme.ts` / `systemThemeWatcher.ts`
+#### 剩余差距
+- `auto` 当前基于 `$COLORFGBG` 推断，没有 OSC 11 实时监视器。
+- `/config theme` 允许的 `solarized`、`monokai`、`nord` 等主题名尚未映射到 design theme palette，未知值会 fallback。详见 [`../../KNOWN_ISSUES.md`](../../KNOWN_ISSUES.md) `UI-006`。
+- 主题预览/取消工作流还未形成完整交互。
+- 旧组件中的硬编码颜色还需要逐步迁移到 `ThemeProvider`。
 
 #### 影响
-Rust UI **完全没有主题系统**。每种颜色都是硬编码的。用户无法切换浅色/深色主题、设置 `auto` 模式或自定义颜色。OpenTUI 前端的 `theme.ts` 调色板（`c`）使用任意十六进制值（强调色使用洋红 `#CC00CC`，用户色使用青色 `#55FFFF`），与上游 Claude Code 配色方案不匹配。
+主题基础设施已经存在，但调用方迁移和完整主题名覆盖尚未完成。
 
 ---
 
 ### 组件：KeyboardShortcutHint
 
-**Rust ratatui 路径**：缺失  
-**Rust OpenTUI 路径**：缺失  
-**TS design-system 路径**：`src/components/design-system/KeyboardShortcutHint.tsx`  
-**Rust 完整度**：1/5
+**Rust ratatui 路径**：`crates/claude-code-rs/src/ui/components/keyboard_shortcut.rs`
+**TS design-system 路径**：`src/components/design-system/KeyboardShortcutHint.tsx`
+**Rust 完整度**：4/5
 
 #### Rust 实现状态
-没有等价组件。键盘提示作为原始字符串嵌入在页脚文本中（例如 `approval_overlay.rs` 中的 `"Up/Down decision | Enter confirm | Esc deny"`）。
+Rust 现在有 `ShortcutHint`、styled hint 渲染、legacy string 渲染和 byline 风格的多提示组合。Dialog 已复用该组件渲染输入指南。
 
-#### 缺失功能
-- 结构化 `shortcut` + `action` 显示（"ctrl+o 展开"）
-- 可选括号包裹
-- 可选粗体快捷键文本
-- 通过 `<Byline>` 共享，使用中间点分隔符实现多提示显示
-- 通过 `<ConfigurableShortcutHint>` 支持用户可自定义快捷键
+#### 剩余差距
+- 尚未统一读取用户自定义 keybindings 来生成所有调用方的提示文案。
+- 旧页脚字符串还需要逐步替换为 `ShortcutHint`。
 
 #### 影响
-键盘提示不一致且不可自定义。使用自定义快捷键的用户会看到错误的快捷键标签。
+结构化提示组件已可用，但旧调用方迁移前仍可能出现不一致提示。
 
 ---
 
 ### 组件：ListItem
 
-**Rust ratatui 路径**：缺失  
-**Rust OpenTUI 路径**：缺失（使用临时 `<text>` 元素）  
-**TS design-system 路径**：`src/components/design-system/ListItem.tsx`  
-**Rust 完整度**：1/5
+**Rust ratatui 路径**：`crates/claude-code-rs/src/ui/components/list_item.rs`
+**TS design-system 路径**：`src/components/design-system/ListItem.tsx`
+**Rust 完整度**：4/5
 
 #### Rust 实现状态
-没有通用的 ListItem 组件。功能面板（`feature_panels.rs`）、会话选择器（`resume_picker.rs`）和搜索结果中的选择列表使用每个组件自定义的格式渲染。
+Rust 现在有通用 ListItem 组件，支持 focused/selected/disabled 状态、pointer、check marker、description、styled mode 和主题颜色。
 
-#### 缺失功能
-- 焦点指示器（`figures.pointer` = ">"），使用 `suggestion` 颜色
-- 选择复选标记（`figures.tick` = 勾号），使用 `success` 颜色
-- 用于截断列表的上/下滚动指示器
-- 主要内容下方的描述文本
-- 带有暗淡文本且无指示器的 `disabled` 状态
-- 用于自定义子元素样式的 `styled` 模式切换
-- 支持屏幕阅读器终端光标定位的 `declareCursor`
-- 基于状态（聚焦/选中/禁用）的自动文本颜色分配
+#### 剩余差距
+- 截断列表的上/下滚动指示器仍由具体 picker/list 控制。
+- `declareCursor` 属于 Ink/React 可访问性语义，ratatui 端尚无等价抽象。
+- 功能面板、恢复选择器等旧列表还需要迁移到共享 ListItem。
 
 #### 影响
-所有选择 UI 的外观各不相同。缺乏一致的"已选中"/"已聚焦"/"已禁用"视觉语言。
+共享列表项视觉语言已存在，但调用方迁移仍未完成。
 
 ---
 
 ### 组件：ProgressBar
 
-**Rust ratatui 路径**：缺失  
-**Rust OpenTUI 路径**：部分（后台任务中的内联渲染）  
-**TS design-system 路径**：`src/components/design-system/ProgressBar.tsx`  
-**Rust 完整度**：2/5
+**Rust ratatui 路径**：`crates/claude-code-rs/src/ui/rendering/progress_bar.rs`
+**TS design-system 路径**：`src/components/design-system/ProgressBar.tsx`
+**Rust 完整度**：5/5
 
 #### Rust 实现状态
-OpenTUI 前端在后台任务中内联显示进度（例如 `rust/ui/src/components/tasks/` 中的 `renderToolActivity`），但没有可复用的 ProgressBar 组件。
+Rust 现在有共享 `ProgressBar` widget 和低层 `render_progress_bar()`。它支持 Unicode ⅛ 块精度、ratio clamp、零宽处理、主题填充/空白颜色，以及自定义 `fill_color` / `empty_color`。
 
-#### 缺失功能
-- Unicode ⅛ 块精度（字符 `▏▎▍▌▋▊▉█`）
-- 从主题获取的填充/空颜色支持
-- 自动比例 clamping
-- 带有标准 API 的专用组件
+#### 剩余差距
+当前没有独立开放差距；任务状态调用方已可通过 `progress_bar_styled()` 复用 styled Line。
 
 #### 影响
-进度显示是临时拼凑的，与上游在视觉上不一致。
+进度条组件 parity 已收口。
+
+---
+
+### 组件：Byline / LoadingState / FuzzyPicker / Ratchet
+
+**Rust ratatui 路径**：`crates/claude-code-rs/src/ui/components/keyboard_shortcut.rs`、`loading_state.rs`、`fuzzy_picker.rs`、`ratchet.rs`
+**TS design-system 路径**：`src/components/design-system/Byline.tsx`、`LoadingState.tsx`、`FuzzyPicker.tsx`、`Ratchet.tsx`
+**Rust 完整度**：4/5
+
+#### Rust 实现状态
+- **Byline**：由 `ShortcutHint` / `render_hints_styled()` 提供共享键盘提示行，支持多提示分隔、粗体快捷键和 styled span 输出。
+- **LoadingState**：提供 Braille spinner、可选粗体/暗色文本、subtitle、frame 管理和 snapshot 覆盖。
+- **FuzzyPicker**：组合 `SearchBox`、`ListItem`、Byline 和 preview，支持上下方向布局、empty message、match label、visible window 和 item focus。
+- **Ratchet**：实现最大高度锁定，支持 `Always` / `Offscreen` 模式、visible 状态和 reset，避免内容高度收缩导致布局跳动。
+
+#### 剩余差距
+- 这些组件仍主要是纯渲染原语，过滤、选中、事件派发和 tick 调度由调用方持有。
+- 旧 picker/loading/list 调用方还需要逐步迁移到共享组件。
+
+#### 影响
+设计系统的中层组件已经可复用，剩余工作主要是调用方接线和交互所有权收口。
 
 ---
 
@@ -217,25 +198,19 @@ OpenTUI 前端在后台任务中内联显示进度（例如 `rust/ui/src/compone
 
 ### 组件：StatusIcon
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/status_icon.rs`  
-**Rust OpenTUI 路径**：部分（状态行中的内联 `<text fg={c.dim}>`）  
-**TS design-system 路径**：`src/components/design-system/StatusIcon.tsx`  
-**@ant/ink theme 路径**：`claude-code-bun/packages/@ant/ink/src/theme/StatusIcon.tsx`  
-**Rust 完整度**：2/5
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/status_icon.rs`
+**TS design-system 路径**：`src/components/design-system/StatusIcon.tsx`
+**@ant/ink theme 路径**：`claude-code-bun/packages/@ant/ink/src/theme/StatusIcon.tsx`
+**Rust 完整度**：5/5
 
 #### Rust 实现状态
-- **Ratatui**：`status_icon.rs` 组件是一个最小枚举，包含四个变体（`Ok`、`Warning`、`Error`、`Attention`）和纯文本 `label()` 字符串（"ok"、"warn"、"error"、"attention"）。它不提供 Unicode 图标、颜色、渲染——它纯粹是基于文本的 `status_widget.rs` 的标签提供者。
-- **OpenTUI**：在状态行组件中使用 figlet 字符和内联颜色，但没有可复用的 StatusIcon 组件。
+- **Ratatui**：`status_icon.rs` 现在提供 `Success`、`Error`、`Warning`、`Info`、`Pending`、`Loading` 六种语义状态，渲染 Unicode 图标，使用主题色，支持 `with_space`，并保留 legacy label / legacy severity mapping。
 
-#### 缺失功能
-- 通过 `figures` 库提供的 Unicode 图标字形（勾号、叉号、警告、信息、圆圈、省略号）
-- 命名语义颜色：`success`（绿色）、`error`（红色）、`warning`（黄色）、`suggestion`（蓝色）
-- 图标后尾随空格的 `withSpace` 属性
-- 六种语义状态：`success`、`error`、`warning`、`info`、`pending`、`loading`
-- 未分配颜色时的 `dimColor` 回退（pending/loading 状态）
+#### 剩余差距
+当前没有独立开放差距；后续只需要把旧状态文本调用方迁移到 `StatusIcon::render()`。
 
 #### 影响
-Rust 后端中的状态图标仅限于文本标签。上游所见勾号、叉号和警告符号的视觉丰富性缺失。
+状态图标组件 parity 已收口。
 
 ---
 
@@ -243,23 +218,13 @@ Rust 后端中的状态图标仅限于文本标签。上游所见勾号、叉号
 
 ### 组件：Tabs
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/tabs.rs`  
-**Rust OpenTUI 路径**：`rust/ui/src/components/TagTabs.tsx`  
-**TS design-system 路径**：`src/components/design-system/Tabs.tsx`  
-**@ant/ink theme 路径**：`claude-code-bun/packages/@ant/ink/src/theme/Tabs.tsx`  
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/tabs.rs`
+**TS design-system 路径**：`src/components/design-system/Tabs.tsx`
+**@ant/ink theme 路径**：`claude-code-bun/packages/@ant/ink/src/theme/Tabs.tsx`
 **Rust 完整度**：3/5
 
 #### Rust 实现状态
-- **Ratatui**：最小的 `render_tabs()` 函数——生成一个空格分隔的字符串，活动标签显示 `[selected]`，非活动标签显示 ` label `。没有键盘处理，没有样式，没有颜色。一个 5 行函数。
-- **OpenTUI**：`TagTabs.tsx` 组件明显更复杂。其特性包括：
-  - 水平滚动标签条，带溢出提示（`← N` / `→N (tab to cycle)`）
-  - 导出的 `planTagTabs()` 纯函数，用于可单元测试的窗口计算
-  - `All` 标签特殊处理
-  - 选中标签高亮显示，使用强调色 + 反色文本
-  - 隐藏标签计数溢出指示器
-  - 长标签名的截断逻辑
-  - 哈希前缀显示（`#tagname`）
-
+- **Ratatui**：`tabs.rs` 现在有 `Tab` / `Tabs` 结构，支持 selected state、next/previous wrap、主题色 header、full-width header、`content_height` 字段和 legacy `render_tabs()` 兼容函数。
 #### 缺失功能（对比 TS design-system）
 - 标签页头部焦点状态管理（`headerFocused` / `blurHeader` / `focusHeader`）
 - 子组件协调键盘交互的 `useTabHeaderFocus()` 钩子
@@ -271,10 +236,12 @@ Rust 后端中的状态图标仅限于文本标签。上游所见勾号、叉号
 - 标签头部下方附加内容的 `banner` 属性
 - 终端宽度感知内容区域的 `useFullWidth`
 - 与子箭头键处理器冲突解决的 `disableNavigation` 属性
-- 支持主题颜色的标签标题
+- 完整内容 panes 渲染和调用方级 keyboard action 集成
+
+详见 [`../../KNOWN_ISSUES.md`](../../KNOWN_ISSUES.md) `UI-008`。
 
 #### 影响
-ratatui 后端基本没有标签系统。OpenTUI 的 `TagTabs` 对于标签式导航是功能性的，但缺乏斜杠命令屏幕（如 `/config`、`/help` 和 `/permissions`）所需的完整交互式标签面板语义（焦点管理、键盘导航、模态框协调）。
+ratatui 后端已有标签头部组件，但缺乏斜杠命令屏幕（如 `/config`、`/help` 和 `/permissions`）所需的完整交互式标签面板语义（焦点管理、键盘导航、模态框协调）。
 
 ---
 
@@ -282,9 +249,8 @@ ratatui 后端基本没有标签系统。OpenTUI 的 `TagTabs` 对于标签式�
 
 ### 组件：欢迎屏幕
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/welcome.rs`  
-**Rust OpenTUI 路径**：`rust/ui/src/components/WelcomeScreen.tsx`  
-**TS design-system 路径**：缺失（无专用组件——嵌入在 `LogoV2/` 中）  
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/welcome.rs`
+**TS design-system 路径**：缺失（无专用组件——嵌入在 `LogoV2/` 中）
 **Rust 完整度**：4/5
 
 #### Rust 实现状态
@@ -298,29 +264,22 @@ ratatui 后端基本没有标签系统。OpenTUI 的 `TagTabs` 对于标签式�
   - 全面的测试覆盖率（6 个测试）
   - 无 ASCII 标志（出于紧凑性的设计选择）
 
-- **OpenTUI**：ASCII 标志版本，具有：
-  - 强调色大型 ASCII 艺术字 "Claude Code" 标志
-  - 模型名称、CWD、会话 ID 显示
-  - 尚未连接到后端时的 `Spinner` 组件
-  - 可点击 CWD 的 `FilePathLink`
-
 #### 缺失功能
-- 主题感知颜色（目前在 ratatui 中硬编码为 RGB 常量，或在 OpenTUI 中硬编码为 `c.accent`/`c.dim`）
+- 主题感知颜色（目前在 ratatui 中硬编码为 RGB 常量）
 - 动画标志（见于 TS `LogoV2/` 组件）
 - 基于用户上下文的提示/入门建议
 - 键盘快捷键提示集成
 - 来自最近历史的会话恢复建议
 
 #### 影响
-两个 Rust 实现都是功能性的，与上游欢迎显示相当。主题和动画方面存在微小差距。
+Rust 欢迎屏幕是功能性的，与上游欢迎显示相当。主题和动画方面存在微小差距。
 
 ---
 
 ### 组件：状态组件 / 状态行
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/status_widget.rs`  
-**Rust OpenTUI 路径**：`rust/ui/src/components/StatusLine/CustomStatusLine.tsx`、`SubsystemStatus.tsx`  
-**TS design-system 路径**：缺失（嵌入在应用级组件中）  
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/status_widget.rs`
+**TS design-system 路径**：缺失（嵌入在应用级组件中）
 **Rust 完整度**：3/5
 
 #### Rust 实现状态
@@ -331,8 +290,6 @@ ratatui 后端基本没有标签系统。OpenTUI 的 `TagTabs` 对于标签式�
   - `render_details()` 多行展开格式
   - 与 `StatusIcon` 的严重度标签集成
   - 良好的测试覆盖率，使用 `insta` 快照
-
-- **OpenTUI**：`CustomStatusLine` 渲染用户配置的状态行输出。`SubsystemStatus` 显示 LSP、MCP、插件、技能状态。关注点分离。
 
 #### 缺失功能（ratatui）
 - 无实际的终端渲染——仅为下游显示生成字符串
@@ -349,9 +306,8 @@ ratatui 状态组件提供了坚实的数据模型，但无法直接渲染带样
 
 ### 组件：批准覆盖层
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/approval_overlay.rs`  
-**Rust OpenTUI 路径**：`rust/ui/src/components/permissions/PermissionRequestDialog.tsx`（+ 变体）  
-**TS design-system 路径**：嵌入在 `src/components/permissions/` 中  
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/approval_overlay.rs`
+**TS design-system 路径**：嵌入在 `src/components/permissions/` 中
 **Rust 完整度**：3/5
 
 #### Rust 实现状态
@@ -363,14 +319,6 @@ ratatui 状态组件提供了坚实的数据模型，但无法直接渲染带样
   - 默认 `fail_closed`（出错时拒绝）
   - 长命令字符串的 `fit_line()` 截断
 
-- **OpenTUI**：类别感知权限对话框系统，具有：
-  - `PermissionRequestDialog`，分发到类别特定的主体变体
-  - `BashPermissionRequest`、`FileEditPermissionRequest`、`FileWritePermissionRequest`、`WebFetchPermissionRequest`、`FallbackPermissionRequest`
-  - 用于共享框架的 `PermissionDialogFrame`
-  - 用于一致按钮/键盘布局的 `PermissionPromptOptions`
-  - 通过 `useBackend()` 的 IPC 集成，用于发送 `permission_response`
-  - 通过每个选项的 `hotkey` 属性的热键支持（y/n/a）
-
 #### 缺失功能（ratatui）
 - EditRequest 支持（变体存在但与 Deny 没有视觉区别）
 - 默认选项中未包含 `Always Allow` 选择
@@ -379,7 +327,7 @@ ratatui 状态组件提供了坚实的数据模型，但无法直接渲染带样
 - 无内联显示的键盘热键字母
 
 #### 影响
-ratatui 批准覆盖层覆盖了基本批准流程。OpenTUI 实现具有类别特定布局和 IPC 集成，明显更完整。
+ratatui 批准覆盖层覆盖了基本批准流程，但仍缺少若干完整交互细节。
 
 ---
 
@@ -387,8 +335,8 @@ ratatui 批准覆盖层覆盖了基本批准流程。OpenTUI 实现具有类别�
 
 ### 组件：SearchBox
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/search_box.rs`  
-**@ant/ink theme 路径**：`claude-code-bun/packages/@ant/ink/src/theme/SearchBox.tsx`  
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/search_box.rs`
+**@ant/ink theme 路径**：`claude-code-bun/packages/@ant/ink/src/theme/SearchBox.tsx`
 **Rust 完整度**：4/5
 
 #### Rust 实现状态
@@ -416,7 +364,7 @@ SearchBox 是 ratatui 后端中最完整的组件之一。对于基本搜索/过
 
 ### 组件：分页器覆盖层
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/pager_overlay.rs`  
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/pager_overlay.rs`
 **Rust 完整度**：4/5
 
 #### Rust 实现状态
@@ -448,9 +396,8 @@ SearchBox 是 ratatui 后端中最完整的组件之一。对于基本搜索/过
 
 ### 组件：功能面板
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/feature_panels.rs`  
-**Rust OpenTUI 路径**：`rust/ui/src/components/panels/`（McpServerCard、PluginRow、TeamMemberCard + 状态颜色）  
-**TS design-system 路径**：嵌入在斜杠命令屏幕中  
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/feature_panels.rs`
+**TS design-system 路径**：嵌入在斜杠命令屏幕中
 **Rust 完整度**：2/5
 
 #### Rust 实现状态
@@ -462,8 +409,6 @@ SearchBox 是 ratatui 后端中最完整的组件之一。对于基本搜索/过
   - 带有 `TabbedFormEvent` 响应的按键事件处理
   - 用于扁平文本面板列表的 `render_panel_index()`
 
-- **OpenTUI**：单独的卡片组件（`McpServerCard`、`PluginRow`、`TeamMemberCard`），具有基于状态的着色和结构化布局。
-
 #### 缺失功能（ratatui）
 - 无视觉渲染——一切通过 `render_lines()` 以纯文本形式呈现
 - 无内联状态指示器（彩色圆点、状态徽章）
@@ -472,7 +417,7 @@ SearchBox 是 ratatui 后端中最完整的组件之一。对于基本搜索/过
 - 无可滚动面板内容
 
 #### 影响
-ratatui 功能面板仅是一个状态管理层。OpenTUI 有结构化的卡片组件，但没有统一的标签化面板导航。
+ratatui 功能面板仅是一个状态管理层，没有统一的标签化面板导航。
 
 ---
 
@@ -480,8 +425,7 @@ ratatui 功能面板仅是一个状态管理层。OpenTUI 有结构化的卡片�
 
 ### 组件：聊天组件
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/chatwidget.rs`  
-**Rust OpenTUI 路径**：`rust/ui/src/components/PromptInput/`、`rust/ui/src/components/messages/`  
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/chatwidget.rs`
 **Rust 完整度**：4/5
 
 #### Rust 实现状态
@@ -491,19 +435,13 @@ ratatui 功能面板仅是一个状态管理层。OpenTUI 有结构化的卡片�
   - 转发到 `App` 的 `handle_key_event()`
   - 用于 App 生命周期管理的 `from_app()` / `into_app()`
 
-- **OpenTUI**：功能完整的聊天系统：
-  - `PromptInput/`，包含编辑器缓冲区、斜杠命令提示、模式指示器、排队提交、截断
-  - `messages/`，包含 `SystemMessage`、`ToolGroupMessage`、`ToolResultOrphanMessage`、`CompactBoundaryMessage`
-  - `tasks/`，包含 `BackgroundTask`、`BackgroundTaskStatus`、`ShellProgress`
-  - `agent-settings/`，包含完整的代理创建向导（11 个向导步骤）
-
 #### 缺失功能（ratatui）
 - ratatui 的 `ChatWidget` 不是 UI 组件——它是一个状态管理边界
 - 没有消息、编辑器或对话历史的实际渲染
 - 所有聊天渲染必须通过下游的 `App` 方法进行
 
 #### 影响
-ratatui 聊天组件的范围正确，作为一个适配器。OpenTUI 前端承担了完整的聊天 UI 重量，拥有丰富的组件层次结构。
+ratatui 聊天组件的范围正确，作为一个适配器。
 
 ---
 
@@ -511,7 +449,7 @@ ratatui 聊天组件的范围正确，作为一个适配器。OpenTUI 前端承�
 
 ### 组件：恢复选择器
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/resume_picker.rs`  
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/resume_picker.rs`
 **Rust 完整度**：2/5
 
 #### Rust 实现状态
@@ -540,7 +478,7 @@ ratatui 聊天组件的范围正确，作为一个适配器。OpenTUI 前端承�
 
 ### 组件：底部面板
 
-**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/bottom_pane.rs`  
+**Rust ratatui 路径**：`rust/crates/claude-code-rs/src/ui/components/bottom_pane.rs`
 **Rust 完整度**：1/5
 
 #### Rust 实现状态
@@ -566,39 +504,29 @@ ratatui 聊天组件的范围正确，作为一个适配器。OpenTUI 前端承�
 
 ## 主要发现
 
-### 1. 根本差距：Rust 中无设计系统
+### 1. 根本差距：Rust 设计系统已建立，但调用方迁移未完成
 
-TypeScript 代码库有 16 个可复用的设计系统组件（`Dialog`、`Divider`、`Pane`、`ThemedBox`、`ThemedText`、`ThemeProvider`、`KeyboardShortcutHint`、`ListItem`、`ProgressBar`、`StatusIcon`、`Tabs`、`Byline`、`Ratchet`、`FuzzyPicker`、`LoadingState`、`color`），具有一致的主题、键盘处理和无障碍支持。**Rust 代码库中这些组件数量为零。** OpenTUI 前端有一个静态调色板（`theme.ts`）和临时组件样式，但没有共享的设计词汇表。
+TypeScript 代码库有 16 个可复用的设计系统组件（`Dialog`、`Divider`、`Pane`、`ThemedBox`、`ThemedText`、`ThemeProvider`、`KeyboardShortcutHint`、`ListItem`、`ProgressBar`、`StatusIcon`、`Tabs`、`Byline`、`Ratchet`、`FuzzyPicker`、`LoadingState`、`color`），具有一致的主题、键盘处理和无障碍支持。Rust 代码库现在已经补齐第一轮共享组件和主题原语，但大量调用方仍停留在旧的手写渲染、字符串页脚或局部状态模型上。
 
 ### 2. Ratatui 后端：状态重、渲染轻
 
-ratatui 组件（`claude-code-rs/src/ui/components/`）主要是状态管理层——它们拥有数据模型、事件处理和纯文本输出，但将实际的终端渲染委托给调用者。`search_box.rs` 和 `pager_overlay.rs` 是明显的例外，它们具有实际的渲染逻辑。
+ratatui 组件（`crates/claude-code-rs/src/ui/components/`）过去主要是状态管理层；本轮新增的 design-system 组件已经开始提供 styled `Line` / `Span` 渲染。但一些核心界面（功能面板、恢复选择器、底部面板）仍然偏状态模型，尚未全面切到共享渲染原语。
 
-### 3. OpenTUI 前端：正在成长但不一致
+### 3. 主题系统接线是影响最大的剩余缺口
 
-OpenTUI 前端（`rust/ui/src/components/`）有更完整的组件实现（权限对话框、欢迎屏幕、消息气泡、后台任务、代理设置向导），但它们是独立构建的，没有共享组件库。每个组件直接从静态 `theme.ts` 导入颜色，并使用内联的 OpenTUI 原语（`<box>`、`<text>`、`<span>`），没有将它们包装在可复用的抽象层中。
+运行时主题系统已经存在，但完整 parity 还需要：
+- 补齐 `/config theme` 暴露主题名到 design palette 的映射。
+- 把旧组件中的硬编码颜色迁移到 `ThemeProvider`。
+- 用 OSC 11 或等价机制补齐实时终端背景检测。
+- 为主题预览/取消工作流补调用方交互。
 
-### 4. 主题系统差距是影响最大的缺失功能
-
-缺少运行时主题系统影响每个组件。没有它：
-- 无法切换浅色/深色模式
-- 无法基于终端背景检测实现 `auto` 模式
-- 无法自定义颜色
-- 无法进行无障碍颜色对比度调整
-- 所有颜色都是硬编码的，必须逐个更新
-
-### 5. Rust 中存在但 TypeScript 中不存在的组件
+### 4. Rust 中存在但 TypeScript 中不存在的组件
 
 一些组件仅存在于 Rust 代码库中：
 - `SearchBox`（ratatui）：构建器模式的搜索框，带光标定位
 - `PagerOverlay`（ratatui）：可滚动文本分页器，带键盘导航
-- `SubsystemStatus`（OpenTUI）：结构化子系统概览（MCP、LSP、插件、技能）
-- `BackgroundTask` / `BackgroundTaskStatus`（OpenTUI）：任务进度显示
-- `AgentSettings` 向导（OpenTUI）：11 步代理创建流程
-- `TagTabs`（OpenTUI）：水平滚动的标签页，带溢出处理
-
 这些代表 Rust 优先的特性，可以为 TypeScript 的改进提供参考。
 
-### 6. 测试覆盖率的差异
+### 5. 测试覆盖率的差异
 
-ratatui 组件有合理的测试覆盖率（尤其是 `welcome.rs` 有 6 个以上测试、`search_box.rs` 有快照测试、`status_widget.rs` 有 insta 快照）。OpenTUI 前端的测试覆盖率稀疏（只有 `tag-tabs`、`validation-errors-list`、`server-list-editor`、`file-path-link`、`frame-clear`、`string-width`、`prompt-hotkey`、`prompt-state`、`status-line-state`、`hunks`、`state-colors`、`team-summary`、`paste-display` 有测试）。
+ratatui 组件有合理的测试覆盖率。新增 design-system 组件覆盖了 Divider、ListItem、KeyboardShortcutHint、LoadingState、FuzzyPicker、Ratchet、StatusIcon、ProgressBar、ThemeProvider、Dialog 等单元或 snapshot 测试；旧组件仍以 `welcome.rs`、`search_box.rs`、`status_widget.rs` 等为主要覆盖点。
