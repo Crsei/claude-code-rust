@@ -151,11 +151,11 @@ impl Tool for TeamSpawnTool {
             });
         }
 
+        let agent_id = identity::format_agent_id(&params.name, &team_name);
         let color = params
             .color
             .clone()
-            .unwrap_or_else(|| helpers::assign_color(&team_file));
-        let agent_id = identity::format_agent_id(&params.name, &team_name);
+            .unwrap_or_else(|| helpers::assign_color_for_teammate(&team_file, &agent_id));
         let now = chrono::Utc::now().timestamp();
         let plan_mode_required = team_spawn_plan_mode_required(params.mode.as_deref());
         let agent_type = resolve_team_spawn_agent_type(params.agent_type.as_deref());

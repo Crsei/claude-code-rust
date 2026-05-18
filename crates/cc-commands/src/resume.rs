@@ -113,20 +113,30 @@ fn resume_session_by_id(session_id: &str, ctx: &mut CommandContext) -> Result<Co
     }
 
     let msg_count = messages.len();
-    ctx.messages = messages;
+    if let Some(team_context) = crate::runtime::team_context_for_session(session_id) {
+        ctx.app_state.team_context = Some(team_context);
+    } else {
+        ctx.app_state.team_context = None;
+    }
 
-    Ok(CommandResult::Output(format!(
-        "Loaded history from session {} ({} messages) into the current conversation.",
-        session_id, msg_count,
-    )))
+    Ok(CommandResult::SwitchSession {
+        session_id: cc_bootstrap::SessionId::from_string(session_id),
+        messages,
+        notice: format!(
+            "Loaded history from session {} ({} messages) into the current conversation.",
+            session_id, msg_count,
+        ),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use cc_bootstrap::SessionId;
+    use cc_types::message::{Message, MessageContent, UserMessage};
     use std::path::PathBuf;
     use tempfile::tempdir;
+    use uuid::Uuid;
 
     struct EnvGuard {
         key: &'static str,
@@ -157,6 +167,18 @@ mod tests {
             app_state: Default::default(),
             session_id: SessionId::from_string("test-session"),
         }
+    }
+
+    fn user_message(text: &str) -> Message {
+        Message::User(UserMessage {
+            uuid: Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".into(),
+            content: MessageContent::Text(text.into()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })
     }
 
     #[tokio::test]
@@ -228,6 +250,44 @@ mod tests {
                 assert!(ctx.messages.is_empty());
             }
             _ => panic!("Expected Output result"),
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_resume_nonempty_session_switches_runtime_session() {
+        let home = tempdir().unwrap();
+        let _guard = EnvGuard::set("CC_RUST_HOME", home.path());
+        let workspace = home.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        storage::save_session(
+            "resume-session",
+            &[user_message("hello")],
+            workspace.to_str().unwrap(),
+        )
+        .unwrap();
+
+        let handler = ResumeHandler;
+        let mut ctx = test_ctx();
+        ctx.cwd = workspace;
+        ctx.app_state.team_context = Some(cc_types::teams::TeamContext {
+            team_name: "stale-team".into(),
+            ..Default::default()
+        });
+
+        let result = handler.execute("resume-session", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::SwitchSession {
+                session_id,
+                messages,
+                notice,
+            } => {
+                assert_eq!(session_id.as_str(), "resume-session");
+                assert_eq!(messages.len(), 1);
+                assert!(notice.contains("Loaded history"));
+                assert!(ctx.app_state.team_context.is_none());
+            }
+            _ => panic!("Expected SwitchSession result"),
         }
     }
 }
