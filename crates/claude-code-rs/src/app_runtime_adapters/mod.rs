@@ -525,26 +525,36 @@ fn install_root_subsystem_event_sinks(event_tx: tokio::sync::broadcast::Sender<S
                     error,
                 },
             ),
-            // Events not yet mapped to IPC protocol — surface as RefreshNeeded
-            // so the frontend knows something changed.
-            cc_plugins::PluginSubsystemEvent::Installed { plugin_id, .. } => {
+            // ── Phase 2 integration (Serial Integration Lane) ──
+            // Properly mapped to new IPC PluginEvent variants.
+            cc_plugins::PluginSubsystemEvent::Installed {
+                plugin_id,
+                name,
+                version,
+            } => SubsystemEvent::Plugin(
+                cc_ipc_protocol::subsystem_events::PluginEvent::Installed {
+                    plugin_id,
+                    name,
+                    version,
+                },
+            ),
+            cc_plugins::PluginSubsystemEvent::Updated {
+                plugin_id,
+                name,
+                old_version: _old,
+                new_version,
+            } => SubsystemEvent::Plugin(
+                cc_ipc_protocol::subsystem_events::PluginEvent::Updated {
+                    plugin_id,
+                    name,
+                    version: new_version,
+                },
+            ),
+            cc_plugins::PluginSubsystemEvent::Uninstalled { plugin_id, name } => {
                 SubsystemEvent::Plugin(
-                    cc_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded {
-                        reason: format!("plugin installed: {plugin_id}"),
-                    },
-                )
-            }
-            cc_plugins::PluginSubsystemEvent::Updated { plugin_id, .. } => {
-                SubsystemEvent::Plugin(
-                    cc_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded {
-                        reason: format!("plugin updated: {plugin_id}"),
-                    },
-                )
-            }
-            cc_plugins::PluginSubsystemEvent::Uninstalled { plugin_id, .. } => {
-                SubsystemEvent::Plugin(
-                    cc_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded {
-                        reason: format!("plugin uninstalled: {plugin_id}"),
+                    cc_ipc_protocol::subsystem_events::PluginEvent::Uninstalled {
+                        plugin_id,
+                        name,
                     },
                 )
             }
@@ -552,17 +562,17 @@ fn install_root_subsystem_event_sinks(event_tx: tokio::sync::broadcast::Sender<S
                 plugin_id,
                 errors,
             } => SubsystemEvent::Plugin(
-                cc_ipc_protocol::subsystem_events::PluginEvent::StatusChanged {
+                cc_ipc_protocol::subsystem_events::PluginEvent::ValidationFailed {
                     plugin_id,
                     name: String::new(),
-                    status: "error".to_string(),
-                    error: Some(errors.join("; ")),
+                    errors,
                 },
             ),
             cc_plugins::PluginSubsystemEvent::ConfigChanged { plugin_id } => {
                 SubsystemEvent::Plugin(
-                    cc_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded {
-                        reason: format!("plugin config changed: {plugin_id}"),
+                    cc_ipc_protocol::subsystem_events::PluginEvent::ConfigChanged {
+                        plugin_id,
+                        name: String::new(),
                     },
                 )
             }

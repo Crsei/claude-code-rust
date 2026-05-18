@@ -467,13 +467,190 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         cc_browser::session::ChromeEnablement::Enabled
     );
 
-    // B.3: Register tools
+    // B.3: Initialize plugins, tools, and skills
     cc_plugins::init_plugins();
-    let mut tools = registry::get_tools_for_active_session();
-    info!(count = tools.len(), "tools registered");
+    let all_plugins = cc_plugins::get_all_plugins();
+    if !all_plugins.is_empty() {
+        info!(count = all_plugins.len(), "plugins loaded");
+    }
 
-    // B.3b: Initialize plugin system
-    cc_plugins::init_plugins();
+    // B.3a-i: Wire plugin LSP declarations into the LSP config provider
+    // (Phase 2 integration: Serial Integration Lane)
+    {
+        let enabled_plugins = cc_plugins::get_enabled_plugins();
+        let lsp_decls =
+            cc_plugins::lsp::collect_plugin_lsp_declarations(&enabled_plugins);
+        if !lsp_decls.is_empty() {
+            let provider_configs: Vec<cc_lsp_service::LspServerConfig> = lsp_decls
+                .into_iter()
+                .map(|decl| cc_lsp_service::LspServerConfig {
+                    name: Some(format!("{}:{}", decl.plugin_id, decl.language)),
+                    language_id: decl.language,
+                    extensions: decl.extensions,
+                    extension_to_language: std::collections::HashMap::new(),
+                    command: decl.server_command,
+                    args: decl.args,
+                    env: std::collections::HashMap::new(),
+                    workspace_folder: None,
+                    init_options: decl.config,
+                    source: Some(format!("plugin:{}", decl.plugin_id)),
+                })
+                .collect();
+            if !provider_configs.is_empty() {
+                cc_lsp_service::set_config_provider(Some(std::sync::Arc::new(
+                    move || provider_configs.clone(),
+                )));
+            }
+        }
+    }
+
+    // B.3a-ii: Register plugin commands in Lane C's DynamicRegistry
+    // (Phase 2 integration: Serial Integration Lane)
+    {
+        use cc_commands::dynamic_registry::{CommandSource, DynamicCommandEntry};
+        for plugin in &all_plugins {
+            if !matches!(
+                plugin.status,
+                cc_plugins::PluginStatus::Installed
+            ) {
+                continue;
+            }
+            if let Some(ref cache_path) = plugin.cache_path {
+                if let Ok(manifest) =
+                    cc_plugins::manifest::load_manifest(cache_path)
+                {
+                    for cmd in manifest.commands {
+                        cc_commands::DYNAMIC_REGISTRY.lock().register(
+                            DynamicCommandEntry {
+                                name: cmd.name,
+                                aliases: cmd.aliases,
+                                description: cmd.description,
+                                source: CommandSource::Plugin,
+                                hidden: false,
+                                usage_score: 0.0,
+                                execution_strategy:
+                                    cc_commands::dynamic_registry::ExecutionStrategy::Plugin,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // B.3a-iii: Initialize telemetry subsystem
+    // (Phase 2 integration: Serial Integration Lane)
+    #[cfg(feature = "telemetry")]
+    {
+        use cc_engine::telemetry_bridge::{self, EngineTelemetry, SpanId};
+        use cc_services::telemetry::{
+            init_telemetry, TelemetryConfig, TelemetryExporter, TelemetryHandle,
+            TelemetryRedaction,
+        };
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Mutex;
+
+        let telemetry_config = TelemetryConfig {
+            enabled: true,
+            exporter: TelemetryExporter::Log,
+            sampling_rate: 1.0,
+            redaction: TelemetryRedaction::default(),
+        };
+        let telemetry_handle = init_telemetry(telemetry_config);
+        info!("telemetry subsystem initialized");
+
+        // Wrap the handle in an EngineTelemetry bridge so submit_message.rs
+        // can start/end InteractionSpan and HookSpan via the trait.
+        struct EngineTelemetryBridge {
+            handle: TelemetryHandle,
+            span_counter: AtomicU64,
+            // Live spans keyed by SpanId so finish() can find them.
+            active_spans: Mutex<
+                std::collections::HashMap<
+                    SpanId,
+                    cc_services::telemetry::InteractionSpan,
+                >,
+            >,
+            // Live hook spans
+            active_hooks: Mutex<
+                std::collections::HashMap<
+                    SpanId,
+                    cc_services::telemetry::HookSpan,
+                >,
+            >,
+        }
+
+        impl EngineTelemetry for EngineTelemetryBridge {
+            fn start_submit(
+                &self,
+                session_id: &str,
+                submit_id: &str,
+            ) -> SpanId {
+                let id =
+                    self.span_counter.fetch_add(1, Ordering::Relaxed);
+                let span = self
+                    .handle
+                    .start_interaction(
+                        session_id.to_string(),
+                        submit_id.to_string(),
+                    );
+                self.active_spans.lock().unwrap().insert(id, span);
+                id
+            }
+
+            fn end_submit(
+                &self,
+                span_id: SpanId,
+                model: &str,
+                input_tokens: u64,
+                output_tokens: u64,
+            ) {
+                if let Some(mut span) =
+                    self.active_spans.lock().unwrap().remove(&span_id)
+                {
+                    span.finish(
+                        model,
+                        input_tokens as u32,
+                        output_tokens as u32,
+                    );
+                }
+            }
+
+            fn start_hook(&self, hook_name: &str) -> SpanId {
+                let id =
+                    self.span_counter.fetch_add(1, Ordering::Relaxed);
+                let span = cc_services::telemetry::HookSpan::start(
+                    hook_name.to_string(),
+                    self.handle.clone(),
+                );
+                self.active_hooks.lock().unwrap().insert(id, span);
+                id
+            }
+
+            fn end_hook(&self, span_id: SpanId, _result: &str) {
+                if let Some(mut span) =
+                    self.active_hooks.lock().unwrap().remove(&span_id)
+                {
+                    if _result == "error" {
+                        span.record_error("hook returned error");
+                    } else {
+                        span.finish();
+                    }
+                }
+            }
+        }
+
+        let bridge = EngineTelemetryBridge {
+            handle: telemetry_handle.clone(),
+            span_counter: AtomicU64::new(1),
+            active_spans: Mutex::new(std::collections::HashMap::new()),
+            active_hooks: Mutex::new(std::collections::HashMap::new()),
+        };
+        telemetry_bridge::install(Box::new(bridge));
+        info!("telemetry bridge installed");
+    }
+
+    let mut tools = registry::get_tools_for_active_session();
 
     // B.3c: Initialize skills (bundled/user/project + plugin)
     let plugin_skills = discover_plugin_skills_for_root();

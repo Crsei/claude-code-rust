@@ -66,5 +66,9 @@ pub fn backend_message_kind(message: &BackendMessage) -> &'static str {
         BackendMessage::AgentEvent { .. } => "agent_event",
         BackendMessage::TeamEvent { .. } => "team_event",
         BackendMessage::FileSearchResult { .. } => "file_search_result",
+        BackendMessage::Completions { .. } => "completions",
+        BackendMessage::PluginInstallProgress { .. } => "plugin_install_progress",
+        BackendMessage::TelemetryStatus { .. } => "telemetry_status",
+        BackendMessage::LspRecommendations { .. } => "lsp_recommendations",
     }
 }

@@ -57,13 +57,13 @@ pub(crate) fn install_command_runtime_providers() {
             register_plugin: cc_plugins::register_plugin,
             emit_event_external: emit_plugin_event_external_for_commands,
             uninstall_plugin: cc_plugins::uninstall_plugin,
-            // Marketplace / installation / validation — stub until Lane D
-            install_plugin: stub_install_plugin,
-            list_marketplace: stub_list_marketplace,
-            refresh_marketplace_cache: stub_refresh_marketplace_cache,
-            update_plugin: stub_update_plugin,
-            validate_plugin: stub_validate_plugin,
-            get_plugin_info: stub_get_plugin_info,
+            // Marketplace / installation / validation (Phase 2, Serial Integration Lane)
+            install_plugin: install_plugin_for_commands,
+            list_marketplace: list_marketplace_for_commands,
+            refresh_marketplace_cache: refresh_marketplace_cache_for_commands,
+            update_plugin: update_plugin_for_commands,
+            validate_plugin: validate_plugin_for_commands,
+            get_plugin_info: get_plugin_info_for_commands,
         },
     );
     cc_commands::reload_plugins_cmd::set_reload_plugins_runtime(
@@ -326,6 +326,39 @@ fn emit_plugin_event_external_for_commands(
             error,
         },
         PluginEvent::PluginList { .. } => return,
+        PluginEvent::Installed {
+            plugin_id,
+            name,
+            version,
+        } => cc_plugins::PluginSubsystemEvent::Installed {
+            plugin_id,
+            name,
+            version,
+        },
+        PluginEvent::Updated {
+            plugin_id,
+            name,
+            version,
+        } => cc_plugins::PluginSubsystemEvent::Updated {
+            plugin_id,
+            name,
+            old_version: "unknown".to_string(),
+            new_version: version,
+        },
+        PluginEvent::Uninstalled { plugin_id, name } => {
+            cc_plugins::PluginSubsystemEvent::Uninstalled { plugin_id, name }
+        }
+        PluginEvent::ValidationFailed {
+            plugin_id,
+            name,
+            errors,
+        } => cc_plugins::PluginSubsystemEvent::ValidationFailed {
+            plugin_id,
+            errors,
+        },
+        PluginEvent::ConfigChanged { plugin_id, name } => {
+            cc_plugins::PluginSubsystemEvent::ConfigChanged { plugin_id }
+        }
     };
     cc_plugins::emit_event_external(adapted);
 }
@@ -479,42 +512,129 @@ fn remote_stop_run_for_commands(
 }
 
 // ---------------------------------------------------------------------------
-// Stub functions for PluginCommandRuntime marketplace/installation extensions
-// These will be replaced by proper implementations from Lane D.
+// PluginCommandRuntime marketplace/installation implementations (Phase 2,
+// Serial Integration Lane) — replaces previous stubs with real wiring to
+// cc-plugins APIs.
 // ---------------------------------------------------------------------------
 
-fn stub_install_plugin(_source: &str, _version: Option<&str>) -> Result<String, anyhow::Error> {
-    Err(anyhow::anyhow!(
-        "Plugin installation is not yet implemented (Lane D in progress)"
+fn install_plugin_for_commands(
+    source: &str,
+    _version: Option<&str>,
+) -> Result<String, anyhow::Error> {
+    use std::collections::HashMap;
+
+    let engine_version = Some(env!("CARGO_PKG_VERSION"));
+    let available_plugins: HashMap<String, String> = HashMap::new();
+    let all_manifests: HashMap<String, cc_plugins::manifest::PluginManifest> = HashMap::new();
+
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
+    let result = rt
+        .block_on(cc_plugins::installation::install_plugin(
+            source,
+            None,
+            engine_version,
+            None,
+            &available_plugins,
+            &all_manifests,
+        ))
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    Ok(format!(
+        "Installed {} v{}",
+        result.plugin.name, result.plugin.version
     ))
 }
 
-fn stub_list_marketplace(_query: &str) -> Result<Vec<String>, anyhow::Error> {
-    Err(anyhow::anyhow!(
-        "Marketplace listing is not yet implemented (Lane D in progress)"
+fn list_marketplace_for_commands(_query: &str) -> Result<Vec<String>, anyhow::Error> {
+    let all = cc_plugins::marketplace::list_all_marketplaces();
+    if all.is_empty() {
+        // No marketplace entries cached yet; return empty list without error
+        // so the caller can distinguish "not implemented" from "nothing found".
+        return Ok(Vec::new());
+    }
+    let lines: Vec<String> = all
+        .iter()
+        .map(|entry| {
+            format!(
+                "{} v{} — {} ({})",
+                entry.name, entry.version, entry.description, entry.source_name
+            )
+        })
+        .collect();
+    Ok(lines)
+}
+
+fn refresh_marketplace_cache_for_commands() -> Result<String, anyhow::Error> {
+    // GLOBAL_MARKETPLACE_INDEX loads from known_marketplaces.json; the
+    // refresh itself is a no-op in the current phase (marketplace sources
+    // are static until Lane E integration).
+    let path = cc_plugins::marketplaces_dir().join("known_marketplaces.json");
+    let idx = &*cc_plugins::marketplace::GLOBAL_MARKETPLACE_INDEX;
+    if path.exists() {
+        idx.load_from_file(&path)?;
+        Ok("Marketplace cache refreshed".to_string())
+    } else {
+        Ok("No known marketplaces file found; cache is empty".to_string())
+    }
+}
+
+fn update_plugin_for_commands(plugin_id: &str) -> Result<String, anyhow::Error> {
+    use std::collections::HashMap;
+
+    let engine_version = Some(env!("CARGO_PKG_VERSION"));
+    let available_plugins: HashMap<String, String> = HashMap::new();
+    let all_manifests: HashMap<String, cc_plugins::manifest::PluginManifest> = HashMap::new();
+
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
+    let result = rt
+        .block_on(cc_plugins::installation::update_plugin(
+            plugin_id,
+            engine_version,
+            None,
+            &available_plugins,
+            &all_manifests,
+        ))
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    Ok(format!(
+        "Updated {} to v{}",
+        result.plugin.name, result.plugin.version
     ))
 }
 
-fn stub_refresh_marketplace_cache() -> Result<String, anyhow::Error> {
-    Err(anyhow::anyhow!(
-        "Marketplace cache refresh is not yet implemented (Lane D in progress)"
-    ))
+fn validate_plugin_for_commands(plugin_id: &str) -> Result<Vec<String>, anyhow::Error> {
+    let plugin = cc_plugins::find_plugin(plugin_id)
+        .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?;
+    let cache_path = plugin
+        .cache_path
+        .ok_or_else(|| anyhow::anyhow!("Plugin '{}' has no cache path", plugin_id))?;
+    let errors = cc_plugins::validation::PluginValidator::validate_plugin(&cache_path);
+    let messages: Vec<String> = errors
+        .iter()
+        .map(|e| format!("[{:?}] {}: {}", e.severity, e.field, e.message))
+        .collect();
+    if messages.is_empty() {
+        Ok(vec!["Plugin validation passed".to_string()])
+    } else {
+        Ok(messages)
+    }
 }
 
-fn stub_update_plugin(_plugin_id: &str) -> Result<String, anyhow::Error> {
-    Err(anyhow::anyhow!(
-        "Plugin update is not yet implemented (Lane D in progress)"
-    ))
-}
-
-fn stub_validate_plugin(_plugin_id: &str) -> Result<Vec<String>, anyhow::Error> {
-    Err(anyhow::anyhow!(
-        "Plugin validation is not yet implemented (Lane D in progress)"
-    ))
-}
-
-fn stub_get_plugin_info(_plugin_id: &str) -> Result<String, anyhow::Error> {
-    Err(anyhow::anyhow!(
-        "Plugin info is not yet implemented (Lane D in progress)"
-    ))
+fn get_plugin_info_for_commands(plugin_id: &str) -> Result<String, anyhow::Error> {
+    let plugin = cc_plugins::find_plugin(plugin_id)
+        .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?;
+    let info = serde_json::to_string_pretty(&serde_json::json!({
+        "id": plugin.id,
+        "name": plugin.name,
+        "version": plugin.version,
+        "description": plugin.description,
+        "status": format!("{:?}", plugin.status),
+        "source": format!("{:?}", plugin.source),
+        "marketplace": plugin.marketplace,
+        "tools": plugin.tools,
+        "skills": plugin.skills,
+        "mcp_servers": plugin.mcp_servers,
+        "installed_at": plugin.installed_at,
+    }))?;
+    Ok(info)
 }

@@ -232,6 +232,57 @@ pub(crate) async fn dispatch(
                 },
             );
         }
+
+        // ── Phase 2 integration (Serial Integration Lane) ──
+        // Stub handlers — fully wired in a follow-up pass.
+
+        FrontendMessage::RequestCompletions {
+            input,
+            cursor_pos,
+            request_id,
+        } => {
+            debug!(
+                "headless: request_completions id={} cursor={}",
+                request_id, cursor_pos
+            );
+            // TODO: route to CombinedCompleter
+            let _ = sink.send(&BackendMessage::Completions {
+                items: vec![],
+                request_id,
+            });
+        }
+
+        FrontendMessage::AcceptCompletion {
+            request_id,
+            index,
+        } => {
+            debug!(
+                "headless: accept_completion id={} index={}",
+                request_id, index
+            );
+            // TODO: emit CompletionProvided subsystem event
+        }
+
+        FrontendMessage::InstallRecommendedPlugin { plugin_id } => {
+            debug!("headless: install_recommended_plugin {}", plugin_id);
+            // TODO: route to cc_plugins::installation::install_plugin
+        }
+
+        FrontendMessage::RefreshPluginTelemetry => {
+            debug!("headless: refresh_plugin_telemetry");
+            // TODO: emit TelemetryFlush subsystem event
+        }
+
+        FrontendMessage::RequestLspRecommendations { language } => {
+            debug!(
+                "headless: request_lsp_recommendations lang={:?}",
+                language
+            );
+            // TODO: route to cc_lsp_service::generate_recommendations
+            let _ = sink.send(&BackendMessage::LspRecommendations {
+                recommendations: vec![],
+            });
+        }
     }
 
     true // continue loop
