@@ -1,3 +1,12 @@
+//! AbortController — pure utility, kept in `cc-utils`.
+//!
+//! Provides cooperative cancellation for async operations via `tokio::sync::watch`.
+//! Corresponds to Bun `src/utils/abortController.ts`.
+//!
+//! **Decision**: Keep in cc-utils. Pure utility with no domain dependencies.
+//! Currently has no external callers in the workspace, but is available as a
+//! reusable primitive for any crate that needs async cancellation.
+
 use parking_lot::Mutex;
 use tokio::sync::watch;
 

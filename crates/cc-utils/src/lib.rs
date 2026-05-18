@@ -6,9 +6,12 @@
 pub mod abort;
 pub mod bash;
 pub mod cwd;
-pub mod file_state_cache;
+// REMOVED: file_state_cache — duplicate of cc-tools::tool::FileStateCache.
+// All callers use cc-tools::tool::FileStateCache (HashMap+RwLock based).
+// The LRU-based version here had zero external callers.
 pub mod git;
 pub mod git_operation_tracking;
+pub mod hash;
 pub mod messages;
 pub mod shell;
 pub mod tokens;

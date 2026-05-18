@@ -1,6 +1,4 @@
 use std::cell::RefCell;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 
 use lru::LruCache;
@@ -20,9 +18,7 @@ thread_local! {
 }
 
 fn cache_key(text: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    text.hash(&mut hasher);
-    hasher.finish()
+    cc_utils::hash::hash_content(text.as_bytes())
 }
 
 // ---------------------------------------------------------------------------
