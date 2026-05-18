@@ -15,12 +15,15 @@ use cc_engine::types::tool::{
     InterruptBehavior, PermissionResult, Tool, ToolProgress, ToolResult, ToolUseContext,
     ValidationResult,
 };
+use cc_permissions::read_only_shell::is_read_only_powershell_command;
 use cc_sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
+use cc_shell_command::ReadOnlyResult;
 use cc_tools::exec::powershell as powershell_spec;
 use cc_types::message::AssistantMessage;
 use cc_utils::bash::resolve_timeout;
 use cc_utils::git_operation_tracking::track_git_operations_json;
-use cc_utils::shell::build_shell_env;
+
+use cc_shell_command::provider::{PowerShellProvider, ShellProvider};
 
 use super::bash::truncate_output;
 use super::powershell_parser;
@@ -44,15 +47,6 @@ impl PowerShellTool {
             .unwrap_or(120_000);
         (command, timeout_ms)
     }
-
-    /// Return the PowerShell executable name for the current platform.
-    fn powershell_executable() -> &'static str {
-        if cfg!(target_os = "windows") {
-            "powershell.exe"
-        } else {
-            "pwsh"
-        }
-    }
 }
 
 #[async_trait]
@@ -70,28 +64,19 @@ impl Tool for PowerShellTool {
     }
 
     fn is_enabled(&self) -> bool {
-        // On Windows, PowerShell is always available.
-        // On other platforms, check for pwsh.
-        if cfg!(target_os = "windows") {
-            true
-        } else {
-            // Best-effort check: see if pwsh is on PATH
-            std::process::Command::new("pwsh")
-                .arg("--version")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false)
-        }
+        PowerShellProvider::is_available()
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
         false
     }
 
-    fn is_read_only(&self, _input: &Value) -> bool {
-        false
+    fn is_read_only(&self, input: &Value) -> bool {
+        let command = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
+        matches!(
+            is_read_only_powershell_command(command),
+            ReadOnlyResult::ReadOnly
+        )
     }
 
     fn is_destructive(&self, _input: &Value) -> bool {
@@ -173,9 +158,9 @@ impl Tool for PowerShellTool {
         _parent_message: &AssistantMessage,
         _on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
     ) -> Result<ToolResult> {
-        let (command, timeout_ms) = Self::parse_input(&input);
+        let (raw_command, timeout_ms) = Self::parse_input(&input);
 
-        if command.is_empty() {
+        if raw_command.is_empty() {
             return Ok(ToolResult {
                 data: json!({ "error": "Command must not be empty" }),
                 new_messages: vec![],
@@ -183,15 +168,16 @@ impl Tool for PowerShellTool {
             });
         }
 
-        let exe = Self::powershell_executable();
-        let mut cmd = tokio::process::Command::new(exe);
-        cmd.arg("-NoProfile")
-            .arg("-NonInteractive")
-            .arg("-Command")
-            .arg(&command);
+        let provider = PowerShellProvider::new();
+        let command = provider.normalize_command(&raw_command);
+        let mut cmd = tokio::process::Command::new(provider.shell_path());
+        for arg in provider.exec_args() {
+            cmd.arg(arg);
+        }
+        cmd.arg(&command);
 
         // Inject shell environment (TERM, LANG, GIT_PAGER=cat, CLAUDE_CODE=1, etc.)
-        for (k, v) in build_shell_env() {
+        for (k, v) in provider.build_env() {
             cmd.env(&k, &v);
         }
 
@@ -209,7 +195,7 @@ impl Tool for PowerShellTool {
             false,
         );
 
-        if let Err(err) = preflight_shell_command(&policy, &command) {
+        if let Err(err) = preflight_shell_command(&policy, &raw_command) {
             return Ok(ToolResult {
                 data: json!({
                     "error": err.to_string(),
@@ -220,12 +206,12 @@ impl Tool for PowerShellTool {
             });
         }
 
-        let is_excluded = policy.is_excluded_command(&command);
+        let is_excluded = policy.is_excluded_command(&raw_command);
         if is_excluded && !policy.allow_unsandboxed_commands {
             return Ok(ToolResult {
                 data: json!({
                     "error": cc_sandbox::SandboxError::EscapeHatchDisabled {
-                        command: command.clone()
+                        command: raw_command.clone()
                     }
                     .to_string(),
                     "sandbox_blocked": true,
@@ -337,7 +323,7 @@ impl Tool for PowerShellTool {
                 }
 
                 let git_operations =
-                    track_git_operations_json(&command, exit_code, Some(&combined));
+                    track_git_operations_json(&raw_command, exit_code, Some(&combined));
                 let max_chars = self.max_result_size_chars();
                 combined = truncate_output(&combined, max_chars);
 
@@ -511,14 +497,21 @@ mod tests {
     }
 
     #[test]
-    fn test_powershell_not_read_only() {
+    fn test_powershell_read_only_safe_external_command() {
         let tool = PowerShellTool;
-        assert!(!tool.is_read_only(&json!({})));
+        assert!(tool.is_read_only(&json!({ "command": "git status" })));
+    }
+
+    #[test]
+    fn test_powershell_read_only_blocks_pipeline() {
+        let tool = PowerShellTool;
+        assert!(!tool.is_read_only(&json!({ "command": "git status | Select-Object -First 1" })));
     }
 
     #[test]
     fn test_powershell_executable_name() {
-        let exe = PowerShellTool::powershell_executable();
+        let provider = PowerShellProvider::new();
+        let exe = provider.shell_path();
         if cfg!(target_os = "windows") {
             assert_eq!(exe, "powershell.exe");
         } else {
