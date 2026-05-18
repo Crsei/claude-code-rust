@@ -19,12 +19,12 @@
 | 工具活动 | 完整状态机 + JSON 摘要 + styled compact line | 内联 React 渲染 | 4/5 | 输出预览仍是简单字符串 |
 | 差异（行级） | `similar` crate，带样式和词级高亮的缓冲区渲染 | 带 `StructuredDiff` 的 `diff` 模块 | 4/5 | 词级能力基础已补，复杂 diff 仍未完全 TS 对齐 |
 | 差异（结构化） | 完整代码块解析 + 行号 | `StructuredPatchHunk` 类型 | 4/5 | 结构上等价 |
-| 差异（对话框/文件列表） | 带分页的列表 + 详情视图 | 完整对话框组件 + 键盘导航 | 3/5 | 缺少颜色、差异中的语法高亮、交互式选择 |
+| 差异（对话框/文件列表） | `/diff` 来源切换 + 分页列表 + 详情视图 | 完整对话框组件 + 键盘导航 | 3/5 | 缺少颜色、差异语法高亮、PageUp/Down/详情滚动 |
 | 文件编辑差异 | 统计信息 + 结构化代码块 | 懒加载、Suspense、上下文感知的代码块调整 | 3/5 | 无异步加载、无上下文感知的代码块调整 |
 | 语法高亮 | feature-gated `syntect` fenced code highlighting | 基于 WASM 的 Shiki（`cliHighlight`） | 2/5 | 默认构建 fallback；差异主路径颜色保真不足 |
 | 虚拟滚动 | O(log n) 二分查找，宽度感知 | Ink 虚拟列表 | 4/5 | 成熟，有测试覆盖 |
 | 历史单元格 | 类型化枚举 + 提示/对话渲染 | 消息列表组件 | 3/5 | 简单字符串输出，无样式渲染 |
-| Git 差异获取 | `git2` 库原生绑定 | 调用 `git` CLI | 4/5 | 功能上等价 |
+| Git 差异获取 | `git2` raw helper + `/diff` 数据适配层 | 调用 `git` CLI | 4/5 | 无 CLI 回退；raw helper 信息较少 |
 
 ---
 
@@ -79,7 +79,7 @@ Rust Markdown 使用 `pulldown_cmark` 配合 LRU 缓存（256 条目），支持
 - **默认构建无语法高亮**——`syntect` feature 下已有 fenced code token 着色；默认构建仍使用单色 fallback。TS 为代码块使用懒加载的 WASM Shiki（`cliHighlight`）。
 - **无超链接**（OSC 8）——TS 将链接包装为可点击的终端超链接。Rust 将其渲染为纯下划线文本。
 - **无 GitHub Issue/PR 引用链接化**（`owner/repo#123`）。
-- **无列表嵌套**——Rust 仅支持带 `"  "` 缩进的单层列表。
+- **列表嵌套能力较基础**——Rust 使用 `list_stack` 提供缩进式嵌套，但没有 TS 侧更完整的列表格式化能力。
 - **无嵌套列表的有序列表字母/罗马数字编号**。
 - **无 `mailto:` 处理**——TS 跳过邮件链接的 OSC 8。
 - **无 `def`/`del`/`html` 令牌处理**（在 TS 中返回为空，在 Rust 中未处理）。
@@ -107,7 +107,7 @@ Rust Markdown 使用 `pulldown_cmark` 配合 LRU 缓存（256 条目），支持
 ### 与 TS 相比缺失的功能
 - **无命名主题切换**——TS 支持多个主题名称（例如 `"dark"`、`"light"`、`"tron"`），具有不同的调色板。Rust 有一个硬编码主题。
 - **无带自定义颜色的 `new()`**——`new()` 方法不接受参数；自定义需要使用结构体字面量构造。
-- **无 `unselected` 样式被使用**——已定义但仅在差异对话框渲染路径中出现 `selected`。
+- **主题样式覆盖仍不均匀**——`selected`/`unselected` 已被 command palette、permission overlay 等路径使用，但不少文本型渲染 helper 仍输出无主题样式字符串。
 - **无来自设置/配置的颜色覆盖**——TS 主题可以通过用户设置自定义。
 
 ### 影响
@@ -247,11 +247,11 @@ Rust 差异子系统是最完整的渲染领域，有多个反映 TS 组件结�
 - **结构化差异**：`StructuredDiffHunk` 带有头部解析、行级详情（旧/新行号、类型）、带截断的格式化输出 `render_structured_diff_hunks()`，以及可保留样式的 `render_structured_diff_hunks_styled()`。
 - **差异数据模型**：`DiffFile`、`DiffStats`、`DiffData` 类型匹配 TS `DiffData` 结构。支持 is_binary、is_large_file、is_truncated、is_untracked 标志。
 - **文件列表**：带 `MAX_VISIBLE_FILES=5` 的分页渲染，文件统计显示。
-- **差异对话框**：双模式（列表/详情）状态机，支持当前/轮次差异的 `DiffSource`。
+- **差异对话框**：双模式（列表/详情）状态机，支持多个 `DiffSource`；`/diff` command surface 已接入 Staged/Unstaged 来源切换、文件选择和详情视图。
 - **文件编辑差异**：使用 `TextDiff` 的 `unified_hunk_lines_from_edit()`、`file_edit_diff_stats()`、`format_file_edit_summary()`。
 - **Git 差异获取**：`get_git_diff()` 通过 `git2` 库支持已暂存、未暂存和组合模式。
 
-子模块死代码状态：`diff_detail_view`、`diff_dialog`、`diff_file_list` 被标记为 `#[allow(dead_code)]`。仅有 `file_edit_diff` 和 `structured_diff` 被活跃使用。
+`diff_detail_view`、`diff_file_list` 和 `DiffSource` 数据模型已经被 `/diff` command surface 活跃使用；`diff_dialog::render_diff_dialog_lines()` 仍主要作为文本快照/组合 helper 存在，而不是完整独立 overlay。
 
 ### 与 TS 相比缺失的功能
 - **词级差异仍是基础版**——Rust 已能处理相邻 `-/+` 行的词级高亮，但还没有 TS `StructuredDiff` 的完整字符级/语义级细节。
@@ -260,7 +260,7 @@ Rust 差异子系统是最完整的渲染领域，有多个反映 TS 组件结�
 - **无交互式键盘导航**——TS 差异对话框支持箭头键、Page Up/Down 进行文件选择。Rust 对话框是无输入处理的死代码状态机。
 - **无异步加载**——TS `FileEditToolDiff` 使用 `Suspense` + `use()` 进行懒加载差异计算，带占位渲染。Rust `file_edit_diff` 是同步的。
 - **无上下文感知的代码块调整**——TS `adjustHunkLineNumbers()` 在文件内容自差异生成后发生变化时调整代码块上下文。Rust 没有等价物。
-- **三个子模块为死代码**——`diff_detail_view`、`diff_dialog` 和 `diff_file_list` 可编译但未被使用。
+- **独立 diff dialog helper 未完全产品化**——`render_diff_dialog_lines()` 可用于组合快照，但实际 UI 通过 `CommandSurface::Diff` 和 `BetterViewPanel` 组装，尚不是 TS 那种完整 overlay 组件。
 
 ### 影响
 最显著的面向用户的影响已经从"完全没有词级 diff"收窄为"复杂 diff 和语法高亮保真不足"。三个死代码/弱接线子模块仍表明基于对话框的差异浏览体验（列表视图 -> 带键盘导航的详情视图）尚未完整接入 UI。
@@ -279,12 +279,12 @@ Rust 差异子系统是最完整的渲染领域，有多个反映 TS 组件结�
 ### Rust 完成度：4/5
 
 ### 当前状态
-使用 `git2` 库（libgit2 绑定）进行原生 Git 操作。支持三种模式：已暂存（HEAD 到索引）、未暂存（索引到工作目录）、组合（两者皆有，带章节标题）。有 `get_status_summary()` 返回格式化的 Git 状态输出，带标记（A/M/D/??/ M/ D）。
+使用 `git2` 库（libgit2 绑定）进行原生 Git 操作。`get_git_diff()` 支持三种 raw diff 模式：已暂存（HEAD 到索引）、未暂存（索引到工作目录）、组合（两者皆有，带章节标题）。有 `get_status_summary()` 返回格式化的 Git 状态输出，带标记（A/M/D/??/ M/ D）。`/diff` command surface 走单独的数据适配层，会从 `git2::Diff` 解析 `DiffStats`、文件列表、hunks 和 `is_untracked` 标志。
 
 ### 与 TS 相比缺失的功能
 - **无 `git diff` CLI 回退**——TS 调用 `git diff` CLI，可与任何 Git 版本配合使用。Rust 依赖 `git2` 库，可能不支持所有 Git 特性。
-- **检索层中无差异统计信息解析**——TS 从输出中解析差异统计信息。Rust 返回原始字符串，消费者必须自行解析。
-- **差异获取中无未追踪文件检测**——TS 单独处理未追踪文件；Rust 的 `get_git_diff` 仅包含已追踪的变更。
+- **raw `get_git_diff()` 无差异统计信息解析**——TS 从输出中解析差异统计信息。Rust 的 raw helper 返回原始字符串；`/diff` 适配层已通过 `diff.stats()` 解析统计信息。
+- **raw `get_git_diff()` 对未追踪文件展示有限**——`get_status_summary()` 和 `/diff` 数据适配层能看到未追踪文件；raw patch 字符串 helper 仍主要面向已存在 diff 内容。
 
 ### 影响
 常见情况下功能等价。`git2` 依赖比调用 shell 更可靠，但可能滞后于 Git CLI 的特性。
@@ -312,12 +312,12 @@ Rust 差异子系统是最完整的渲染领域，有多个反映 TS 组件结�
 - **全面的测试覆盖**：宽度变更重新计算、可视范围边界测试、失效测试。
 
 ### 与 TS 相比缺失的功能
-- **未直接与渲染管线集成**——`ensure_up_to_date()` 必须在渲染前手动调用。TS 虚拟滚动是一个透明管理此操作的 React 组件。
+- **集成方式较手动**——`App` 的 prompt/transcript 渲染路径已经调用 `ensure_up_to_date()`，`render_messages()` 使用 `visual_range()` 渲染可见消息；但与 TS React 组件相比，缓存更新仍由调用方显式管理。
 - **无焦点/选择追踪**——仅处理可见性，不处理哪个消息当前是"活跃的"。
-- **逻辑高度在可视渲染中未被使用**——`total_lines()` 和 `visible_range()`（逻辑）方法被标记为 `#[allow(dead_code)]`，表明领导者侧渲染器仅使用可视偏移。
+- **逻辑高度 helper 仍是兼容/诊断路径**——主渲染器已经使用可视偏移；`total_lines()` 和 `visible_range()`（逻辑）仍保留给旧调用或测试场景。
 
 ### 影响
-虚拟滚动实现成熟且经过良好测试。死代码方法表明渲染管线集成仍在进行中，但核心数据结构是可靠的。
+虚拟滚动实现成熟且经过良好测试，并已接入主消息渲染路径。剩余差距主要是 React 式封装、焦点/选择追踪，以及逻辑高度 helper 的历史兼容残留。
 
 ---
 
@@ -387,10 +387,10 @@ TS 实现通过 WASM 加载 Shiki（`cliHighlight.ts`），使用 `Suspense` 进
 ## 横切关注点
 
 ### 渲染管线集成
-Rust 渲染模块主要是纯函数或字符串生成器，而 TS 组件是与 Ink 渲染循环集成的 React 组件。`rendering/` 中的几个 Rust 模块似乎是工具库，而不是直接渲染的 UI 元素。差异对话框子模块（`#[allow(dead_code)]`）表明 UI 组装层尚未完成。
+Rust 渲染模块主要是纯函数或字符串生成器，而 TS 组件是与 Ink 渲染循环集成的 React 组件。`rendering/` 中的几个 Rust 模块仍是工具库形态，但虚拟滚动和 `/diff` 已经进入实际 UI 路径。差异体验的剩余问题不是完全未接线，而是 overlay 形态、样式层级、详情滚动和快捷键覆盖仍弱于 TS。
 
 ### 测试覆盖
-Rust 模块通常有单元测试（markdown、progress_bar、shimmer、tool_activity、structured_diff、virtual_scroll），有些使用 `insta` 进行快照测试。然而，与有多个快照文件的 TS 相比，没有针对组合 UI 的视觉回归测试。
+Rust 模块通常有单元测试（markdown、progress_bar、shimmer、tool_activity、structured_diff、virtual_scroll），有些使用 `insta` 进行快照测试。当前也已有 `runtime/visual_regression.rs` 覆盖 foundational / interactive UI surfaces。与 TS 相比，缺口更准确地说是缺少基于真实终端尺寸、颜色样式和交互序列的端到端视觉回归覆盖。
 
 ### 流式支持
 TS 有成熟的流式优化：
