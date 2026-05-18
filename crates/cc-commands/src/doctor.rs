@@ -18,7 +18,9 @@ use async_trait::async_trait;
 use crate::browser::{render_with_footer, shorten_path, TreeNode};
 use crate::{CommandContext, CommandHandler, CommandResult};
 use cc_auth::{try_resolve_auth, AuthMethod};
+use cc_config::mdm::{self as mdm_module};
 use cc_config::paths;
+use cc_config::permission_validation::{self};
 use cc_config::settings::{load_effective, SettingsSource};
 use cc_config::validation::{validate_settings, WarningSeverity};
 use cc_keybindings::action::Action;
@@ -128,6 +130,8 @@ impl DoctorReport {
             build_install_section(),
             build_auth_section(),
             build_settings_section(&ctx.cwd, ctx),
+            build_permission_rules_section(ctx),
+            build_managed_config_section(),
             build_mcp_section(&ctx.cwd),
             build_keybindings_section(ctx),
             build_sandbox_section(ctx),
@@ -369,6 +373,197 @@ fn build_settings_section(cwd: &Path, ctx: &CommandContext) -> Section {
 
     Section {
         name: "Settings".to_string(),
+        rows,
+    }
+}
+
+fn build_permission_rules_section(ctx: &CommandContext) -> Section {
+    let mut rows = Vec::new();
+
+    // Check for shadowed rules by loading managed settings and comparing.
+    match mdm_module::load_managed_settings_policy() {
+        Ok(config) if config.active => {
+            let managed_perms = config
+                .raw
+                .as_ref()
+                .and_then(|r| r.permissions.clone());
+            let shadowed = permission_validation::find_shadowed_rules(
+                &ctx.app_state.settings.permissions,
+                managed_perms.as_ref(),
+            );
+            if shadowed.is_empty() {
+                rows.push(Row::new(
+                    "shadowed rules",
+                    Status::Ok,
+                    "no permission rules shadowed by managed policy".to_string(),
+                ));
+            } else {
+                for rule in &shadowed {
+                    rows.push(Row::new(
+                        &rule.rule,
+                        Status::Warn,
+                        format!("shadowed by {} (source: {:?})", rule.shadowed_by, rule.source),
+                    ));
+                }
+            }
+        }
+        Ok(_) => {
+            rows.push(Row::new(
+                "managed policy",
+                Status::Info,
+                "no active managed policy — all sources have equal standing".to_string(),
+            ));
+        }
+        Err(e) => {
+            rows.push(Row::new(
+                "managed policy",
+                Status::Warn,
+                format!("could not load managed policy: {}", e),
+            ));
+        }
+    }
+
+    // Permission validation warnings.
+    let perm_validation = permission_validation::validate_permission_settings(
+        &ctx.app_state.settings.permissions,
+        &{
+            let sm = std::collections::BTreeMap::new();
+            sm
+        },
+    );
+    for w in &perm_validation {
+        let status = match w.severity {
+            WarningSeverity::Info => Status::Info,
+            WarningSeverity::Warning => Status::Warn,
+            WarningSeverity::Error => Status::Fail,
+        };
+        rows.push(Row::new(&w.field, status, w.message.clone()));
+    }
+
+    if rows.is_empty() || rows.iter().all(|r| matches!(r.status, Status::Ok | Status::Info)) {
+        if perm_validation.is_empty() {
+            rows.push(Row::new(
+                "permission validation",
+                Status::Ok,
+                "no permission validation warnings".to_string(),
+            ));
+        }
+    }
+
+    Section {
+        name: "Permission Rules".to_string(),
+        rows,
+    }
+}
+
+fn build_managed_config_section() -> Section {
+    let mut rows = Vec::new();
+
+    match mdm_module::load_managed_settings_policy() {
+        Ok(config) => {
+            if config.active {
+                rows.push(Row::new(
+                    "status",
+                    Status::Ok,
+                    "managed settings active".to_string(),
+                ));
+                rows.push(Row::new(
+                    "file path",
+                    Status::Info,
+                    shorten_path(&config.file_path),
+                ));
+
+                if config.enforcement_active {
+                    let level = match config.enforcement_level.level {
+                        mdm_module::Enforcement::Strict => "strict",
+                        mdm_module::Enforcement::WarningOnly => "warningOnly",
+                        mdm_module::Enforcement::AuditOnly => "auditOnly",
+                    };
+                    let overridable = if config.enforcement_level.overridable {
+                        "overridable"
+                    } else {
+                        "non-overridable"
+                    };
+                    rows.push(Row::new(
+                        "enforcement",
+                        Status::Warn,
+                        format!("{} ({})", level, overridable),
+                    ));
+                } else {
+                    rows.push(Row::new(
+                        "enforcement",
+                        Status::Info,
+                        "not active".to_string(),
+                    ));
+                }
+
+                // Show blocklist count if present.
+                if let Some(ref m) = config.managed {
+                    if let Some(ref blocklist) = m.blocklist {
+                        rows.push(Row::new(
+                            "blocklist",
+                            Status::Info,
+                            format!("{} entries", blocklist.len()),
+                        ));
+                    }
+                    if let Some(ref allowlist) = m.allowlist {
+                        rows.push(Row::new(
+                            "allowlist",
+                            Status::Info,
+                            format!("{} entries", allowlist.len()),
+                        ));
+                    }
+                    if let Some(ref policy) = m.policy {
+                        if policy.tool_execution_policy.is_some() {
+                            rows.push(Row::new(
+                                "tool policy",
+                                Status::Info,
+                                "configured".to_string(),
+                            ));
+                        }
+                        if policy.network_access_policy.is_some() {
+                            rows.push(Row::new(
+                                "network policy",
+                                Status::Info,
+                                "configured".to_string(),
+                            ));
+                        }
+                    }
+                }
+            } else {
+                rows.push(Row::new(
+                    "status",
+                    Status::Info,
+                    "no managed settings file".to_string(),
+                ));
+                rows.push(Row::new(
+                    "file path",
+                    Status::Info,
+                    shorten_path(&config.file_path),
+                ));
+            }
+
+            if let Ok(val) = std::env::var(mdm_module::CC_RUST_ENFORCE_POLICY) {
+                if val.eq_ignore_ascii_case("true") || val == "1" {
+                    rows.push(Row::new(
+                        "CC_RUST_ENFORCE_POLICY",
+                        Status::Warn,
+                        "set — policy enforcement forced via environment".to_string(),
+                    ));
+                }
+            }
+        }
+        Err(e) => {
+            rows.push(Row::new(
+                "status",
+                Status::Fail,
+                format!("error loading managed settings: {}", e),
+            ));
+        }
+    }
+
+    Section {
+        name: "Managed Configuration Overlays".to_string(),
         rows,
     }
 }

@@ -177,6 +177,9 @@ impl Tool for SkillTool {
                 // Inject skill prompt as a user message into the conversation
                 let skill_message = make_skill_message(&skill, args);
 
+                // Record skill usage
+                cc_skills::record_skill_usage(&skill.name);
+
                 debug!(
                     skill = %skill.name,
                     prompt_len = skill.prompt_body.len(),
@@ -254,19 +257,24 @@ impl Tool for SkillTool {
                 };
 
                 match crate::agent::fork::run_fork(params).await {
-                    Ok(outcome) => Ok(ToolResult {
-                        data: json!({
-                            "success": !outcome.had_error,
-                            "skill": skill.name,
-                            "context": "fork",
-                            "agent_id": outcome.agent_id,
-                            "duration_ms": outcome.duration_ms,
-                            "had_error": outcome.had_error,
-                            "text": outcome.text,
-                        }),
-                        new_messages: vec![],
-                        ..Default::default()
-                    }),
+                    Ok(outcome) => {
+                        // Record skill usage after successful fork execution
+                        cc_skills::record_skill_usage(&skill.name);
+
+                        Ok(ToolResult {
+                            data: json!({
+                                "success": !outcome.had_error,
+                                "skill": skill.name,
+                                "context": "fork",
+                                "agent_id": outcome.agent_id,
+                                "duration_ms": outcome.duration_ms,
+                                "had_error": outcome.had_error,
+                                "text": outcome.text,
+                            }),
+                            new_messages: vec![],
+                            ..Default::default()
+                        })
+                    }
                     Err(e) => Ok(ToolResult {
                         data: json!({
                             "success": false,

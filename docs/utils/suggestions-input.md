@@ -3,14 +3,14 @@
 对应: `claude-code-bun/src/utils/suggestions/` + `processUserInput/`
 
 Rust 对应: **部分落地，分散在 crates 中；尚无独立 `cc-suggestions` / `cc-completions` crate**
-最近核查: 2026-05-18
+最近核查: 2026-05-19
 
 ## 结论
 
 旧结论“完全缺失”已过时。Rust crates 已经应用了部分相关能力：
 
 - 命令解析与执行已落在 `cc-commands`、`cc-engine::input_processing`、Rust TUI、headless ingress。
-- Rust TUI 已有 `/` 命令面板、简单模糊匹配、参数提示、Ctrl+R 历史搜索、下一步 prompt suggestion 渲染。
+- Rust TUI 已有 `/` 命令面板、简单模糊匹配、参数提示、Ctrl+R prompt 历史搜索、下一步 prompt suggestion 渲染。
 - headless 协议已经有 `suggestions` 和 `search_files` 消息，`cc-services` 有 prompt suggestion 与文件内容搜索。
 - 技能系统已迁入 `cc-skills`，支持 frontmatter、user/model invocable、allowed tools、Skill tool 和 `/skills` 管理。
 
@@ -46,7 +46,7 @@ Rust 对应: **部分落地，分散在 crates 中；尚无独立 `cc-suggestion
 | Bun 能力 | Rust 当前位置 | 状态 | 主要差距 |
 |----------|---------------|------|----------|
 | 命令补全 | `crates/claude-code-rs/src/ui/command_palette/`, `ui/components/fuzzy_match.rs`, `cc-commands` | 部分应用 | 仅 Rust TUI 命令面板；无 `findMidInputSlashCommand`、inline ghost suffix、Fuse 权重、hidden exact 特例、技能使用排序、按 builtin/user/project/policy 分组 |
-| 目录/路径补全 | `crates/claude-code-rs/src/ui/input/file_search.rs`, `crates/cc-services/src/file_search.rs` | 相邻实现 | 当前是文件/内容搜索，不是输入 token 的 `getDirectoryCompletions` / `getPathCompletions`；无 LRU path cache、目录优先排序、`includeHidden/includeFiles` 选项接线 |
+| 目录/路径补全 | `crates/claude-code-rs/src/ui/input/file_search.rs`, `crates/cc-services/src/file_search.rs` | 相邻实现 | `ui/input/file_search.rs` 是未接非测试 runtime 的文件名搜索 helper；`cc-services/src/file_search.rs` 是 headless 内容搜索；两者都不是输入 token 的 `getDirectoryCompletions` / `getPathCompletions`；无 LRU path cache、目录优先排序、`includeHidden/includeFiles` 选项接线 |
 | Shell 历史补全 | `ui/runtime/persistent_history.rs`, `ui/components/history_search_dialog.rs`, `ui/app/input.rs` | 相邻实现 | 已有 Ctrl+R prompt history；没有专门读取 `!` 历史并返回 suffix 的 `getShellHistoryCompletion` |
 | Slack 频道补全 | `cc-daemon`/`gateway` 有 Slack webhook 与 channel 概念 | 未应用到输入建议 | 无 MCP `slack_search_channels` 查询、`#channel` token 定位、known channel cache、footer suggestions |
 | 技能使用追踪 | `cc-skills`, `cc-commands/src/skills_cmd.rs`, `cc-engine/src/skill_tool.rs` | 技能系统已落地，排序未落地 | 无 `skillUsage` 持久化、60s debounce、7 天半衰期分数，也未用于 `/` 命令建议排序 |
@@ -58,11 +58,11 @@ Rust 对应: **部分落地，分散在 crates 中；尚无独立 `cc-suggestion
 |----------|---------------|------|----------|
 | 中央输入路由 | `cc-engine/src/input_processing.rs`, `cc-engine/src/lifecycle/submit_message.rs` | 部分应用 | 只统一处理普通文本和已注册 slash command；TUI/headless 各自还有独立路由，未形成 Bun 式单入口 |
 | `UserPromptSubmit` Hook | `cc-engine/src/lifecycle/submit_message.rs` | 部分应用 | Rust 已能阻断 prompt；尚未等价处理 Bun 的 additional contexts、progress hook message、blocking attachment 形态 |
-| Slash command 执行 | `cc-commands/src/lib.rs`, `ui/tui/commands.rs`, `app_runtime_adapters/ingress.rs`, `cc-engine/src/command_runtime.rs` | 部分应用 | 内建命令和 alias 已接通；Bun 的 prompt command 动态技能 slash、local-jsx UI、forked command、plugin telemetry、unknown skill args 保留等仍不完整 |
+| Slash command 执行 | `cc-commands/src/lib.rs`, `ui/tui/commands.rs`, `app_runtime_adapters/ingress.rs`, `cc-engine/src/command_runtime.rs` | 部分应用 | 内建命令和 alias 已接通；`/skills` 是管理/详情入口，不是 user-invocable skill 的动态 `/skill-name` prompt command；Bun 的 prompt command 动态技能 slash、local-jsx UI、forked command、plugin telemetry、unknown skill args 保留等仍不完整 |
 | Bash input mode | 消息渲染有 `user_bash_input_message.rs` / `user_bash_output_message.rs` | 基本未接输入路由 | 没有 Bun `mode === "bash"` / input-box `!` 路由，也无 bash vs PowerShell 选择和 shell progress UI |
 | Text prompt | `cc-engine/src/input_processing.rs` | 部分应用 | 可创建普通 user message；缺少图片 content blocks、image paste ids、permissionMode 写入、prompt id、OTEL、否定/继续关键词统计 |
 | 附件/IDE 选择 | 多处 attachment 渲染与工具产生的 `Attachment` | 相邻实现 | 没有 Bun `getAttachmentMessages(input, ideSelection, ...)` 风格的输入前解析管线 |
-| 图片粘贴 | `ui/input/clipboard_paste.rs`, `ui/prompt_input.rs` | 相邻实现 | 有路径/大粘贴 UI 辅助；没有 Bun 的 pasted image store、resize/downsample、metadata meta-message 管线 |
+| 图片粘贴 | `ui/input/clipboard_paste.rs`, `ui/prompt_input.rs` | 辅助实现未接提交路径 | `clipboard_paste.rs` 有图片抓取/PNG 编码/路径归一化 helper，但当前没有非测试 runtime 调用；`prompt_input.rs` 只接文本 paste 和大粘贴 notice；没有 Bun 的 pasted image store、resize/downsample、metadata meta-message 管线 |
 
 ## 差距细节
 
@@ -83,7 +83,7 @@ Rust TUI 命令面板现在从 `cc_commands::get_all_commands()` 取命令，使
 
 Rust 有两类相邻能力：
 
-- `ui/input/file_search.rs`: ignore-aware 文件路径搜索，返回匹配文件。
+- `ui/input/file_search.rs`: ignore-aware 文件路径搜索 helper，返回匹配文件；当前核查未发现非测试 runtime 调用。
 - `cc-services/src/file_search.rs`: headless `SearchFiles`，用 `rg` 或 pure-Rust fallback 做内容搜索。
 
 它们都不是 Bun 的输入框路径补全。缺口是：
@@ -116,6 +116,23 @@ Rust 缺口：
 - 全局技能使用记录 schema。
 - invocation 时记录 user-invocable skill usage。
 - 命令面板空 query 和 fuzzy tie-break 使用该分数。
+
+## 主要缺失功能的 Rust 修改位置
+
+本节只列需要修改或新增的 Rust 位置，不表示这些改动都应一次完成。标注“新增”的文件当前不存在。
+
+| 缺失功能 | 需要修改/新增的位置 |
+|----------|---------------------|
+| 输入框级统一补全管线 | `crates/claude-code-rs/src/ui/input/completions.rs`（新增，若先放 TUI 内部）；或 `crates/cc-completions/src/lib.rs`（新增，若抽 workspace crate）；`crates/claude-code-rs/src/ui/prompt_input.rs` 接 ghost suffix / apply；`crates/claude-code-rs/src/ui/app/input.rs` 接触发、选择、Tab/Enter 行为；`crates/claude-code-rs/src/ui/app/render.rs` 接 footer/inline 渲染；如要支持 headless frontend，再扩 `crates/cc-ipc-protocol/src/protocol/mod.rs` 和 `crates/claude-code-rs/src/app_runtime_adapters/ingress.rs` |
+| 命令补全补齐 | `crates/claude-code-rs/src/ui/command_palette/filter.rs` 补 mid-input slash、hidden exact、alias 权重、分组排序；`crates/claude-code-rs/src/ui/command_palette/mod.rs` 补 apply/submit 语义；`crates/claude-code-rs/src/ui/command_palette/render.rs` 补分组/ghost 展示；`crates/claude-code-rs/src/ui/components/fuzzy_match.rs` 或新增 `crates/claude-code-rs/src/ui/input/command_completion.rs` 承接多字段权重；`crates/cc-commands/src/lib.rs` 保持命令 metadata 来源；若要动态 skill slash，需同时改 `crates/cc-commands/src/lib.rs` 或 `crates/cc-engine/src/input_processing.rs` 的解析入口 |
+| 目录/路径补全 | `crates/claude-code-rs/src/ui/input/path_completion.rs`（新增）实现 `parsePartialPath`、目录扫描、TTL/LRU、目录优先、hidden/files 选项；`crates/claude-code-rs/src/ui/app/input.rs` 和 `crates/claude-code-rs/src/ui/prompt_input.rs` 接输入 token 与应用补全；`crates/claude-code-rs/src/ui/app/render.rs` 接候选展示；如 headless frontend 也需要，则新增 `crates/cc-services/src/path_completion.rs`，并扩 `crates/cc-ipc-protocol/src/protocol/mod.rs`、`crates/claude-code-rs/src/app_runtime_adapters/ingress.rs` |
+| `!` shell 历史补全 | `crates/claude-code-rs/src/ui/input/shell_history_completion.rs`（新增）读取/缓存 `!` shell 命令历史并返回 suffix；`crates/claude-code-rs/src/ui/runtime/persistent_history.rs` 只能作为 prompt history 参考，不应混用；`crates/claude-code-rs/src/ui/app/input.rs`、`crates/claude-code-rs/src/ui/prompt_input.rs` 接 ghost suffix 和 cache 更新；若持久化 shell history，新增位置应放在 `crates/cc-services/src/shell_history.rs`（新增）或 `crates/cc-session/src/shell_history.rs`（新增） |
+| input-box `!` bash / PowerShell 路由 | `crates/claude-code-rs/src/ui/tui.rs` 目前只区分 slash command 与普通 prompt，需要在提交前识别 `!`；`crates/claude-code-rs/src/ui/tui/commands.rs` 可作为本地命令分流参考；`crates/cc-engine/src/input_processing.rs` 和 `crates/cc-engine/src/lifecycle/submit_message.rs` 需要补 shell input 分支，产出 `<bash-input>` / stdout / stderr 上下文；实际执行应复用 `crates/cc-engine/src/tools/exec/bash.rs` 与 `crates/cc-engine/src/tools/exec/powershell.rs`，进度继续走 `crates/cc-ipc-protocol/src/protocol/mod.rs` 的 `ToolProgress` |
+| Slack `#channel` 输入建议 | `crates/claude-code-rs/src/ui/input/slack_channel_completion.rs`（新增）做 token 定位、known-channel cache、footer suggestion；MCP 调用层应接 `crates/cc-mcp/src/client.rs` 的 tool call 能力，而不是只用 `crates/cc-mcp/src/channel.rs` 的通知解析；如要跨 headless frontend，扩 `crates/cc-ipc-protocol/src/protocol/mod.rs` 与 `crates/claude-code-rs/src/app_runtime_adapters/ingress.rs`；`crates/cc-daemon/src/channels.rs` 只是外部 channel 事件入口，不能替代 Slack 搜索补全 |
+| 技能使用频率排序 | `crates/cc-skills/src/usage.rs`（新增）定义 `skillUsage` schema、60s debounce、7 天半衰期分数；若沿用全局配置存储则同步扩 `crates/cc-config/src/settings.rs`；`crates/cc-skills/src/lib.rs` 暴露读写 API；`crates/cc-skills/src/invocation.rs` 与 `crates/cc-engine/src/skill_tool.rs` 记录 model/tool invocation；动态 user skill slash 落地后还要在 `crates/cc-commands/src/lib.rs` 或 `crates/cc-engine/src/input_processing.rs` 记录 user invocation；`crates/claude-code-rs/src/ui/command_palette/filter.rs` 与 `crates/claude-code-rs/src/ui/command_surface/surfaces/skills.rs` 使用分数排序 |
+| user-invocable skill 动态 `/skill-name` | `crates/cc-skills/src/lib.rs` 已有 `get_user_invocable_skills()`，但 `crates/cc-commands/src/lib.rs` 的 `parse_command_input_in()` 只查内建 registry；需要在 `crates/cc-engine/src/input_processing.rs` 或 `crates/cc-commands/src/lib.rs` 增加动态 skill command fallback；执行可复用 `crates/cc-skills/src/invocation.rs`，并在 `crates/cc-engine/src/skill_tool.rs` / fork runtime adapter 中共享 inline/fork 行为；TUI surface 需改 `crates/claude-code-rs/src/ui/command_surface/surfaces/skills.rs`，避免只提交 `/skills <name>` 详情命令 |
+| 图片/附件/IDE 选择输入预处理 | `crates/cc-engine/src/input_processing.rs` 目前只从文本构造普通 `UserMessage`，需要扩为 blocks/attachments 预处理；`crates/cc-engine/src/lifecycle/submit_message.rs` 需要把 hook、系统 prompt、transcript 与 blocks/attachments 串成同一 submit 管线；TUI 图片入口需接 `crates/claude-code-rs/src/ui/input/clipboard_paste.rs`、`crates/claude-code-rs/src/ui/prompt_input.rs`、`crates/claude-code-rs/src/ui/tui.rs`；headless 如要传图片/附件，需要扩 `crates/cc-ipc-protocol/src/protocol/mod.rs` 的 `SubmitPrompt` shape 与 `crates/claude-code-rs/src/app_runtime_adapters/ingress.rs`；IDE 选择应复用现有 IDE subsystem 位置 `crates/claude-code-rs/src/app_subsystem_handlers.rs` 与 `crates/cc-ipc-protocol/src/subsystem_events.rs` |
+| Bun 式中央 `processUserInput` | `crates/cc-engine/src/input_processing.rs` 是核心落点，但现在只是纯解析层；`crates/cc-engine/src/lifecycle/submit_message.rs` 已有 `UserPromptSubmit` hook 和 local command fast path，需继续收敛 TUI/headless 分叉；TUI 当前分流在 `crates/claude-code-rs/src/ui/tui.rs` + `crates/claude-code-rs/src/ui/tui/commands.rs`；headless 分流在 `crates/claude-code-rs/src/app_runtime_adapters/ingress.rs`；这些 call sites 都要改到同一输入处理 contract 上 |
 
 ## 建议迁移顺序
 

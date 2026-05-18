@@ -6,6 +6,7 @@
 pub mod bundled;
 pub mod invocation;
 pub mod loader;
+pub mod usage;
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -407,6 +408,51 @@ pub fn clear_skills() {
     REGISTRY.lock().clear();
     REGISTRY_DIAGNOSTICS.lock().clear();
     REGISTRY_REVISION.fetch_add(1, Ordering::SeqCst);
+}
+
+// ---------------------------------------------------------------------------
+// Global skill usage tracker
+// ---------------------------------------------------------------------------
+
+/// Global runtime usage tracker for skills.
+///
+/// Tracks invocation counts and rolling usage scores with decay across
+/// process lifetime. Persistence is the caller's responsibility.
+pub static SKILL_USAGE: LazyLock<Mutex<usage::SkillUsageTracker>> =
+    LazyLock::new(|| Mutex::new(usage::SkillUsageTracker::new()));
+
+/// Record a skill invocation in the global usage tracker.
+///
+/// Debounced: repeated calls within 30 seconds for the same skill are ignored.
+pub fn record_skill_usage(name: &str) {
+    let mut guard = SKILL_USAGE.lock();
+    guard.record_invocation(name);
+}
+
+/// Get the current usage score for a skill from the global tracker.
+pub fn skill_usage_score(name: &str) -> f64 {
+    let guard = SKILL_USAGE.lock();
+    guard.usage_score(name)
+}
+
+/// Get all ranked skill usage data from the global tracker.
+pub fn ranked_skill_usage() -> Vec<usage::SkillUsageData> {
+    let guard = SKILL_USAGE.lock();
+    guard.ranked_skills()
+}
+
+/// Persist the global skill usage tracker to a JSON file.
+pub fn save_skill_usage(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let guard = SKILL_USAGE.lock();
+    guard.save(path)
+}
+
+/// Load skill usage data from a JSON file into the global tracker.
+pub fn load_skill_usage(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let loaded = usage::SkillUsageTracker::load(path)?;
+    let mut guard = SKILL_USAGE.lock();
+    *guard = loaded;
+    Ok(())
 }
 
 /// Initialize the skill system: bundled + user + project skills.

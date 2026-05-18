@@ -65,6 +65,9 @@ cc-shell-command = { workspace = true }
 
 [features]
 default = []
+# Telemetry is a pass-through flag exposed so higher crates can
+# gate telemetry-dependent code. Actual telemetry deps live in
+# cc-services and are enabled from the root crate (claude-code-rs).
 telemetry = []
 
 [dev-dependencies]

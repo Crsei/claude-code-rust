@@ -23,6 +23,7 @@ pub mod daemon_cmd;
 pub mod diff;
 pub mod doctor;
 pub mod dream;
+pub mod dynamic_registry;
 pub mod effort;
 pub mod exit;
 pub mod experimental;
@@ -51,6 +52,7 @@ pub mod permissions_cmd;
 pub mod plan;
 pub mod plan_workflow;
 pub mod plugin_cmd;
+pub mod plugin_commands;
 pub mod rate_limit;
 pub mod recap;
 pub mod reload_plugins_cmd;
@@ -78,6 +80,7 @@ pub mod version;
 pub mod voice_cmd;
 
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -535,6 +538,33 @@ pub fn sort_commands_for_display(commands: &mut [Command]) {
         (_, "init") => std::cmp::Ordering::Greater,
         _ => a.name.cmp(&b.name),
     });
+}
+
+/// Global dynamic command registry shared across the application.
+///
+/// This registry stores dynamically-registered commands from user, project,
+/// plugin, and skill sources alongside builtin commands.
+pub static DYNAMIC_REGISTRY: LazyLock<parking_lot::Mutex<dynamic_registry::DynamicRegistry>> =
+    LazyLock::new(|| parking_lot::Mutex::new(dynamic_registry::DynamicRegistry::new()));
+
+/// Get merged command metadata from both builtin commands and the dynamic
+/// registry. This is the primary lookup source for command resolution.
+pub fn get_dynamic_metadata() -> Vec<CommandMetadata> {
+    let mut metadata = command_metadata(&get_all_commands());
+
+    let registry = DYNAMIC_REGISTRY.lock();
+    for entry in registry.list_all() {
+        // Avoid adding entries that shadow builtin with the same name
+        if !metadata.iter().any(|m| m.name == entry.name) {
+            metadata.push(CommandMetadata {
+                name: entry.name.clone(),
+                aliases: entry.aliases.clone(),
+                description: entry.description.clone(),
+            });
+        }
+    }
+
+    metadata
 }
 
 pub fn command_metadata(commands: &[Command]) -> Vec<CommandMetadata> {

@@ -28,9 +28,15 @@
 
 pub mod context;
 pub mod event;
+pub mod perfetto;
+pub mod session_tracing;
 pub mod sink;
 
 // Re-export primary types for ergonomic use
 pub use context::{AuditContext, AuditEmitInput};
 pub use event::{AuditEvent, AuditLevel, EventKind, Outcome, SessionMeta, Stage};
+pub use session_tracing::SessionTracingBridge;
 pub use sink::{AuditConfig, AuditSink};
+
+#[cfg(feature = "telemetry")]
+pub use session_tracing::TelemetrySink;

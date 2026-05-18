@@ -9,4 +9,6 @@ pub mod prompt_suggestion;
 pub mod scheduler;
 pub mod session_analytics;
 pub mod session_memory;
+#[cfg(feature = "telemetry")]
+pub mod telemetry;
 pub mod tool_use_summary;

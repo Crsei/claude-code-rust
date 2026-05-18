@@ -53,7 +53,7 @@ impl CommandHandler for SkillsHandler {
 
         let all = cc_skills::get_all_skills();
 
-        if !arg.is_empty() && arg != "list" {
+        if !arg.is_empty() && arg != "list" && !arg.starts_with("--sort") {
             if let Some(skill) = all
                 .iter()
                 .find(|s| s.name == arg || s.display_name() == arg)
@@ -75,20 +75,71 @@ impl CommandHandler for SkillsHandler {
             ));
         }
 
+        // Determine sort mode
+        let sort_mode = parse_sort_arg(arg);
+
+        let usage_data = cc_skills::ranked_skill_usage();
+        let usage_by_name: std::collections::HashMap<&str, f64> = usage_data
+            .iter()
+            .map(|d| (d.name.as_str(), d.rolling_score))
+            .collect();
+
+        // Collect and sort skills
+        let mut sorted_skills: Vec<&cc_skills::SkillDefinition> = all.iter().collect();
+        match sort_mode {
+            SortMode::Name => {
+                sorted_skills.sort_by(|a, b| a.display_name().cmp(b.display_name()));
+            }
+            SortMode::Source => {
+                sorted_skills.sort_by(|a, b| {
+                    source_sort_key(&a.source)
+                        .cmp(&source_sort_key(&b.source))
+                        .then_with(|| a.display_name().cmp(b.display_name()))
+                });
+            }
+            SortMode::Usage => {
+                sorted_skills.sort_by(|a, b| {
+                    let a_score = usage_by_name.get(a.name.as_str()).copied().unwrap_or(0.0);
+                    let b_score = usage_by_name.get(b.name.as_str()).copied().unwrap_or(0.0);
+                    b_score
+                        .partial_cmp(&a_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.display_name().cmp(b.display_name()))
+                });
+            }
+        }
+
         let mut lines = Vec::new();
         lines.push(format!("Available Skills ({} total)", all.len()));
         lines.push(format!(
             "Registry revision: {}",
             cc_skills::registry_revision()
         ));
-        lines.push("-".repeat(50));
 
-        for skill in &all {
+        // Show sort mode indicator
+        let sort_hint = match sort_mode {
+            SortMode::Name => "sorted by name",
+            SortMode::Source => "sorted by source",
+            SortMode::Usage => "sorted by usage",
+        };
+        lines.push(format!("({})", sort_hint));
+        lines.push("-".repeat(60));
+
+        for skill in &sorted_skills {
+            let usage_score = usage_by_name
+                .get(skill.name.as_str())
+                .copied()
+                .unwrap_or(0.0);
+            let invocability = invocability_tag(skill);
+            let score_str = format_score(usage_score);
+
             lines.push(format!(
-                "  {} {}@{} -- {}",
+                "  {} {}{} {}@{} -- {}",
                 source_tag(&skill.source),
+                invocability,
                 skill.display_name(),
                 skill.effective_version(),
+                score_str,
                 skill.frontmatter.description
             ));
         }
@@ -97,6 +148,7 @@ impl CommandHandler for SkillsHandler {
         lines.push("Use /skills <name> for details on a specific skill.".to_string());
         lines.push("Use /skills reload to hot-reload skill packages.".to_string());
         lines.push("Use /skills diagnostics to show validation diagnostics.".to_string());
+        lines.push("Use /skills --sort <name|source|usage> to change sort order.".to_string());
 
         Ok(CommandResult::Output(lines.join("\n")))
     }
@@ -129,6 +181,61 @@ fn source_tag(source: &cc_skills::SkillSource) -> &'static str {
         cc_skills::SkillSource::Project => "[project]",
         cc_skills::SkillSource::Plugin(_) => "[plugin]",
         cc_skills::SkillSource::Mcp(_) => "[mcp]",
+    }
+}
+
+fn source_sort_key(source: &cc_skills::SkillSource) -> u8 {
+    match source {
+        cc_skills::SkillSource::Bundled => 0,
+        cc_skills::SkillSource::User => 1,
+        cc_skills::SkillSource::Project => 2,
+        cc_skills::SkillSource::Plugin(_) => 3,
+        cc_skills::SkillSource::Mcp(_) => 4,
+    }
+}
+
+fn invocability_tag(skill: &cc_skills::SkillDefinition) -> &'static str {
+    match (skill.is_user_invocable(), skill.is_model_invocable()) {
+        (true, false) => "(user) ",
+        (false, true) => "(model) ",
+        (true, true) => "(both) ",
+        (false, false) => "",
+    }
+}
+
+fn format_score(score: f64) -> String {
+    if score < 0.01 {
+        String::new()
+    } else if score < 0.1 {
+        format!("score={:.3}", score)
+    } else if score < 1.0 {
+        format!("score={:.2}", score)
+    } else {
+        "score=1.0".to_string()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SortMode {
+    Name,
+    Source,
+    Usage,
+}
+
+fn parse_sort_arg(args: &str) -> SortMode {
+    let trimmed = args.trim();
+    if let Some(sort_val) = trimmed.strip_prefix("--sort ") {
+        match sort_val.trim() {
+            "source" => return SortMode::Source,
+            "usage" => return SortMode::Usage,
+            _ => return SortMode::Name,
+        }
+    }
+    if trimmed == "list" || trimmed.is_empty() {
+        SortMode::Name
+    } else {
+        // If it's a specific skill name, the caller already handled it above
+        SortMode::Name
     }
 }
 

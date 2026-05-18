@@ -21,6 +21,7 @@ use async_trait::async_trait;
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 use cc_config::settings;
+use cc_config::permission_validation;
 use cc_engine::types::tool::{PermissionMode, ToolPermissionContext};
 use cc_permissions::dangerous::{
     set_permission_mode_with_auto_mode_safety, strip_dangerous_permissions_for_active_auto_mode,
@@ -188,6 +189,9 @@ fn handle_show(ctx: &CommandContext) -> Result<CommandResult> {
 
     render_auto_mode_stripped_rules(perm, &mut lines);
 
+    // Check for shadowed rules from managed policy.
+    append_shadowed_rules(ctx, &mut lines);
+
     Ok(CommandResult::Output(lines.join("\n")))
 }
 
@@ -259,6 +263,37 @@ fn format_auto_mode_transition(transition: &AutoModeRuntimeTransition) -> String
         ));
     }
     format!("\nAuto mode safety: {}.", parts.join("; "))
+}
+
+/// Append shadowed permission rules from managed policy to the display.
+fn append_shadowed_rules(ctx: &CommandContext, lines: &mut Vec<String>) {
+    let managed_perms = match cc_config::mdm::load_managed_settings_policy() {
+        Ok(config) => config
+            .raw
+            .as_ref()
+            .and_then(|r| r.permissions.clone()),
+        Err(_) => return,
+    };
+
+    let shadowed = permission_validation::find_shadowed_rules(
+        &ctx.app_state.settings.permissions,
+        managed_perms.as_ref(),
+    );
+
+    if shadowed.is_empty() {
+        return;
+    }
+
+    lines.push(String::new());
+    lines.push("  Shadowed rules (overridden by managed policy):".into());
+    for rule in &shadowed {
+        lines.push(format!(
+            "    {:<40} shadowed by {}",
+            rule.rule, rule.shadowed_by
+        ));
+    }
+    lines.push(String::new());
+    lines.push("  (Shadowed rules will not be enforced as written.)".into());
 }
 
 // ---------------------------------------------------------------------------
