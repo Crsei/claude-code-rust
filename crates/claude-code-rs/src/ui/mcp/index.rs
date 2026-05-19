@@ -4,6 +4,7 @@
 pub enum McpServerKind {
     Stdio,
     Remote,
+    #[cfg(test)]
     Agent,
 }
 
@@ -12,6 +13,7 @@ impl McpServerKind {
         match self {
             McpServerKind::Stdio => "stdio",
             McpServerKind::Remote => "remote",
+            #[cfg(test)]
             McpServerKind::Agent => "agent",
         }
     }

@@ -1,6 +1,7 @@
 use ratatui::style::{Color, Modifier, Style};
 
 /// Named theme variants.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThemeKind {
     Dark,
@@ -8,6 +9,7 @@ pub enum ThemeKind {
     Tron,
 }
 
+#[cfg(test)]
 impl ThemeKind {
     pub fn build(self) -> Theme {
         match self {
@@ -90,8 +92,10 @@ pub struct Theme {
     /// Style for unselected items in dialogs.
     pub unselected: Style,
     /// Style for the filled portion of a progress bar.
+    #[cfg(test)]
     pub progress_fill: Style,
     /// Style for the empty portion of a progress bar.
+    #[cfg(test)]
     pub progress_empty: Style,
 }
 
@@ -158,7 +162,9 @@ impl Default for Theme {
                 .bg(Color::Rgb(100, 200, 255))
                 .add_modifier(Modifier::BOLD),
             unselected: Style::default().fg(Color::Rgb(200, 200, 200)),
+            #[cfg(test)]
             progress_fill: Style::default().fg(Color::Rgb(100, 220, 100)),
+            #[cfg(test)]
             progress_empty: Style::default().fg(Color::Rgb(60, 60, 60)),
         }
     }
@@ -166,16 +172,19 @@ impl Default for Theme {
 
 impl Theme {
     /// Create a theme with default colors (dark theme).
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Create a theme from a named variant.
+    #[cfg(test)]
     pub fn named(kind: ThemeKind) -> Self {
         kind.build()
     }
 }
 
+#[cfg(test)]
 fn light_theme() -> Theme {
     let mut t = Theme::default();
     t.assistant_name = Style::default()
@@ -217,6 +226,7 @@ fn light_theme() -> Theme {
     t
 }
 
+#[cfg(test)]
 fn tron_theme() -> Theme {
     let mut t = Theme::default();
     t.assistant_name = Style::default()

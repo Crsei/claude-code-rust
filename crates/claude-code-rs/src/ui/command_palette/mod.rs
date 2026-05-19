@@ -40,9 +40,6 @@ pub struct CommandItem {
     pub edit_targets: Vec<EditTarget>,
     /// Source group for grouping display (populated by filter).
     pub source_group: Option<&'static str>,
-    /// Usage score for tie-breaking and display.
-    #[allow(dead_code)]
-    pub usage_score: f64,
 }
 
 impl CommandPalette {
@@ -131,7 +128,7 @@ impl CommandPalette {
     ///
     /// If `should_execute` is true and the command has no arguments, submit it
     /// directly instead of inserting into the prompt.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn apply_command_suggestion(
         &self,
         _item: &CommandItem,
@@ -281,7 +278,7 @@ impl Default for CommandPalette {
 }
 
 /// Action to take when applying a command suggestion.
-#[allow(dead_code)]
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub enum CommandAction {
     /// Insert the command text into the prompt.

@@ -95,6 +95,7 @@ impl App {
 
     /// Shared handle to the status-line runner. `/statusline` calls this
     /// to inspect / reset the runner without owning the App.
+    #[cfg(test)]
     pub fn status_line_runner(&self) -> StatusLineRunner {
         self.status_line_runner.clone()
     }

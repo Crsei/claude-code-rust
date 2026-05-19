@@ -1,4 +1,3 @@
 //! MCP UI utility helpers.
-
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod reconnect_helpers;

@@ -8,8 +8,6 @@
 //! Dialog instances live inside an [`OverlayStack`] which manages z-ordering
 //! and event routing.
 
-#![allow(dead_code)]
-
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::style::Style;
 use ratatui::text::Line;

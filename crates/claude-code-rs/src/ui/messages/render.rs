@@ -234,6 +234,7 @@ pub(crate) fn render_single_message_for_layout<'a>(
 /// Render a single message into one or more `Line`s.
 ///
 /// `pub(super)` so that `virtual_scroll` can call it for height measurement.
+#[cfg(test)]
 pub(in crate::ui) fn render_single_message<'a>(msg: &Message, theme: &Theme) -> Vec<Line<'a>> {
     render_single_message_with_context(msg, 0, theme, 80, &MessageRenderContext::default())
 }
@@ -937,6 +938,7 @@ fn render_attachment_message<'a>(
 
 /// Create an abbreviated string representation of a JSON value, capped at
 /// `max_chars` characters.
+#[cfg(test)]
 fn abbreviate_json(value: &serde_json::Value, max_chars: usize) -> String {
     let full = match serde_json::to_string(value) {
         Ok(s) => s,
@@ -951,6 +953,7 @@ fn abbreviate_json(value: &serde_json::Value, max_chars: usize) -> String {
     }
 }
 
+#[cfg(test)]
 fn tool_input_summary(name: &str, input: &serde_json::Value, max_chars: usize) -> String {
     if let Some(primary) = tool_primary_input(name, input) {
         let json = abbreviate_json(input, max_chars);

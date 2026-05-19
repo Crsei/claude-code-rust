@@ -6,8 +6,6 @@
 //! modal), configurable horizontal padding, and top margin.  Callers provide
 //! the content rows; Pane surrounds them with the appropriate visual framing.
 
-#![allow(dead_code)]
-
 use ratatui::text::Line;
 
 use crate::ui::divider::Divider;

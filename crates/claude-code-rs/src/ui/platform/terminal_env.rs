@@ -49,6 +49,7 @@ impl Default for TerminalEnvConfig {
 impl TerminalEnvConfig {
     /// The TUI runner honors the mouse-capture env flags when deciding
     /// whether to enable crossterm mouse capture.
+    #[cfg(test)]
     pub const DISABLE_MOUSE_RUNTIME_SUPPORTED: bool = true;
     /// Default scroll speed when no override is set. Exposed publicly
     /// so `/terminal-setup` / tests can surface the same number that
@@ -119,6 +120,7 @@ impl TerminalEnvConfig {
 /// Transcript export in the current TUI launches the env var as a single
 /// executable path, so values that also include arguments are diagnostic-only
 /// for now.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditorCommand {
     pub raw: String,
@@ -126,6 +128,7 @@ pub struct EditorCommand {
     pub arguments: Option<String>,
 }
 
+#[cfg(test)]
 impl EditorCommand {
     pub fn has_arguments(&self) -> bool {
         self.arguments
@@ -141,6 +144,7 @@ impl EditorCommand {
 /// Parse an external-editor env var into `program` plus an optional argument
 /// suffix. Quoted executable paths with spaces are treated as a single
 /// program.
+#[cfg(test)]
 pub fn parse_editor_command(raw: &str) -> Option<EditorCommand> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {

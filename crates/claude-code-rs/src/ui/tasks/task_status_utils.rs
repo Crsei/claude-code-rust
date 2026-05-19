@@ -1,7 +1,11 @@
 //! Shared task status formatting helpers.
 
-use super::{TaskKind, TaskState, TaskStatus};
-use crate::ui::progress_bar::{ProgressBar, render_progress_bar};
+use super::{TaskKind, TaskState};
+#[cfg(test)]
+use super::TaskStatus;
+#[cfg(test)]
+use crate::ui::progress_bar::{render_progress_bar, ProgressBar};
+#[cfg(test)]
 use crate::ui::theme::ThemeColors;
 
 pub fn state_label(state: TaskState) -> &'static str {
@@ -34,6 +38,7 @@ pub fn format_elapsed(ms: u64) -> String {
     }
 }
 
+#[cfg(test)]
 pub fn progress_bar(task: &TaskStatus, width: usize) -> String {
     let Some((done, total)) = task.progress else {
         return render_progress_bar(0.0, width);
@@ -51,6 +56,7 @@ pub fn progress_bar(task: &TaskStatus, width: usize) -> String {
 ///
 /// Uses the new `ProgressBar` widget with the provided theme colors.
 /// The progress bar uses accent color for the filled portion.
+#[cfg(test)]
 pub fn progress_bar_styled(
     task: &TaskStatus,
     width: usize,
@@ -66,6 +72,7 @@ pub fn progress_bar_styled(
     ProgressBar::new(ratio, width).render(colors)
 }
 
+#[cfg(test)]
 pub fn progress_detail(task: &TaskStatus) -> String {
     let Some((done, total)) = task.progress else {
         return "no progress reported".to_string();
@@ -80,6 +87,7 @@ pub fn progress_detail(task: &TaskStatus) -> String {
     format!("{capped}/{total} steps ({percent:.0}%)")
 }
 
+#[cfg(test)]
 pub fn task_header(task: &TaskStatus) -> String {
     format!(
         "{} [{}] {} {}",

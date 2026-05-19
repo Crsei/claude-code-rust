@@ -2,8 +2,6 @@
 //!
 //! Mirrors the upstream TypeScript `ThemedText.tsx` design-system component.
 
-#![allow(dead_code)]
-
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 

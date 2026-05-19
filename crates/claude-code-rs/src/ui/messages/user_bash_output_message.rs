@@ -1,5 +1,6 @@
 //! Rust-side helper for bash output messages.
 
+#[cfg(test)]
 use crate::ui::theme::Theme;
 use unicode_width::UnicodeWidthChar;
 
@@ -32,6 +33,7 @@ impl Default for ShellOutputRenderOptions {
     }
 }
 
+#[cfg(test)]
 pub fn render_user_bash_output_message(command: &str, output: &str, _theme: &Theme) -> String {
     let options = ShellOutputRenderOptions::default();
     render_user_bash_output_message_with_options(command, output, options)

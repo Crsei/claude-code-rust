@@ -9,6 +9,7 @@ pub struct SkillMenuItem {
 }
 
 impl SkillMenuItem {
+    #[cfg(test)]
     pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -19,6 +20,7 @@ impl SkillMenuItem {
     }
 }
 
+#[cfg(test)]
 pub fn render_skills_menu(items: &[SkillMenuItem], selected_index: usize, filter: &str) -> String {
     let filter_lc = filter.to_ascii_lowercase();
     let visible = items

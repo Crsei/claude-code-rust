@@ -30,6 +30,7 @@ pub enum ThemeName {
 
 impl ThemeName {
     /// All known variants in display order.
+    #[cfg(test)]
     pub const ALL: &[Self] = &[
         Self::Dark,
         Self::Light,
@@ -39,6 +40,7 @@ impl ThemeName {
         Self::DarkAnsi,
     ];
 
+    #[cfg(test)]
     pub fn label(&self) -> &'static str {
         match self {
             Self::Dark => "Dark",
@@ -50,10 +52,12 @@ impl ThemeName {
         }
     }
 
+    #[cfg(test)]
     pub fn is_dark(&self) -> bool {
         matches!(self, Self::Dark | Self::DarkDaltonized | Self::DarkAnsi)
     }
 
+    #[cfg(test)]
     pub fn as_settings_value(&self) -> &'static str {
         match self {
             Self::Dark => "dark",
@@ -117,6 +121,7 @@ impl ThemeSetting {
         }
     }
 
+    #[cfg(test)]
     pub fn as_settings_value(&self) -> &'static str {
         match self {
             Self::Auto => "auto",
@@ -135,7 +140,7 @@ impl ThemeSetting {
 /// (`theme-types.ts`).  Fields use the canonical upstream name so that the
 /// mapping is obvious.
 #[derive(Debug, Clone)]
-#[allow(non_snake_case, dead_code)]
+#[allow(non_snake_case)]
 pub struct ThemeColors {
     // -- Core palette --
     pub accent: Color,
@@ -491,6 +496,7 @@ pub fn get_theme(name: &ThemeName) -> &'static ThemeColors {
 /// Wraps the current `ThemeName` and caches the resolved `ThemeColors` pointer.
 /// Attach one instance to `App` and pass `&ThemeColors` to render functions.
 pub struct ThemeProvider {
+    #[cfg(test)]
     setting: ThemeSetting,
     current: ThemeName,
 }
@@ -502,13 +508,18 @@ impl ThemeProvider {
     }
 
     /// Create a provider with an explicit starting theme.
+    #[cfg(test)]
     pub fn with_name(name: ThemeName) -> Self {
         Self::from_setting(ThemeSetting::Named(name))
     }
 
     pub fn from_setting(setting: ThemeSetting) -> Self {
         let current = setting.resolved_name();
-        Self { setting, current }
+        Self {
+            #[cfg(test)]
+            setting,
+            current,
+        }
     }
 
     pub fn from_setting_str(value: Option<&str>) -> Self {
@@ -523,10 +534,12 @@ impl ThemeProvider {
     }
 
     /// The current `ThemeName`.
+    #[cfg(test)]
     pub fn name(&self) -> &ThemeName {
         &self.current
     }
 
+    #[cfg(test)]
     pub fn setting(&self) -> &ThemeSetting {
         &self.setting
     }
@@ -541,15 +554,18 @@ impl ThemeProvider {
     }
 
     /// Switch to a different theme.
+    #[cfg(test)]
     pub fn set_theme(&mut self, name: ThemeName) {
         self.set_setting(ThemeSetting::Named(name));
     }
 
+    #[cfg(test)]
     pub fn set_setting(&mut self, setting: ThemeSetting) {
         self.current = setting.resolved_name();
         self.setting = setting;
     }
 
+    #[cfg(test)]
     pub fn refresh_auto(&mut self) {
         if matches!(self.setting, ThemeSetting::Auto) {
             self.current = self.setting.resolved_name();
@@ -557,6 +573,7 @@ impl ThemeProvider {
     }
 
     /// Iterate over all theme names (for selection UIs).
+    #[cfg(test)]
     pub fn all_themes() -> &'static [ThemeName] {
         ThemeName::ALL
     }
@@ -574,18 +591,21 @@ pub use super::rendering_theme::Theme;
 
 impl Theme {
     pub fn from_design_colors(colors: &ThemeColors) -> Self {
+        let theme_color =
+            |key: &str, fallback: Color| color::resolve_color(key, colors).unwrap_or(fallback);
+
         Self {
             assistant_name: Style::default()
-                .fg(colors.accent)
+                .fg(theme_color("accent", colors.accent))
                 .add_modifier(Modifier::BOLD),
             user_name: Style::default()
-                .fg(colors.suggestion)
+                .fg(theme_color("suggestion", colors.suggestion))
                 .add_modifier(Modifier::BOLD),
             system_name: Style::default()
-                .fg(colors.dim)
+                .fg(theme_color("dim", colors.dim))
                 .add_modifier(Modifier::ITALIC),
             tool_name: Style::default()
-                .fg(colors.code)
+                .fg(theme_color("code", colors.code))
                 .add_modifier(Modifier::BOLD),
             tool_result: Style::default().fg(colors.diffContext),
             error: Style::default()
@@ -635,8 +655,12 @@ impl Theme {
                 .bg(colors.selection)
                 .add_modifier(Modifier::BOLD),
             unselected: Style::default().fg(colors.inactiveText),
-            progress_fill: Style::default().fg(colors.success),
-            progress_empty: Style::default().fg(colors.inactive),
+            #[cfg(test)]
+            progress_fill: Style::default()
+                .fg(color::resolve_color("success", colors).unwrap_or(colors.success)),
+            #[cfg(test)]
+            progress_empty: Style::default()
+                .fg(color::resolve_color("inactive", colors).unwrap_or(colors.inactive)),
         }
     }
 }
@@ -645,6 +669,7 @@ pub fn load_theme_setting() -> Result<ThemeSetting, String> {
     read_theme_setting_from_path(&cc_config::settings::user_settings_path())
 }
 
+#[cfg(test)]
 pub fn save_theme_setting(setting: &ThemeSetting) -> Result<(), String> {
     write_theme_setting_to_path(&cc_config::settings::user_settings_path(), setting)
 }
@@ -665,6 +690,7 @@ fn read_theme_setting_from_path(path: &Path) -> Result<ThemeSetting, String> {
     ))
 }
 
+#[cfg(test)]
 fn write_theme_setting_to_path(path: &Path, setting: &ThemeSetting) -> Result<(), String> {
     let mut value = if path.exists() {
         let content = std::fs::read_to_string(path)

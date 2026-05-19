@@ -4,8 +4,6 @@
 //! ThemedBox resolves theme colour keys for border and background, then
 //! delegates the visual framing to [`Pane`](crate::ui::components::pane::Pane).
 
-#![allow(dead_code)]
-
 use ratatui::style::Style;
 use ratatui::text::Line;
 

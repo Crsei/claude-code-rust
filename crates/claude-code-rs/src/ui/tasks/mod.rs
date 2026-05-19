@@ -1,32 +1,30 @@
 //! Rust-side background task UI surfaces.
-
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod async_agent_detail_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod background_task;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod background_task_status;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod background_tasks_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod dream_detail_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod in_process_teammate_detail_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod monitor_mcp_detail_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod remote_session_detail_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod remote_session_progress;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod render_tool_activity;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod shell_detail_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod shell_progress;
-#[allow(dead_code)]
 pub mod task_status_utils;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod workflow_detail_dialog;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +60,7 @@ pub struct TaskStatus {
 }
 
 impl TaskStatus {
+    #[cfg(test)]
     pub fn new(id: impl Into<String>, title: impl Into<String>, kind: TaskKind) -> Self {
         Self {
             id: id.into(),

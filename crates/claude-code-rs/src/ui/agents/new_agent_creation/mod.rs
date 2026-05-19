@@ -1,10 +1,7 @@
 //! State model for the Rust-side create-agent wizard.
 
 use super::types::{AgentMemoryScope, AgentSource};
-
-#[allow(dead_code)]
 pub mod create_agent_wizard;
-#[allow(dead_code)]
 pub mod wizard_steps;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -129,6 +129,7 @@ impl AgentNavigationState {
             .map(AgentThreadEntry::label)
     }
 
+    #[cfg(test)]
     pub fn render_agent_tree(&self, current_thread_id: &str) -> String {
         let ordered = self.ordered_threads();
         if ordered.is_empty() {
@@ -156,6 +157,7 @@ impl AgentNavigationState {
     }
 }
 
+#[cfg(test)]
 fn short_thread_id(thread_id: &str) -> &str {
     thread_id.get(..8).unwrap_or(thread_id)
 }

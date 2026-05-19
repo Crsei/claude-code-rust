@@ -1,7 +1,5 @@
 //! Semantic status icon with Unicode glyphs and theme-aware colours.
 
-#![allow(dead_code)]
-
 use ratatui::style::Style;
 use ratatui::text::Span;
 

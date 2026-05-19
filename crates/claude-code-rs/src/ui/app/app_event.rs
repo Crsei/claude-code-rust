@@ -10,16 +10,20 @@ pub enum AppEvent {
     Backend {
         message: Box<BackendMessage>,
     },
+    #[cfg(test)]
     LocalNotice {
         message: String,
     },
+    #[cfg(test)]
     Notification {
         key: String,
         message: String,
         level: String,
         timeout_ms: Option<u64>,
     },
+    #[cfg(test)]
     Tick,
+    #[cfg(test)]
     Shutdown,
 }
 

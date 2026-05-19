@@ -146,7 +146,7 @@ impl VirtualScroll {
     }
 
     /// Total rendered line count across all messages.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn total_lines(&self) -> usize {
         self.offsets.last().copied().unwrap_or(0)
     }
@@ -160,7 +160,7 @@ impl VirtualScroll {
 
     /// Compute the visible message index range `[start, end)` for the given
     /// scroll offset and viewport height.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn visible_range(&self, scroll_offset: usize, viewport_height: usize) -> (usize, usize) {
         visible_range_in_offsets(
             &self.offsets,
@@ -186,7 +186,7 @@ impl VirtualScroll {
     }
 
     /// Wrapped visual line count for a single cached message.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn visual_height_of(&self, index: usize) -> usize {
         self.visual_heights.get(index).copied().unwrap_or(0)
     }
@@ -238,7 +238,7 @@ fn rendered_line_width(line: &Line<'_>) -> usize {
 
 impl VirtualScroll {
     /// Line offset of message `index` in the global logical line space.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn offset_of(&self, index: usize) -> usize {
         self.offsets.get(index).copied().unwrap_or(0)
     }

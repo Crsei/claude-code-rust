@@ -1,6 +1,4 @@
 //! Rust-side LSP recommendation UI surfaces.
-
-#[allow(dead_code)]
 pub mod lsp_recommendation_menu;
 
 #[cfg(test)]

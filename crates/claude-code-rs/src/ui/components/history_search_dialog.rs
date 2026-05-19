@@ -64,6 +64,7 @@ struct HistorySearchItem {
 }
 
 impl HistorySearchDialog {
+    #[cfg(test)]
     pub fn loading(initial_query: impl Into<String>, _now_secs: i64) -> Self {
         Self {
             items: None,
@@ -91,6 +92,7 @@ impl HistorySearchDialog {
         dialog
     }
 
+    #[cfg(test)]
     pub fn query(&self) -> &str {
         &self.query
     }

@@ -1,19 +1,18 @@
 pub mod agent_navigation;
 mod agent_tree_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod app_backtrack;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod app_command;
-#[allow(dead_code)]
 pub mod app_event;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod app_event_sender;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod app_server_adapter;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod app_server_requests;
 mod input;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod loaded_threads;
 mod render;
 pub mod status;
@@ -334,6 +333,7 @@ impl App {
         &self.messages
     }
 
+    #[cfg(test)]
     pub fn selected_message(&self) -> Option<usize> {
         self.selected_message
     }
@@ -379,6 +379,7 @@ impl App {
         self.dirty = true;
     }
 
+    #[cfg(test)]
     pub fn dismiss_permission_dialog(&mut self) {
         self.permission_dialog = None;
         self.dirty = true;
@@ -472,6 +473,7 @@ impl App {
 
     /// Current view mode; tests and the TUI key binding use this to
     /// verify Ctrl+O cycling.
+    #[cfg(test)]
     pub fn view_mode(&self) -> ViewMode {
         self.view_mode
     }
@@ -501,16 +503,19 @@ impl App {
         self.dirty = true;
     }
 
+    #[cfg(test)]
     pub fn command_surface_active(&self) -> bool {
         self.command_surface.is_some()
     }
 
+    #[cfg(test)]
     pub fn history_search_active(&self) -> bool {
         self.history_search_dialog.is_some()
     }
 
     /// Current transcript state exposed read-only so tests can assert
     /// search invariants without going through the render path.
+    #[cfg(test)]
     pub fn transcript_state(&self) -> &TranscriptState {
         &self.transcript_state
     }
@@ -533,6 +538,7 @@ impl App {
 
     pub fn handle_app_event(&mut self, event: AppEvent) {
         match event {
+            #[cfg(test)]
             AppEvent::Notification {
                 key,
                 message,
@@ -541,6 +547,7 @@ impl App {
             } => {
                 self.add_notification(notification_from_app_event(key, message, level, timeout_ms));
             }
+            #[cfg(test)]
             AppEvent::LocalNotice { message } => {
                 self.add_notification(
                     InAppNotification::new("local-notice", NotificationPriority::Medium, message)
@@ -548,7 +555,9 @@ impl App {
                         .with_fold(true),
                 );
             }
+            #[cfg(test)]
             AppEvent::Tick => self.tick(),
+            #[cfg(test)]
             AppEvent::Shutdown => {
                 self.should_quit = true;
                 self.dirty = true;
@@ -770,6 +779,7 @@ impl App {
         self.notifications.current()
     }
 
+    #[cfg(test)]
     pub fn clear_suggestions(&mut self) {
         if self.suggestions.is_some() {
             self.suggestions = None;
@@ -777,6 +787,7 @@ impl App {
         }
     }
 
+    #[cfg(test)]
     pub fn suggestions(&self) -> Option<&[PromptSuggestion]> {
         self.suggestions.as_deref()
     }

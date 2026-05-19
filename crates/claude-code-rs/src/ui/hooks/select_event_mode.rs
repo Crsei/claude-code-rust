@@ -24,6 +24,7 @@ impl HookEvent {
         }
     }
 
+    #[cfg(test)]
     pub fn description(self) -> &'static str {
         match self {
             HookEvent::PreToolUse => "Before a tool executes",
@@ -47,6 +48,7 @@ pub const HOOK_EVENTS: &[HookEvent] = &[
     HookEvent::WorktreeRemove,
 ];
 
+#[cfg(test)]
 pub fn render_select_event_mode(selected: HookEvent) -> String {
     let mut lines = vec!["Select hook event".to_string()];
     for event in HOOK_EVENTS {

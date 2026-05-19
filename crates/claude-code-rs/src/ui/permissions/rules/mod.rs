@@ -1,20 +1,17 @@
 //! Permission rule management surfaces.
-
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod add_permission_rules;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod add_workspace_directory;
-#[allow(dead_code)]
 pub mod permission_rule_description;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod permission_rule_input;
-#[allow(dead_code)]
 pub mod permission_rule_list;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod recent_denials_tab;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod remove_workspace_directory;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod workspace_tab;
 
 use crate::ui::permissions::utils::{PermissionDecision, PermissionScope};
@@ -43,12 +40,14 @@ impl PermissionRule {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceDirectory {
     pub path: String,
     pub trusted: bool,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecentDenial {
     pub tool_name: String,

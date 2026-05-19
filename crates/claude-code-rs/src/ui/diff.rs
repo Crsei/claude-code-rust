@@ -1,10 +1,7 @@
 // BEGIN generated upstream diff modules
 // Rust-side diff modules mirrored from upstream React components.
-#[allow(dead_code)]
 pub mod diff_detail_view;
-#[allow(dead_code)]
 pub mod diff_dialog;
-#[allow(dead_code)]
 pub mod diff_file_list;
 pub mod file_edit_diff;
 pub mod structured_diff;
@@ -12,12 +9,17 @@ pub mod structured_diff;
 
 use std::collections::HashMap;
 
+#[cfg(test)]
 use ratatui::buffer::Buffer;
+#[cfg(test)]
 use ratatui::layout::Rect;
-use ratatui::text::{Line, Span};
+#[cfg(test)]
+use ratatui::text::Line;
+use ratatui::text::Span;
 use similar::{ChangeTag, TextDiff};
 use unicode_width::UnicodeWidthChar;
 
+#[cfg(test)]
 use self::structured_diff::{parse_structured_hunks, StructuredDiffHunk};
 use super::theme::Theme;
 
@@ -99,6 +101,7 @@ impl DiffData {
         self.hunks.get(path).map_or(&[], |hunks| hunks.as_slice())
     }
 
+    #[cfg(test)]
     pub fn structured_hunks_for_path(&self, path: &str) -> Vec<StructuredDiffHunk> {
         parse_structured_hunks(self.hunks_for_path(path))
     }
@@ -136,6 +139,7 @@ pub(crate) fn truncate_by_width(text: &str, max_width: usize) -> String {
     out
 }
 
+#[cfg(test)]
 /// A single line from a unified diff.
 #[derive(Debug, Clone)]
 pub struct DiffLine {
@@ -145,6 +149,7 @@ pub struct DiffLine {
     pub content: String,
 }
 
+#[cfg(test)]
 /// Compute a line-level diff between `old` and `new` and return a list of
 /// [`DiffLine`] entries.
 pub fn format_diff_lines(old: &str, new: &str) -> Vec<DiffLine> {
@@ -161,6 +166,7 @@ pub fn format_diff_lines(old: &str, new: &str) -> Vec<DiffLine> {
     lines
 }
 
+#[cfg(test)]
 /// Render a unified diff between `old` and `new` into the given buffer area.
 ///
 /// Each line is prefixed with `+`, `-`, or a space and colored accordingly.
@@ -315,6 +321,7 @@ pub fn render_diff(old: &str, new: &str, area: Rect, buf: &mut Buffer, theme: &T
     }
 }
 
+#[cfg(test)]
 fn build_diff_line(
     line_no_spans: Vec<Span<'static>>,
     prefix: &str,
@@ -333,6 +340,7 @@ fn build_diff_line(
     Line::from(spans)
 }
 
+#[cfg(test)]
 fn truncate_spans_by_width(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Span<'static>> {
     if max_width == 0 {
         return Vec::new();

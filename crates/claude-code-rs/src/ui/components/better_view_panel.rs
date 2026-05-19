@@ -118,6 +118,7 @@ pub fn plain_row(label: impl AsRef<str>, detail: impl AsRef<str>) -> String {
     }
 }
 
+#[cfg(test)]
 pub fn key_value_row(key: impl AsRef<str>, value: impl AsRef<str>) -> String {
     format!("{:<24} {}", key.as_ref(), value.as_ref())
 }

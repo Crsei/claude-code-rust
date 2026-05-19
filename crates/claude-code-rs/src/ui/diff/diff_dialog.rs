@@ -1,6 +1,10 @@
+#[cfg(test)]
 use super::diff_detail_view::render_diff_detail_view_lines;
+#[cfg(test)]
 use super::diff_file_list::render_diff_file_list_lines;
-use super::{DiffData, DiffFile, DiffStats};
+use super::DiffData;
+#[cfg(test)]
+use super::{DiffFile, DiffStats};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffDialogMode {
@@ -30,6 +34,7 @@ impl DiffSource {
     }
 }
 
+#[cfg(test)]
 fn pluralize(count: usize, singular: &str) -> &str {
     if count == 1 {
         singular
@@ -38,6 +43,7 @@ fn pluralize(count: usize, singular: &str) -> &str {
     }
 }
 
+#[cfg(test)]
 fn stats_line(stats: Option<&DiffStats>) -> String {
     match stats {
         Some(stats) => {
@@ -58,6 +64,7 @@ fn stats_line(stats: Option<&DiffStats>) -> String {
     }
 }
 
+#[cfg(test)]
 fn source_selector(sources: &[DiffSource], source_index: usize) -> Vec<String> {
     if sources.len() <= 1 {
         return Vec::new();
@@ -79,6 +86,7 @@ fn source_selector(sources: &[DiffSource], source_index: usize) -> Vec<String> {
     }
 }
 
+#[cfg(test)]
 fn empty_message(data: &DiffData) -> &str {
     if data.loading {
         "Loading diff..."
@@ -97,6 +105,7 @@ fn empty_message(data: &DiffData) -> &str {
     }
 }
 
+#[cfg(test)]
 fn list_mode_lines(data: &DiffData, selected_index: usize, width: usize) -> Vec<String> {
     if data.files.is_empty() {
         return vec![empty_message(data).to_string()];
@@ -104,6 +113,7 @@ fn list_mode_lines(data: &DiffData, selected_index: usize, width: usize) -> Vec<
     render_diff_file_list_lines(&data.files, selected_index, width)
 }
 
+#[cfg(test)]
 fn detail_mode_lines(
     selected_file: Option<&DiffFile>,
     data: &DiffData,
@@ -116,6 +126,7 @@ fn detail_mode_lines(
     render_diff_detail_view_lines(file, hunks, width)
 }
 
+#[cfg(test)]
 fn help_line(view_mode: DiffDialogMode, has_sources: bool) -> String {
     match view_mode {
         DiffDialogMode::List => {
@@ -129,6 +140,7 @@ fn help_line(view_mode: DiffDialogMode, has_sources: bool) -> String {
     }
 }
 
+#[cfg(test)]
 fn clamp_index(idx: usize, files: &[DiffFile]) -> usize {
     if files.is_empty() {
         0
@@ -138,6 +150,7 @@ fn clamp_index(idx: usize, files: &[DiffFile]) -> usize {
 }
 
 /// Render a full dialog-like text snapshot for diff list/detail composition.
+#[cfg(test)]
 pub fn render_diff_dialog_lines(
     title: &str,
     subtitle: Option<&str>,

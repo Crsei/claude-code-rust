@@ -2,6 +2,7 @@
 
 use cc_skills::SkillDefinition;
 
+#[cfg(test)]
 pub(crate) const SKILL_NAME_TRUNCATE_LEN: usize = 21;
 
 pub(crate) fn skill_display_name(skill: &SkillDefinition) -> &str {
@@ -17,6 +18,7 @@ pub(crate) fn skill_description(skill: &SkillDefinition) -> &str {
     skill.frontmatter.description.as_str()
 }
 
+#[cfg(test)]
 pub(crate) fn truncate_skill_name(name: &str) -> String {
     let count = name.chars().count();
     if count <= SKILL_NAME_TRUNCATE_LEN {
@@ -30,6 +32,7 @@ pub(crate) fn truncate_skill_name(name: &str) -> String {
     out
 }
 
+#[cfg(test)]
 pub(crate) fn match_skill(skill: &SkillDefinition, query: &str) -> bool {
     let query = query.trim().to_ascii_lowercase();
     if query.is_empty() {

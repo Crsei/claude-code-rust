@@ -1,8 +1,6 @@
 //! Rust-side team UI surfaces.
-
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod team_status;
-#[allow(dead_code)]
 pub mod teams_dialog;
 
 #[cfg(test)]

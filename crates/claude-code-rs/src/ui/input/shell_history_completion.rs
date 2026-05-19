@@ -74,6 +74,7 @@ impl ShellHistoryCompletionProvider {
     }
 
     /// Set custom history file paths (for testing).
+    #[cfg(test)]
     pub fn with_paths(paths: Vec<PathBuf>) -> Self {
         Self {
             cache: Vec::new(),
@@ -156,6 +157,7 @@ impl ShellHistoryCompletionProvider {
     }
 
     /// Update cache after a shell command execution (called externally).
+    #[cfg(test)]
     pub fn notify_command_executed(&mut self, _command: &str) {
         // Invalidate cache so next access re-reads history files
         self.cached_at = None;
@@ -163,10 +165,6 @@ impl ShellHistoryCompletionProvider {
 }
 
 impl CompletionProvider for ShellHistoryCompletionProvider {
-    fn name(&self) -> &'static str {
-        "shell-history"
-    }
-
     fn compute(&self, ctx: &CompletionContext) -> Vec<CompletionItem> {
         let (range, query) = match Self::find_bang_prefix(ctx.input, ctx.cursor_pos) {
             Some(result) => result,

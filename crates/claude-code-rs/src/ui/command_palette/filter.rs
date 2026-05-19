@@ -8,40 +8,33 @@ use super::metadata::command_meta;
 use super::CommandItem;
 
 /// Source category for grouping in the UI.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CommandGroup {
-    RecentlyUsed,
     Builtin,
     User,
     Project,
     Plugin,
     Skill,
-    Policy,
 }
 
 impl CommandGroup {
     pub fn label(&self) -> &'static str {
         match self {
-            CommandGroup::RecentlyUsed => "Recently Used",
             CommandGroup::Builtin => "Builtin",
             CommandGroup::User => "User",
             CommandGroup::Project => "Project",
             CommandGroup::Plugin => "Plugin",
             CommandGroup::Skill => "Skill",
-            CommandGroup::Policy => "Policy",
         }
     }
 
     pub fn priority(&self) -> u8 {
         match self {
-            CommandGroup::RecentlyUsed => 100,
             CommandGroup::Builtin => 80,
             CommandGroup::User => 60,
             CommandGroup::Project => 50,
             CommandGroup::Plugin => 40,
             CommandGroup::Skill => 30,
-            CommandGroup::Policy => 20,
         }
     }
 }
@@ -95,12 +88,10 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
 
         let source_weight = match group {
             CommandGroup::Builtin => 0,
-            CommandGroup::RecentlyUsed => 1,
-            CommandGroup::User => 2,
-            CommandGroup::Project => 3,
-            CommandGroup::Plugin => 4,
-            CommandGroup::Skill => 5,
-            CommandGroup::Policy => 6,
+            CommandGroup::User => 1,
+            CommandGroup::Project => 2,
+            CommandGroup::Plugin => 3,
+            CommandGroup::Skill => 4,
         };
 
         scored.push((
@@ -114,7 +105,6 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
                     aliases: cmd.aliases,
                     description: cmd.description,
                     source_group: None,
-                    usage_score: usage,
                 },
                 group,
                 score: matched.score,
@@ -175,7 +165,6 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
                     aliases: entry.aliases.clone(),
                     description: entry.description.clone(),
                     source_group: Some(group.label()),
-                    usage_score: usage,
                 },
                 group,
                 score: effective_score,
@@ -273,7 +262,6 @@ fn command_item_for_name(name: &str, cwd: &Path) -> Option<CommandItem> {
                 aliases: cmd.aliases,
                 description: cmd.description,
                 source_group: None,
-                usage_score: 0.0,
             }
         })
 }
@@ -292,7 +280,7 @@ pub(super) fn command_from_argument_input(input: &str, cwd: &Path) -> Option<Com
 ///
 /// Given input like `look at /help for docs` with cursor at position 14,
 /// this returns the `/help` command.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn find_mid_input_slash_command(
     input: &str,
     cursor_pos: usize,

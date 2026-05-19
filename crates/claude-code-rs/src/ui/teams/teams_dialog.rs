@@ -33,6 +33,7 @@ pub struct TeamSummary {
     pub teammates: Vec<TeammateStatus>,
 }
 
+#[cfg(test)]
 pub fn render_teams_dialog(team: &TeamSummary, selected_index: usize) -> String {
     let mut lines = vec![format!("Team: {}", team.name)];
     if team.teammates.is_empty() {

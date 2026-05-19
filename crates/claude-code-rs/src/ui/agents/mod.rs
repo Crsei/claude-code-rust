@@ -1,32 +1,25 @@
 //! Rust-side agent management surfaces mirrored from upstream agents.
-
-#[allow(dead_code)]
 pub mod agent_detail;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod agent_editor;
-#[allow(dead_code)]
 pub mod agent_file_utils;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod agent_navigation_footer;
-#[allow(dead_code)]
 pub mod agents_list;
-#[allow(dead_code)]
 pub mod agents_menu;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod color_picker;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod generate_agent;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod model_selector;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod new_agent_creation;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod tool_selector;
-#[allow(dead_code)]
 pub mod types;
-#[allow(dead_code)]
 pub mod utils;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod validate_agent;
 
 #[cfg(test)]

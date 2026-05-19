@@ -1,26 +1,38 @@
 //! Tool activity and progress rendering.
 
+#[cfg(test)]
 use ratatui::text::{Line, Span};
 
+#[cfg(test)]
 use super::progress_bar::{render_progress_bar, render_styled_progress_bar};
+#[cfg(test)]
 use super::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolState {
+    #[cfg(test)]
     Queued,
     Running,
+    #[cfg(test)]
     Succeeded,
+    #[cfg(test)]
     Failed,
+    #[cfg(test)]
     Cancelled,
 }
 
 impl ToolState {
+    #[cfg(test)]
     pub fn label(self) -> &'static str {
         match self {
+            #[cfg(test)]
             ToolState::Queued => "queued",
             ToolState::Running => "running",
+            #[cfg(test)]
             ToolState::Succeeded => "succeeded",
+            #[cfg(test)]
             ToolState::Failed => "failed",
+            #[cfg(test)]
             ToolState::Cancelled => "cancelled",
         }
     }
@@ -41,6 +53,7 @@ pub struct ToolActivity {
 }
 
 impl ToolActivity {
+    #[cfg(test)]
     pub fn new(name: impl Into<String>, state: ToolState) -> Self {
         Self {
             name: name.into(),
@@ -72,6 +85,7 @@ impl ToolActivity {
         }
     }
 
+    #[cfg(test)]
     pub fn compact_line(&self) -> String {
         let mut parts = vec![
             format!("[{}]", self.state.label()),
@@ -103,14 +117,19 @@ impl ToolActivity {
     /// Render a theme-styled compact line for display in ratatui buffers.
     ///
     /// Uses theme colors for status, tool name, errors, and progress.
+    #[cfg(test)]
     pub fn compact_styled_line(&self, theme: &Theme) -> Line<'static> {
         let mut spans: Vec<Span<'static>> = Vec::new();
 
         let status_style = match self.state {
+            #[cfg(test)]
             ToolState::Queued => theme.dim,
             ToolState::Running => theme.info,
+            #[cfg(test)]
             ToolState::Succeeded => theme.diff_add,
+            #[cfg(test)]
             ToolState::Failed => theme.error,
+            #[cfg(test)]
             ToolState::Cancelled => theme.warning,
         };
         spans.push(Span::styled(
@@ -123,6 +142,7 @@ impl ToolActivity {
         spans.push(Span::raw(" | "));
 
         let name_style = match self.state {
+            #[cfg(test)]
             ToolState::Succeeded => theme.diff_add,
             _ => theme.tool_name,
         };
@@ -169,6 +189,7 @@ impl ToolActivity {
         Line::from(spans)
     }
 
+    #[cfg(test)]
     pub fn transcript_block(&self) -> String {
         let mut lines = vec![
             format!("tool: {}", self.name),
@@ -219,6 +240,7 @@ impl ToolActivity {
         }
     }
 
+    #[cfg(test)]
     fn progress_text(&self) -> Option<String> {
         let (done, total) = self.progress?;
         let ratio = if total == 0 {
@@ -235,6 +257,7 @@ impl ToolActivity {
     }
 }
 
+#[cfg(test)]
 pub fn render_grouped_activity(activities: &[ToolActivity]) -> String {
     render_grouped_styled_activity(activities, &Theme::default())
         .into_iter()
@@ -244,6 +267,7 @@ pub fn render_grouped_activity(activities: &[ToolActivity]) -> String {
 }
 
 /// Render grouped tool activities as styled ratatui lines.
+#[cfg(test)]
 pub fn render_grouped_styled_activity(
     activities: &[ToolActivity],
     theme: &Theme,
@@ -258,6 +282,7 @@ pub fn render_grouped_styled_activity(
         .collect()
 }
 
+#[cfg(test)]
 fn line_to_plain(line: Line<'static>) -> String {
     line.spans
         .into_iter()
@@ -333,6 +358,7 @@ fn json_scalar(value: &serde_json::Value) -> Option<String> {
     }
 }
 
+#[cfg(test)]
 fn format_elapsed(ms: u64) -> String {
     if ms < 1000 {
         format!("{ms}ms")

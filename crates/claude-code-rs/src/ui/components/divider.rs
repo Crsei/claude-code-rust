@@ -60,18 +60,21 @@ impl<'a> Divider<'a> {
     }
 
     /// Set the character repeated to form the line.
+    #[cfg(test)]
     pub fn char(mut self, v: char) -> Self {
         self.char = v;
         self
     }
 
     /// Left padding in columns.
+    #[cfg(test)]
     pub fn padding(mut self, v: usize) -> Self {
         self.padding = v;
         self
     }
 
     /// Optional centred title text.
+    #[cfg(test)]
     pub fn title(mut self, v: &'a str) -> Self {
         self.title = Some(v);
         self

@@ -44,6 +44,7 @@ pub fn render_file_edit_tool_updated_message(view: &FileEditToolUpdatedView) -> 
     lines.join("\n")
 }
 
+#[cfg(test)]
 pub fn render_file_edit_tool_rejected_message(path: &str, reason: Option<&str>) -> String {
     match reason {
         Some(reason) if !reason.trim().is_empty() => {
@@ -53,6 +54,7 @@ pub fn render_file_edit_tool_rejected_message(path: &str, reason: Option<&str>) 
     }
 }
 
+#[cfg(test)]
 pub fn render_file_edit_tool_canceled_message(path: &str) -> String {
     format!("File edit canceled: {path}")
 }

@@ -369,8 +369,6 @@ fn completion_item_to_dto(item: CompletionItem) -> CompletionItemDTO {
             CompletionKind::Path => "path",
             CompletionKind::ShellHistory => "shell_history",
             CompletionKind::SlackChannel => "slack_channel",
-            CompletionKind::Skill => "skill",
-            CompletionKind::Argument => "arg",
         }
         .to_string(),
         detail: item.detail,

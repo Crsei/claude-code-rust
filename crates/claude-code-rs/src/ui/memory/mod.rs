@@ -1,8 +1,6 @@
 //! Rust-side memory UI surfaces.
-
-#[allow(dead_code)]
 pub mod memory_file_selector;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod memory_update_notification;
 
 #[cfg(test)]

@@ -64,6 +64,7 @@ impl CompletionState {
     }
 
     /// Move selection down (toward later items).
+    #[cfg(test)]
     pub fn select_next(&mut self) {
         if self.selected + 1 < self.items.len() {
             self.selected += 1;

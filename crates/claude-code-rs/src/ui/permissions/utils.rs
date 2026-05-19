@@ -8,6 +8,7 @@ pub enum PermissionDecision {
     Deny,
     AlwaysAllow,
     Ask,
+    #[cfg(test)]
     Escalate,
 }
 
@@ -18,6 +19,7 @@ impl PermissionDecision {
             Self::Deny => "deny",
             Self::AlwaysAllow => "always allow",
             Self::Ask => "ask",
+            #[cfg(test)]
             Self::Escalate => "escalate",
         }
     }
@@ -134,6 +136,7 @@ impl PermissionRequestView {
         self
     }
 
+    #[cfg(test)]
     pub fn for_worker(mut self, worker_name: impl Into<String>) -> Self {
         let worker_name = worker_name.into();
         if !worker_name.trim().is_empty() {
@@ -237,6 +240,7 @@ pub fn render_permission_options(
         .collect()
 }
 
+#[cfg(test)]
 pub fn render_key_values(title: &str, rows: &[(impl AsRef<str>, impl AsRef<str>)]) -> String {
     let mut lines = vec![title.to_string()];
     if rows.is_empty() {
@@ -250,6 +254,7 @@ pub fn render_key_values(title: &str, rows: &[(impl AsRef<str>, impl AsRef<str>)
     lines.join("\n")
 }
 
+#[cfg(test)]
 pub fn render_bullets(title: &str, rows: &[impl AsRef<str>]) -> String {
     let mut lines = vec![title.to_string()];
     if rows.is_empty() {
@@ -321,6 +326,7 @@ pub fn shell_risk_hint(command: &str) -> &'static str {
     }
 }
 
+#[cfg(test)]
 pub fn path_action_summary(action: &str, path: &str) -> String {
     format!("{} {}", action.trim(), truncate_middle(path.trim(), 100))
 }

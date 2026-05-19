@@ -13,16 +13,21 @@ use crate::ui::tool_activity::{ToolActivity, ToolState};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolUseState {
     /// Tool is waiting in the execution queue.
+    #[cfg(test)]
     Queued,
     /// Tool is currently executing.
     InProgress,
     /// Tool execution completed successfully.
+    #[cfg(test)]
     Resolved,
     /// Tool execution resulted in an error.
+    #[cfg(test)]
     Error,
     /// Waiting for user permission to execute.
+    #[cfg(test)]
     WaitingForPermission,
     /// Content classifier is reviewing the tool use.
+    #[cfg(test)]
     ClassifierChecking,
 }
 
@@ -31,6 +36,7 @@ pub enum ToolUseState {
 /// These are considered "transparent wrappers" — in the TS reference
 /// (`AssistantToolUseMessage.tsx:99-114`), they render differently when
 /// the real content follows immediately.
+#[cfg(test)]
 const TRANSPARENT_WRAPPER_TOOLS: &[&str] = &[
     "Bash",
     "PowerShell",
@@ -41,6 +47,7 @@ const TRANSPARENT_WRAPPER_TOOLS: &[&str] = &[
 ];
 
 /// Check whether a tool name is a transparent wrapper.
+#[cfg(test)]
 fn is_transparent_wrapper_tool(tool_name: &str) -> bool {
     TRANSPARENT_WRAPPER_TOOLS.contains(&tool_name)
 }
@@ -48,6 +55,7 @@ fn is_transparent_wrapper_tool(tool_name: &str) -> bool {
 /// Render a tool that is queued (waiting its turn).
 ///
 /// TS reference: `AssistantToolUseMessage.tsx:138-140` (queued dot)
+#[cfg(test)]
 fn render_tool_use_queued_message(tool_name: &str) -> String {
     format!("● {tool_name}")
 }
@@ -73,6 +81,7 @@ fn render_tool_use_progress_message(
 }
 
 /// Render a tool that encountered an error.
+#[cfg(test)]
 fn render_tool_use_error_state(tool_name: &str, input_summary: &str) -> String {
     let summary = if input_summary.is_empty() {
         tool_name.to_string()
@@ -85,6 +94,7 @@ fn render_tool_use_error_state(tool_name: &str, input_summary: &str) -> String {
 /// Render a tool that is being checked by the content classifier.
 ///
 /// TS reference: `AssistantToolUseMessage.tsx:173-178`
+#[cfg(test)]
 fn render_classifier_checking(tool_name: &str) -> String {
     format!("● {tool_name} (classifier checking...)")
 }
@@ -92,6 +102,7 @@ fn render_classifier_checking(tool_name: &str) -> String {
 /// Render a tool waiting for user permission.
 ///
 /// TS reference: `AssistantToolUseMessage.tsx:179-182`
+#[cfg(test)]
 fn render_waiting_for_permission(tool_name: &str) -> String {
     format!("● {tool_name} (waiting for permission...)")
 }
@@ -121,10 +132,12 @@ pub fn render_assistant_tool_use_message(
         .unwrap_or("");
 
     match state {
+        #[cfg(test)]
         ToolUseState::Queued => render_tool_use_queued_message(tool_name),
         ToolUseState::InProgress => {
             render_tool_use_progress_message(tool_name, summary_only, has_hook_progress)
         }
+        #[cfg(test)]
         ToolUseState::Resolved => {
             if is_transparent_wrapper_tool(tool_name) {
                 // Keep an explicit completion marker unless the main render path
@@ -139,8 +152,11 @@ pub fn render_assistant_tool_use_message(
                 format!("● {summary}")
             }
         }
+        #[cfg(test)]
         ToolUseState::Error => render_tool_use_error_state(tool_name, summary_only),
+        #[cfg(test)]
         ToolUseState::WaitingForPermission => render_waiting_for_permission(tool_name),
+        #[cfg(test)]
         ToolUseState::ClassifierChecking => render_classifier_checking(tool_name),
     }
 }

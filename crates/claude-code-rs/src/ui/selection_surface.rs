@@ -69,6 +69,7 @@ impl SelectionSurface {
         }
     }
 
+    #[cfg(test)]
     pub fn set_filter(&mut self, filter: impl Into<String>) {
         self.filter = filter.into();
         self.selected = 0;
@@ -138,6 +139,7 @@ impl SelectionSurface {
             .and_then(|idx| self.items.get(*idx))
     }
 
+    #[cfg(test)]
     pub fn selected_enabled_action(&self, action_id: &str) -> Option<&SelectionAction> {
         self.selected_item()
             .filter(|item| item.enabled)?

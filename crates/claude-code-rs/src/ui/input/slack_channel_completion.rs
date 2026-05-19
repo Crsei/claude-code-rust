@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use super::completions::{CompletionContext, CompletionItem, CompletionKind, CompletionProvider};
 
 /// Maximum number of cached search queries.
+#[cfg(test)]
 const MAX_CACHED_QUERIES: usize = 50;
 
 /// Cache TTL for MCP query results.
@@ -64,11 +65,13 @@ impl SlackChannelCompletionProvider {
     }
 
     /// Set custom known channels (for testing or configuration).
+    #[cfg(test)]
     pub fn set_known_channels(&mut self, channels: Vec<String>) {
         self.known_channels = channels;
     }
 
     /// Enable or disable MCP-backed search (requires connected MCP server).
+    #[cfg(test)]
     pub fn set_mcp_enabled(&mut self, enabled: bool) {
         self.mcp_enabled = enabled;
     }
@@ -120,6 +123,7 @@ impl SlackChannelCompletionProvider {
     /// Add a query result to the MCP cache.
     ///
     /// Called from the async MCP response handler.
+    #[cfg(test)]
     pub fn cache_mcp_results(&mut self, query: &str, results: Vec<String>) {
         if self.mcp_cache.len() >= MAX_CACHED_QUERIES {
             // Evict oldest entry
@@ -137,16 +141,13 @@ impl SlackChannelCompletionProvider {
     }
 
     /// Get the set of known channel names for highlighting.
+    #[cfg(test)]
     pub fn known_channel_set(&self) -> std::collections::HashSet<&str> {
         self.known_channels.iter().map(String::as_str).collect()
     }
 }
 
 impl CompletionProvider for SlackChannelCompletionProvider {
-    fn name(&self) -> &'static str {
-        "slack-channel"
-    }
-
     fn compute(&self, ctx: &CompletionContext) -> Vec<CompletionItem> {
         let (range, query) = match Self::find_channel_token(ctx.input, ctx.cursor_pos) {
             Some(result) => result,

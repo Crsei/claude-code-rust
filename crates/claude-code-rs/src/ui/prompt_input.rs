@@ -60,10 +60,12 @@ impl PromptInput {
         self.show_ghost = show;
     }
 
+    #[cfg(test)]
     pub fn ghost_suffix(&self) -> Option<&str> {
         self.ghost_suffix.as_deref()
     }
 
+    #[cfg(test)]
     pub fn show_ghost(&self) -> bool {
         self.show_ghost
     }
@@ -173,6 +175,7 @@ impl PromptInput {
         self.large_paste_notice = large_paste_notice(&normalized);
     }
 
+    #[cfg(test)]
     pub fn take_large_paste_notice(&mut self) -> Option<String> {
         self.large_paste_notice.take()
     }
@@ -186,11 +189,13 @@ impl PromptInput {
     /// Shows a "> " prompt prefix followed by the input text with a visible
     /// cursor indicator. The visible window scrolls horizontally when the
     /// cursor would move off-screen.
+    #[cfg(test)]
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         self.render_with_context(area, buf, theme, PromptInputRenderContext::default());
     }
 
     /// Render the prompt input widget with a dim inline hint after the text.
+    #[cfg(test)]
     pub fn render_with_hint(
         &self,
         area: Rect,

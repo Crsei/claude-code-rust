@@ -1,5 +1,6 @@
 //! Typed approval and permission overlay primitives.
 
+#[cfg(test)]
 use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +25,7 @@ impl ApprovalKind {
         }
     }
 
+    #[cfg(test)]
     pub fn subject(&self) -> String {
         match self {
             ApprovalKind::Bash { command } => command.clone(),
@@ -36,6 +38,7 @@ impl ApprovalKind {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApprovalChoice {
     AllowOnce,
@@ -44,6 +47,7 @@ pub enum ApprovalChoice {
     EditRequest,
 }
 
+#[cfg(test)]
 impl ApprovalChoice {
     pub fn label(self) -> &'static str {
         match self {
@@ -55,6 +59,7 @@ impl ApprovalChoice {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovalOverlay {
     pub kind: ApprovalKind,
@@ -63,6 +68,7 @@ pub struct ApprovalOverlay {
     pub fail_closed: bool,
 }
 
+#[cfg(test)]
 impl ApprovalOverlay {
     pub fn new(kind: ApprovalKind) -> Self {
         Self {
@@ -116,6 +122,7 @@ impl ApprovalOverlay {
     }
 }
 
+#[cfg(test)]
 fn approval_risk(kind: &ApprovalKind) -> &'static str {
     match kind {
         ApprovalKind::Bash { .. } => "shell command",
@@ -127,6 +134,7 @@ fn approval_risk(kind: &ApprovalKind) -> &'static str {
     }
 }
 
+#[cfg(test)]
 fn fit_line(text: &str, width: usize) -> String {
     if width == 0 || text.chars().count() <= width {
         return text.to_string();

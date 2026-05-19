@@ -5,8 +5,6 @@
 //!
 //! Mirrors the upstream TypeScript `Ratchet.tsx` design-system component.
 
-#![allow(dead_code)]
-
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 

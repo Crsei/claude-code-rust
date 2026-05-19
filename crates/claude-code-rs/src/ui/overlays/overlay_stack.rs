@@ -5,8 +5,6 @@
 //! one below.  Mirrors the modal-stack behaviour in the upstream TypeScript
 //! codebase.
 
-#![allow(dead_code)]
-
 /// A unique identifier assigned to each overlay pushed onto the stack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OverlayId(u64);

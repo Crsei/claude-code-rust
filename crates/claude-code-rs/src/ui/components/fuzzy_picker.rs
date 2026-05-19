@@ -6,8 +6,6 @@
 //!
 //! Mirrors the upstream TypeScript `FuzzyPicker.tsx` design-system component.
 
-#![allow(dead_code)]
-
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 

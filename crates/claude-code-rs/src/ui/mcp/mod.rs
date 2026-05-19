@@ -1,40 +1,37 @@
 //! Rust-side MCP UI surfaces.
-
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod capabilities_section;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod elicitation_dialog;
-#[allow(dead_code)]
 pub mod index;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_agent_server_menu;
-#[allow(dead_code)]
 pub mod mcp_list_panel;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_parsing_warnings;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_reconnect;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_remote_server_menu;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_server_approval_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_server_card;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_server_desktop_import_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_server_dialog_copy;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_server_multiselect_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_settings;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_stdio_server_menu;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_tool_detail_view;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod mcp_tool_list_view;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod utils;
 
 #[cfg(test)]

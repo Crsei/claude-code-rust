@@ -3,8 +3,6 @@
 //!
 //! Mirrors the upstream TypeScript `ListItem.tsx` design-system component.
 
-#![allow(dead_code)]
-
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 

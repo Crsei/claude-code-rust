@@ -9,7 +9,7 @@
 use std::fmt;
 use std::ops::Range;
 
-use cc_commands::dynamic_registry::{CommandSource, DynamicRegistry};
+use cc_commands::dynamic_registry::CommandSource;
 use cc_commands::DYNAMIC_REGISTRY;
 
 use crate::ui::fuzzy_match::best_fuzzy_match;
@@ -29,10 +29,6 @@ pub enum CompletionKind {
     ShellHistory,
     /// Slack channel name (`#general`, `#project-alpha`, ...)
     SlackChannel,
-    /// User-invocable skill name
-    Skill,
-    /// Command argument value
-    Argument,
 }
 
 impl CompletionKind {
@@ -42,8 +38,6 @@ impl CompletionKind {
             CompletionKind::Path => "path",
             CompletionKind::ShellHistory => "hist",
             CompletionKind::SlackChannel => "slack",
-            CompletionKind::Skill => "skill",
-            CompletionKind::Argument => "arg",
         }
     }
 }
@@ -128,19 +122,13 @@ pub struct CompletionContext<'a> {
     pub input: &'a str,
     /// Byte offset of the cursor within `input`.
     pub cursor_pos: usize,
-    /// Handle to the dynamic command registry (Lane C), if available.
-    pub registry: Option<&'a DynamicRegistry>,
-    /// Ranked skill usage scores from Lane C's `SKILL_USAGE`.
-    pub skill_scores: &'a [(String, f64)],
 }
 
 impl<'a> CompletionContext<'a> {
-    pub fn new(input: &'a str, cursor_pos: usize, skill_scores: &'a [(String, f64)]) -> Self {
+    pub fn new(input: &'a str, cursor_pos: usize, _skill_scores: &'a [(String, f64)]) -> Self {
         Self {
             input,
             cursor_pos,
-            registry: None,
-            skill_scores,
         }
     }
 }
@@ -155,9 +143,6 @@ impl<'a> CompletionContext<'a> {
 /// providers are consulted first, and their results are shown before
 /// lower-priority ones.
 pub trait CompletionProvider: Send + Sync {
-    /// Human-readable name for debugging / logging.
-    fn name(&self) -> &'static str;
-
     /// Compute completion items for the given context.
     ///
     /// This is called synchronously and should return quickly. Providers that
@@ -217,10 +202,6 @@ impl CommandCompletionProvider {
 }
 
 impl CompletionProvider for CommandCompletionProvider {
-    fn name(&self) -> &'static str {
-        "command"
-    }
-
     fn compute(&self, ctx: &CompletionContext) -> Vec<CompletionItem> {
         let input = ctx.input;
         let cursor_pos = ctx.cursor_pos;
@@ -422,10 +403,12 @@ impl CombinedCompleter {
         all.into_iter().map(|(_, _, item)| item).collect()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.providers.is_empty()
     }
 
+    #[cfg(test)]
     pub fn provider_count(&self) -> usize {
         self.providers.len()
     }
@@ -451,6 +434,7 @@ impl fmt::Debug for CombinedCompleter {
 
 /// Find the range of a `/command` token that the cursor is at or after.
 /// Returns `None` if no slash token is found.
+#[cfg(test)]
 pub fn find_command_token_range(input: &str, cursor_pos: usize) -> Option<Range<usize>> {
     let byte_pos = cursor_pos.min(input.len());
     let prefix = &input[..byte_pos];

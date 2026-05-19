@@ -3,8 +3,6 @@
 //! Provides the low-level [`render_progress_bar`] string function and an
 //! enhanced [`ProgressBar`] widget with theme-aware colours.
 
-#![allow(dead_code)]
-
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 

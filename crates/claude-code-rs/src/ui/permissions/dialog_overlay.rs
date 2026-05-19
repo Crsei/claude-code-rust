@@ -167,40 +167,21 @@ impl PermissionDialog {
         }
 
         let labels = self.normalized_options();
-        let button_spans: Vec<Span> = labels
-            .iter()
-            .enumerate()
-            .flat_map(|(idx, label)| {
-                let style = if idx == self.selected {
-                    theme.selected
-                } else {
-                    theme.unselected
-                };
-                let shortcut = shortcut_for_label(label);
-                let mut spans = vec![Span::styled(format!(" {} ", label), style)];
-                if let Some(shortcut) = shortcut {
-                    spans.push(Span::styled(format!("({shortcut})"), theme.dim));
-                }
-                if idx + 1 < labels.len() {
-                    spans.push(Span::raw("  "));
-                }
-                spans
-            })
-            .collect();
-
+        let footer_width = chunks[2].width.saturating_sub(2) as usize;
+        let button_spans = button_spans_for_width(&labels, self.selected, footer_width, theme);
         let button_line = Line::from(button_spans);
         let button_y = chunks[2].y + (chunks[2].height.saturating_sub(2)) / 2;
-        buf.set_line(chunks[2].x + 1, button_y, &button_line, chunks[2].width);
+        buf.set_line(chunks[2].x + 1, button_y, &button_line, footer_width as u16);
 
         let hint = Line::from(vec![Span::styled(
-            "Arrow keys or hotkeys. Enter confirms. Esc denies.",
+            truncate_str("Arrows/hotkeys. Enter confirms. Esc denies.", footer_width),
             theme.dim,
         )]);
         buf.set_line(
             chunks[2].x + 1,
             chunks[2].y + chunks[2].height.saturating_sub(1),
             &hint,
-            chunks[2].width,
+            footer_width as u16,
         );
     }
 
@@ -523,6 +504,85 @@ fn shortcut_for_label(label: &str) -> Option<&'static str> {
         Some(PermissionChoice::AlwaysAllow) => Some("a"),
         None => None,
     }
+}
+
+fn button_spans_for_width(
+    labels: &[String],
+    selected: usize,
+    max_width: usize,
+    theme: &Theme,
+) -> Vec<Span<'static>> {
+    let mut spans = button_spans(labels, selected, max_width, theme, true);
+    if spans_width(&spans) <= max_width {
+        return spans;
+    }
+
+    spans = button_spans(labels, selected, max_width, theme, false);
+    if spans_width(&spans) <= max_width {
+        return spans;
+    }
+
+    vec![Span::styled(
+        truncate_str(&spans_text(&spans), max_width),
+        theme.unselected,
+    )]
+}
+
+fn button_spans(
+    labels: &[String],
+    selected: usize,
+    max_width: usize,
+    theme: &Theme,
+    padded: bool,
+) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    for (idx, label) in labels.iter().enumerate() {
+        let style = if idx == selected {
+            theme.selected
+        } else {
+            theme.unselected
+        };
+        let label = button_bar_label(label);
+        let shortcut = shortcut_for_label(label);
+        let text = match (padded, shortcut) {
+            (true, Some(shortcut)) => format!(" {label} ({shortcut}) "),
+            (true, None) => format!(" {label} "),
+            (false, Some(shortcut)) => format!("{label}({shortcut})"),
+            (false, None) => label.to_string(),
+        };
+        spans.push(Span::styled(truncate_str(&text, max_width), style));
+        if idx + 1 < labels.len() {
+            spans.push(Span::raw(if padded { "  " } else { " " }));
+        }
+    }
+    spans
+}
+
+fn button_bar_label(label: &str) -> &'static str {
+    let lower = label.to_ascii_lowercase();
+    if lower.contains("always") && lower.contains("exact") {
+        "Always exact"
+    } else if lower.contains("always") && lower.contains("path") {
+        "Always path"
+    } else if lower.contains("always") {
+        "Always"
+    } else if lower.contains("allow") {
+        "Allow"
+    } else if lower.contains("deny") || lower.contains("reject") || lower == "no" {
+        "Deny"
+    } else if lower == "yes" {
+        "Allow"
+    } else {
+        "Select"
+    }
+}
+
+fn spans_width(spans: &[Span<'_>]) -> usize {
+    spans.iter().map(|span| span.content.chars().count()).sum()
+}
+
+fn spans_text(spans: &[Span<'_>]) -> String {
+    spans.iter().map(|span| span.content.as_ref()).collect()
 }
 
 // ── Helper rendering traits ───────────────────────────────────────────────

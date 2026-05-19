@@ -1,63 +1,59 @@
 // BEGIN generated upstream permissions modules
 // Rust-side permission modules mirrored from upstream React components.
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod ask_user_question_permission_request;
 pub mod bash_permission_request;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod computer_use_approval;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod enter_plan_mode_permission_request;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod exit_plan_mode_permission_request;
 pub mod fallback_permission_request;
 pub mod file_edit_permission_request;
-#[allow(dead_code)]
 pub mod file_permission_dialog;
 pub mod file_write_permission_request;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod filesystem_permission_request;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod hooks;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod monitor_permission_request;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod notebook_edit_permission_request;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod permission_decision_debug_info;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod permission_dialog;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod permission_explanation;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod permission_prompt;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod permission_request;
 pub mod permission_request_router;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod permission_request_title;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod permission_rule_explanation;
 pub mod power_shell_permission_request;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod review_artifact_permission_request;
-#[allow(dead_code)]
 pub mod rules;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod sandbox_permission_request;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod sed_edit_permission_request;
-#[allow(dead_code)]
 pub mod shell_permission_helpers;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod skill_permission_request;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod use_shell_permission_feedback;
-#[allow(dead_code)]
 pub mod utils;
 pub mod web_fetch_permission_request;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod worker_badge;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod worker_pending_permission;
 // END generated upstream permissions modules
 

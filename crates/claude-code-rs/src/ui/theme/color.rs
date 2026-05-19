@@ -219,6 +219,7 @@ fn parse_ansi_name(name: &str) -> Option<Color> {
 // ---------------------------------------------------------------------------
 
 /// Extension trait for `ratatui::style::Color` that adds theme-aware utilities.
+#[cfg(test)]
 pub trait ColorExt {
     /// Dim a colour using the theme's `inactive` colour as a dim target.
     ///
@@ -228,6 +229,7 @@ pub trait ColorExt {
     fn dimmed(self, colors: &ThemeColors) -> Color;
 }
 
+#[cfg(test)]
 impl ColorExt for Color {
     fn dimmed(self, colors: &ThemeColors) -> Color {
         // For simplicity, return the theme's inactive colour as the "dimmed"

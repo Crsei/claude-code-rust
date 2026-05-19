@@ -1,10 +1,13 @@
 //! Filesystem-adjacent helpers for displaying and serializing agents.
 
+#[cfg(test)]
 use std::path::{Path, PathBuf};
 
 use super::types::{AgentDefinition, AgentSource, AGENTS_DIR, AGENT_FOLDER_NAME};
+#[cfg(test)]
 use super::utils::{memory_label, tools_label};
 
+#[cfg(test)]
 pub fn format_agent_as_markdown(agent: &AgentDefinition) -> String {
     let mut header = vec![
         "---".to_string(),
@@ -41,6 +44,7 @@ pub fn format_agent_as_markdown(agent: &AgentDefinition) -> String {
     header.join("\n")
 }
 
+#[cfg(test)]
 pub fn get_new_agent_file_path(
     source: AgentSource,
     agent_type: &str,
@@ -76,6 +80,7 @@ pub fn get_actual_relative_agent_file_path(agent: &AgentDefinition) -> String {
     }
 }
 
+#[cfg(test)]
 pub fn render_agent_file_summary(agent: &AgentDefinition) -> String {
     [
         format!("path: {}", get_actual_relative_agent_file_path(agent)),
@@ -86,6 +91,7 @@ pub fn render_agent_file_summary(agent: &AgentDefinition) -> String {
     .join("\n")
 }
 
+#[cfg(test)]
 pub fn sanitize_agent_filename(agent_type: &str) -> String {
     let mut sanitized = String::new();
     for ch in agent_type.chars() {
@@ -101,6 +107,7 @@ pub fn sanitize_agent_filename(agent_type: &str) -> String {
     sanitized.trim_matches('-').to_string()
 }
 
+#[cfg(test)]
 fn agent_dir(source: AgentSource, cwd: &Path, home: &Path, managed_root: &Path) -> PathBuf {
     match source {
         AgentSource::User => home.join(AGENT_FOLDER_NAME).join(AGENTS_DIR),
@@ -112,6 +119,7 @@ fn agent_dir(source: AgentSource, cwd: &Path, home: &Path, managed_root: &Path) 
     }
 }
 
+#[cfg(test)]
 fn yaml_double_quote(value: &str) -> String {
     value
         .replace('\\', "\\\\")

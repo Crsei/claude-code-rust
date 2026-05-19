@@ -1,6 +1,4 @@
 //! Rust-side skills UI surfaces.
-
-#[allow(dead_code)]
 pub mod skills_menu;
 
 #[cfg(test)]

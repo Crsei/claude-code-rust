@@ -2,21 +2,13 @@
 
 #![allow(clippy::module_inception)]
 
-#[allow(dead_code)]
 pub mod rejected_plan_message;
-#[allow(dead_code)]
 pub mod rejected_tool_use_message;
-#[allow(dead_code)]
 pub mod user_tool_canceled_message;
-#[allow(dead_code)]
 pub mod user_tool_error_message;
-#[allow(dead_code)]
 pub mod user_tool_reject_message;
-#[allow(dead_code)]
 pub mod user_tool_result_message;
-#[allow(dead_code)]
 pub mod user_tool_success_message;
-#[allow(dead_code)]
 pub mod utils;
 
 #[cfg(test)]

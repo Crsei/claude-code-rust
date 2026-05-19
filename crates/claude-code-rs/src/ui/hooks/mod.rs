@@ -1,16 +1,13 @@
 //! Rust-side hooks configuration UI surfaces.
-
-#[allow(dead_code)]
 pub mod hooks_config_menu;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod prompt_dialog;
-#[allow(dead_code)]
 pub mod select_event_mode;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod select_hook_mode;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod select_matcher_mode;
-#[allow(dead_code)]
+#[cfg(test)]
 pub mod view_hook_mode;
 
 #[cfg(test)]

@@ -4,6 +4,7 @@
 //! human-readable messages for each error type, or passes through
 //! ordinary text content unchanged.
 
+#[cfg(test)]
 use crate::ui::theme::Theme;
 
 /// API error categories derived from assistant response text.
@@ -188,6 +189,7 @@ pub fn render_api_error(error: &AssistantApiError) -> String {
 /// If the text matches an API error pattern, the classified error message
 /// is rendered; otherwise the plain text is returned with an "Assistant:"
 /// prefix.
+#[cfg(test)]
 pub fn render_assistant_text_message(text: &str, _theme: &Theme) -> String {
     let trimmed = text.trim();
     if trimmed.is_empty() {

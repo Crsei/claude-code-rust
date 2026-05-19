@@ -6,6 +6,7 @@
 //! When the feature is disabled, all functions degrade gracefully to
 //! plain-text passthrough.
 
+#[cfg(any(test, feature = "syntect"))]
 use std::borrow::Cow;
 
 use ratatui::text::Span;
@@ -20,6 +21,7 @@ use super::theme::Theme;
 ///
 /// pulldown_cmark gives us the raw info string from ```lang. Syntect
 /// uses slightly different names for some languages.
+#[cfg(any(test, feature = "syntect"))]
 const LANG_ALIASES: &[(&str, &[&str])] = &[
     ("javascript", &["javascript", "js", "node"]),
     ("typescript", &["typescript", "ts"]),
@@ -61,6 +63,7 @@ const LANG_ALIASES: &[(&str, &[&str])] = &[
 
 /// Resolve a raw language string (from fence info) to a syntect-compatible
 /// syntax name, or None if unknown.
+#[cfg(any(test, feature = "syntect"))]
 fn resolve_lang(lang: &str) -> Option<&'static str> {
     let lower = normalize_lang_token(lang)?;
     for &(canonical, aliases) in LANG_ALIASES {
@@ -71,6 +74,7 @@ fn resolve_lang(lang: &str) -> Option<&'static str> {
     None
 }
 
+#[cfg(any(test, feature = "syntect"))]
 fn normalize_lang_token(lang: &str) -> Option<String> {
     let token = lang
         .trim()
@@ -87,6 +91,7 @@ fn normalize_lang_token(lang: &str) -> Option<String> {
     }
 }
 
+#[cfg(any(test, feature = "syntect"))]
 fn preferred_syntect_token(lang: &str) -> Option<Cow<'static, str>> {
     let normalized = normalize_lang_token(lang)?;
     if let Some(canonical) = resolve_lang(&normalized) {
@@ -234,6 +239,7 @@ mod imp {
         fallback_highlight(code, theme)
     }
 
+    #[cfg(test)]
     pub(crate) fn supports_language(_lang: &str) -> bool {
         false
     }
@@ -262,11 +268,13 @@ pub fn highlight_code_block(code: &str, lang: &str, theme: &Theme) -> Vec<Span<'
 }
 
 /// Check whether a given language identifier is supported for highlighting.
+#[cfg(test)]
 pub fn supports_language(lang: &str) -> bool {
     imp::supports_language(lang)
 }
 
 /// Return the list of all supported language identifiers.
+#[cfg(test)]
 pub fn supported_languages() -> Vec<&'static str> {
     let mut langs: Vec<&str> = LANG_ALIASES
         .iter()

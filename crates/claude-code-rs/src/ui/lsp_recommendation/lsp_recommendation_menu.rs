@@ -16,18 +16,23 @@ pub enum InstallState {
     /// User has not yet acted on this recommendation.
     Pending,
     /// Installation is in progress (stub — will be wired to backend).
+    #[cfg(test)]
     Installing,
     /// Installation completed successfully.
+    #[cfg(test)]
     Installed,
     /// Installation failed with an error message.
+    #[cfg(test)]
     Failed { error: String },
 }
 
 impl InstallState {
+    #[cfg(test)]
     pub fn is_terminal(&self) -> bool {
         matches!(self, InstallState::Installed | InstallState::Failed { .. })
     }
 
+    #[cfg(test)]
     pub fn label(&self) -> &str {
         match self {
             InstallState::Pending => "pending",
@@ -39,6 +44,7 @@ impl InstallState {
 }
 
 /// A simplified recommendation struct used for UI rendering.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LspRecommendation {
     pub language: String,
@@ -48,6 +54,7 @@ pub struct LspRecommendation {
     pub selected: bool,
 }
 
+#[cfg(test)]
 impl LspRecommendation {
     pub fn new(language: impl Into<String>, server: impl Into<String>) -> Self {
         Self {
@@ -60,6 +67,7 @@ impl LspRecommendation {
     }
 }
 
+#[cfg(test)]
 pub fn render_lsp_recommendation_menu(recommendations: &[LspRecommendation]) -> String {
     if recommendations.is_empty() {
         return "No language server recommendations".to_string();
@@ -146,6 +154,7 @@ impl LspRecommendationPromptState {
     }
 
     /// Mark the current plugin as being installed.
+    #[cfg(test)]
     pub fn mark_installing(&mut self) {
         self.install_state = InstallState::Installing;
         self.installation_status
@@ -153,6 +162,7 @@ impl LspRecommendationPromptState {
     }
 
     /// Mark the current plugin as successfully installed.
+    #[cfg(test)]
     pub fn mark_installed(&mut self) {
         self.install_state = InstallState::Installed;
         self.installation_status
@@ -160,6 +170,7 @@ impl LspRecommendationPromptState {
     }
 
     /// Mark the current plugin as failed with an error message.
+    #[cfg(test)]
     pub fn mark_failed(&mut self, error: String) {
         let state = InstallState::Failed { error };
         self.install_state = state.clone();
@@ -168,16 +179,19 @@ impl LspRecommendationPromptState {
     }
 
     /// Reset the prompt state to allow re-selection after a failure.
+    #[cfg(test)]
     pub fn reset_for_retry(&mut self) {
         self.install_state = InstallState::Pending;
         self.selected_index = 0;
     }
 
     /// Check the current install state for the current plugin.
+    #[cfg(test)]
     pub fn install_state_for(&self, plugin_name: &str) -> Option<&InstallState> {
         self.installation_status.get(plugin_name)
     }
 
+    #[cfg(test)]
     pub fn render(&self) -> String {
         let mut lines = vec![
             "LSP Plugin Recommendation".to_string(),
@@ -224,10 +238,12 @@ impl LspRecommendationPromptState {
 #[derive(Debug, Clone, Copy)]
 struct LspRecommendationChoice {
     decision: LspRecommendationDecision,
+    #[cfg(test)]
     label: &'static str,
 }
 
 impl LspRecommendationChoice {
+    #[cfg(test)]
     fn label(self, plugin_name: &str) -> String {
         match self.decision {
             LspRecommendationDecision::Yes => format!("Yes, install {plugin_name}"),
@@ -240,18 +256,22 @@ impl LspRecommendationChoice {
 const LSP_RECOMMENDATION_CHOICES: &[LspRecommendationChoice] = &[
     LspRecommendationChoice {
         decision: LspRecommendationDecision::Yes,
+        #[cfg(test)]
         label: "Yes",
     },
     LspRecommendationChoice {
         decision: LspRecommendationDecision::No,
+        #[cfg(test)]
         label: "No, not now",
     },
     LspRecommendationChoice {
         decision: LspRecommendationDecision::Never,
+        #[cfg(test)]
         label: "Never",
     },
     LspRecommendationChoice {
         decision: LspRecommendationDecision::Disable,
+        #[cfg(test)]
         label: "Disable all LSP recommendations",
     },
 ];

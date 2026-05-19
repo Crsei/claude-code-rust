@@ -1,104 +1,102 @@
 // BEGIN generated upstream messages modules
 // Rust-side message modules mirrored from upstream React components.
-#[allow(dead_code)]
 #[path = "messages/advisor_message.rs"]
+#[cfg(test)]
 pub mod advisor_message;
-#[allow(dead_code)]
 #[path = "messages/assistant_redacted_thinking_message.rs"]
+#[cfg(test)]
 pub mod assistant_redacted_thinking_message;
 #[path = "messages/assistant_text_message.rs"]
 pub mod assistant_text_message;
-#[allow(dead_code)]
 #[path = "messages/assistant_thinking_message.rs"]
+#[cfg(test)]
 pub mod assistant_thinking_message;
 #[path = "messages/assistant_tool_use_message.rs"]
 pub mod assistant_tool_use_message;
 #[path = "messages/attachment_message.rs"]
 pub mod attachment_message;
-#[allow(dead_code)]
 #[path = "messages/collapsed_read_search_content.rs"]
+#[cfg(test)]
 pub mod collapsed_read_search_content;
-#[allow(dead_code)]
 #[path = "messages/compact_boundary_message.rs"]
+#[cfg(test)]
 pub mod compact_boundary_message;
-#[allow(dead_code)]
 #[path = "messages/file_edit_tool_updated_message.rs"]
 pub mod file_edit_tool_updated_message;
-#[allow(dead_code)]
 #[path = "messages/grouped_tool_use_content.rs"]
+#[cfg(test)]
 pub mod grouped_tool_use_content;
-#[allow(dead_code)]
 #[path = "messages/highlighted_thinking_text.rs"]
+#[cfg(test)]
 pub mod highlighted_thinking_text;
-#[allow(dead_code)]
 #[path = "messages/hook_progress_message.rs"]
+#[cfg(test)]
 pub mod hook_progress_message;
-#[allow(dead_code)]
 #[path = "messages/null_rendering_attachments.rs"]
+#[cfg(test)]
 pub mod null_rendering_attachments;
-#[allow(dead_code)]
 #[path = "messages/plan_approval_message.rs"]
+#[cfg(test)]
 pub mod plan_approval_message;
-#[allow(dead_code)]
 #[path = "messages/rate_limit_message.rs"]
+#[cfg(test)]
 pub mod rate_limit_message;
-#[allow(dead_code)]
 #[path = "messages/shutdown_message.rs"]
+#[cfg(test)]
 pub mod shutdown_message;
-#[allow(dead_code)]
 #[path = "messages/system_api_error_message.rs"]
+#[cfg(test)]
 pub mod system_api_error_message;
 #[path = "messages/system_text_message.rs"]
 pub mod system_text_message;
-#[allow(dead_code)]
 #[path = "messages/task_assignment_message.rs"]
+#[cfg(test)]
 pub mod task_assignment_message;
-#[allow(dead_code)]
 #[path = "messages/team_mem_collapsed.rs"]
+#[cfg(test)]
 pub mod team_mem_collapsed;
-#[allow(dead_code)]
 #[path = "messages/team_mem_saved.rs"]
+#[cfg(test)]
 pub mod team_mem_saved;
-#[allow(dead_code)]
 #[path = "messages/user_agent_notification_message.rs"]
+#[cfg(test)]
 pub mod user_agent_notification_message;
-#[allow(dead_code)]
 #[path = "messages/user_bash_input_message.rs"]
+#[cfg(test)]
 pub mod user_bash_input_message;
-#[allow(dead_code)]
 #[path = "messages/user_bash_output_message.rs"]
 pub mod user_bash_output_message;
-#[allow(dead_code)]
 #[path = "messages/user_channel_message.rs"]
+#[cfg(test)]
 pub mod user_channel_message;
-#[allow(dead_code)]
 #[path = "messages/user_command_message.rs"]
+#[cfg(test)]
 pub mod user_command_message;
-#[allow(dead_code)]
 #[path = "messages/user_image_message.rs"]
+#[cfg(test)]
 pub mod user_image_message;
-#[allow(dead_code)]
 #[path = "messages/user_local_command_output_message.rs"]
+#[cfg(test)]
 pub mod user_local_command_output_message;
-#[allow(dead_code)]
 #[path = "messages/user_memory_input_message.rs"]
+#[cfg(test)]
 pub mod user_memory_input_message;
-#[allow(dead_code)]
 #[path = "messages/user_plan_message.rs"]
+#[cfg(test)]
 pub mod user_plan_message;
-#[allow(dead_code)]
 #[path = "messages/user_prompt_message.rs"]
+#[cfg(test)]
 pub mod user_prompt_message;
-#[allow(dead_code)]
 #[path = "messages/user_resource_update_message.rs"]
+#[cfg(test)]
 pub mod user_resource_update_message;
-#[allow(dead_code)]
 #[path = "messages/user_teammate_message.rs"]
+#[cfg(test)]
 pub mod user_teammate_message;
 #[path = "messages/user_text_message.rs"]
 pub mod user_text_message;
-#[allow(dead_code)]
 #[path = "messages/user_tool_result_message/mod.rs"]
+#[cfg(test)]
 pub mod user_tool_result_message;
 // END generated upstream messages modules
 

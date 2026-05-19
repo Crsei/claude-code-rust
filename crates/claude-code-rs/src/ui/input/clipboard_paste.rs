@@ -1,5 +1,9 @@
-use std::path::{Path, PathBuf};
+#[cfg(any(test, feature = "image"))]
+use std::path::PathBuf;
+#[cfg(any(test, feature = "image"))]
+use std::path::Path;
 
+#[cfg(any(test, feature = "image"))]
 #[derive(Debug, Clone)]
 pub enum PasteImageError {
     ClipboardUnavailable(String),
@@ -8,6 +12,7 @@ pub enum PasteImageError {
     IoError(String),
 }
 
+#[cfg(any(test, feature = "image"))]
 impl std::fmt::Display for PasteImageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -19,8 +24,10 @@ impl std::fmt::Display for PasteImageError {
     }
 }
 
+#[cfg(any(test, feature = "image"))]
 impl std::error::Error for PasteImageError {}
 
+#[cfg(any(test, feature = "image"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncodedImageFormat {
     Png,
@@ -28,6 +35,7 @@ pub enum EncodedImageFormat {
     Other,
 }
 
+#[cfg(any(test, feature = "image"))]
 impl EncodedImageFormat {
     pub fn label(self) -> &'static str {
         match self {
@@ -38,6 +46,7 @@ impl EncodedImageFormat {
     }
 }
 
+#[cfg(any(test, feature = "image"))]
 #[derive(Debug, Clone)]
 pub struct PastedImageInfo {
     pub width: u32,
@@ -47,7 +56,7 @@ pub struct PastedImageInfo {
 
 /// Capture an image from the system clipboard, encode it as PNG bytes, and
 /// return the bytes plus dimensions.
-#[cfg(all(not(target_os = "android"), feature = "image"))]
+#[cfg(all(any(test, feature = "image"), not(target_os = "android"), feature = "image"))]
 pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
     let (path, info) = paste_image_to_temp_png()?;
     let bytes = std::fs::read(&path).map_err(|e| PasteImageError::IoError(e.to_string()))?;
@@ -55,14 +64,14 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
     Ok((bytes, info))
 }
 
-#[cfg(all(not(target_os = "android"), not(feature = "image")))]
+#[cfg(all(test, not(target_os = "android"), not(feature = "image")))]
 pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
         "clipboard image paste requires the image feature".into(),
     ))
 }
 
-#[cfg(target_os = "android")]
+#[cfg(all(test, target_os = "android"))]
 pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
         "clipboard image paste is unsupported on Android".into(),
@@ -70,19 +79,19 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
 }
 
 /// Write the clipboard image to a temporary PNG file and return its path.
-#[cfg(all(not(target_os = "android"), feature = "image"))]
+#[cfg(all(any(test, feature = "image"), not(target_os = "android"), feature = "image"))]
 pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     platform_paste_image_to_temp_png()
 }
 
-#[cfg(all(not(target_os = "android"), not(feature = "image")))]
+#[cfg(all(test, not(target_os = "android"), not(feature = "image")))]
 pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
         "clipboard image paste requires the image feature".into(),
     ))
 }
 
-#[cfg(target_os = "android")]
+#[cfg(all(test, target_os = "android"))]
 pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
         "clipboard image paste is unsupported on Android".into(),
@@ -266,6 +275,7 @@ fn image_info_for_png_path(path: PathBuf) -> Result<(PathBuf, PastedImageInfo), 
 ///
 /// Supports file URLs, Windows/UNC paths, simple quoted paths, and a single
 /// shell-escaped path.
+#[cfg(test)]
 pub fn normalize_pasted_path(pasted: &str) -> Option<PathBuf> {
     let pasted = pasted.trim();
     let unquoted = pasted
@@ -308,7 +318,7 @@ pub(crate) fn is_probably_wsl() -> bool {
     std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(any(test, feature = "image"), target_os = "linux"))]
 fn convert_windows_path_to_wsl(input: &str) -> Option<PathBuf> {
     if input.starts_with("\\\\") {
         return None;
@@ -335,6 +345,7 @@ fn convert_windows_path_to_wsl(input: &str) -> Option<PathBuf> {
     Some(result)
 }
 
+#[cfg(test)]
 fn normalize_windows_path(input: &str) -> Option<PathBuf> {
     let drive = input
         .chars()
@@ -364,6 +375,7 @@ fn normalize_windows_path(input: &str) -> Option<PathBuf> {
 }
 
 /// Infer an image format for a pasted path based on its extension.
+#[cfg(test)]
 pub fn pasted_image_format(path: &Path) -> EncodedImageFormat {
     match path
         .extension()

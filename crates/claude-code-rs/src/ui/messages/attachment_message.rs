@@ -140,7 +140,6 @@ pub enum AttachmentKind {
     /// A permission decision made by a hook.
     HookPermissionDecision {
         name: String,
-        hook_event: String,
         decision: String,
     },
 
@@ -380,7 +379,6 @@ pub fn classify_attachment(label: &str, detail: &str) -> AttachmentKind {
         },
         "hook_permission_decision" => AttachmentKind::HookPermissionDecision {
             name: json_field(trimmed_detail, "name").unwrap_or_else(|| "hook".to_string()),
-            hook_event: json_field(trimmed_detail, "hook_event").unwrap_or_default(),
             decision: json_field(trimmed_detail, "decision").unwrap_or_else(|| "allowed".to_string()),
         },
 
@@ -726,7 +724,6 @@ fn render_hook_permission_decision(kind: &AttachmentKind) -> String {
     match kind {
         AttachmentKind::HookPermissionDecision {
             name,
-            hook_event: _,
             decision,
         } => {
             let action = match decision {

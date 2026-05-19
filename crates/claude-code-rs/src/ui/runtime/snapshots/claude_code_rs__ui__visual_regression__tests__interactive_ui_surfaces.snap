@@ -1,35 +1,36 @@
 ---
 source: crates/claude-code-rs/src/ui/runtime/visual_regression.rs
+assertion_line: 410
 expression: render_interactive_ui_surfaces()
 ---
 ## permission/bash
             ┌ Permission Required - Run command? ──────────┐
             │Tool: Bash                                    │
             │Kind: Run command                             │
-            ││Command: cargo test -p claude-code-rs        │
-            ││Run a build check before merging.            │
+            ││Request                        cargo test ...│
+            ││shell: bash                                  │
+            ││command: cargo test -p clau...               │
+            ││risk: shell command                          │
+            ││> Allow                        allow  run ...│
+            ││Deny                         deny  do not ...│
             ││                                             │
-            ││                                             │
-            ││                                             │
-            ││                                             │
-            ││                                             │
-            │  Allow (y)   Deny (n)   Always Allow (a)     │
-            │ Arrow keys or hotkeys. Enter confirms. Esc den
+            │  Allow (y)    Deny (n)    Always exact (a)   │
+            │ Arrows/hotkeys. Enter confirms. Esc denies.  │
             └──────────────────────────────────────────────┘
 
 ## permission/file-edit
             ┌ Permission Required - Edit file? ────────────┐
             │Tool: Write                                   │
             │Kind: Edit file                               │
-            ││File: src/ui/command_palette.rs              │
-            ││Edit the command palette picker flow.        │
+            ││Request                        src/ui/comm...│
+            ││write diff: src/ui/command_...               │
+            ││new lines: 0                                 │
+            ││replaced lines: 0                            │
+            ││> Allow edit                   allow  perm...│
+            ││Deny edit                    deny  leave f...│
             ││                                             │
-            ││                                             │
-            ││                                             │
-            ││                                             │
-            ││                                             │
-            │  Allow (y)   Deny (n)   Always Allow (a)     │
-            │ Arrow keys or hotkeys. Enter confirms. Esc den
+            │  Allow (y)    Deny (n)    Always path (a)    │
+            │ Arrows/hotkeys. Enter confirms. Esc denies.  │
             └──────────────────────────────────────────────┘
 
 ## command-palette-picker

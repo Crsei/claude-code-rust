@@ -66,16 +66,19 @@ impl PathCompletionProvider {
     }
 
     /// Whether to include hidden files (dotfiles) in completions.
+    #[cfg(test)]
     pub fn set_include_hidden(&mut self, v: bool) {
         self.include_hidden = v;
     }
 
     /// Whether to include regular files (non-directories) in completions.
+    #[cfg(test)]
     pub fn set_include_files(&mut self, v: bool) {
         self.include_files = v;
     }
 
     /// Set the cache TTL for directory scans.
+    #[cfg(test)]
     pub fn set_cache_ttl(&mut self, ttl: Duration) {
         self.cache_ttl = ttl;
     }
@@ -198,10 +201,6 @@ impl PathCompletionProvider {
 }
 
 impl CompletionProvider for PathCompletionProvider {
-    fn name(&self) -> &'static str {
-        "path"
-    }
-
     fn compute(&self, ctx: &CompletionContext) -> Vec<CompletionItem> {
         let (base_dir, prefix, range) = match self.parse_partial_path(ctx.input, ctx.cursor_pos) {
             Some(result) => result,
