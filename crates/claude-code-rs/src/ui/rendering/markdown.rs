@@ -19,8 +19,48 @@ thread_local! {
         RefCell::new(LruCache::new(NonZeroUsize::new(256).unwrap()));
 }
 
-fn cache_key(text: &str) -> u64 {
-    cc_utils::hash::hash_content(text.as_bytes())
+fn cache_key(text: &str, theme: &Theme) -> u64 {
+    let mut key = String::with_capacity(text.len() + 512);
+    key.push_str(text);
+    key.push('\0');
+    key.push_str(&theme_fingerprint(theme));
+    cc_utils::hash::hash_content(key.as_bytes())
+}
+
+fn theme_fingerprint(theme: &Theme) -> String {
+    format!(
+        "{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}",
+        theme.assistant_name,
+        theme.user_name,
+        theme.system_name,
+        theme.tool_name,
+        theme.tool_result,
+        theme.error,
+        theme.warning,
+        theme.info,
+        theme.prompt,
+        theme.border,
+        theme.code,
+        theme.code_bg,
+        theme.thinking,
+        theme.dim,
+        theme.heading,
+        theme.bold,
+        theme.italic,
+        theme.link,
+        theme.syntax_keyword,
+        theme.syntax_string,
+        theme.syntax_comment,
+        theme.syntax_type,
+        theme.syntax_function,
+        theme.syntax_number,
+        theme.syntax_operator,
+        theme.syntax_builtin,
+        theme.syntax_punctuation,
+        theme.diff_add,
+        theme.diff_remove,
+        theme.diff_context,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -32,7 +72,7 @@ fn cache_key(text: &str) -> u64 {
 /// Results are LRU-cached so repeated calls with the same content skip
 /// re-parsing (e.g. when scrolling back through history).
 pub fn markdown_to_lines(text: &str, theme: &Theme) -> Vec<Line<'static>> {
-    let key = cache_key(text);
+    let key = cache_key(text, theme);
     let cached = MD_CACHE.with(|c| c.borrow_mut().get(&key).cloned());
     if let Some(lines) = cached {
         return lines;
@@ -128,12 +168,7 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
             Event::Start(Tag::CodeBlock(kind)) => {
                 flush_line(&mut current_spans, &mut lines);
                 in_code_block = true;
-                code_block_lang = match kind {
-                    CodeBlockKind::Fenced(info) => {
-                        info.split_whitespace().next().unwrap_or("").to_string()
-                    }
-                    CodeBlockKind::Indented => String::new(),
-                };
+                code_block_lang = extract_code_block_lang(&kind);
                 code_block_buf.clear();
                 style_stack.push(theme.code);
             }
@@ -150,13 +185,14 @@ fn markdown_to_lines_inner(text: &str, theme: &Theme) -> Vec<Line<'static>> {
                     // Split highlighted spans into lines
                     let mut line_spans: Vec<Span<'static>> = Vec::new();
                     for span in highlighted {
-                        let text = span.content.to_string();
-                        if text == "\n" {
-                            if !line_spans.is_empty() {
+                        if span.content.as_ref() == "\n" {
+                            if line_spans.is_empty() {
+                                lines.push(Line::default());
+                            } else {
                                 lines.push(Line::from(std::mem::take(&mut line_spans)));
                             }
                         } else {
-                            line_spans.push(Span::styled(text, span.style));
+                            line_spans.push(Span::styled(span.content.to_string(), span.style));
                         }
                     }
                     if !line_spans.is_empty() {
@@ -548,6 +584,13 @@ fn line_is_empty(line: &Line) -> bool {
     line.spans.iter().all(|s| s.content.trim().is_empty())
 }
 
+fn extract_code_block_lang(kind: &CodeBlockKind<'_>) -> String {
+    match kind {
+        CodeBlockKind::Fenced(info) => info.split_whitespace().next().unwrap_or("").to_string(),
+        CodeBlockKind::Indented => String::new(),
+    }
+}
+
 enum ListKind {
     Unordered,
     Ordered(usize),
@@ -596,5 +639,53 @@ mod tests {
         assert!(rendered.contains("H"));
         assert!(rendered.contains("one"));
         assert!(rendered.contains("two"));
+    }
+
+    #[test]
+    fn extracts_fenced_code_block_language() {
+        use pulldown_cmark::CowStr;
+
+        assert_eq!(
+            extract_code_block_lang(&CodeBlockKind::Fenced(CowStr::Borrowed("rust ignore"))),
+            "rust"
+        );
+        assert_eq!(
+            extract_code_block_lang(&CodeBlockKind::Fenced(CowStr::Borrowed(""))),
+            ""
+        );
+        assert_eq!(extract_code_block_lang(&CodeBlockKind::Indented), "");
+    }
+
+    #[test]
+    fn preserves_blank_lines_inside_code_block() {
+        let lines = plain_lines(markdown_to_lines(
+            "```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```",
+            &Theme::default(),
+        ));
+
+        assert!(lines.windows(4).any(|window| {
+            window[0].contains("fn main()")
+                && window[1].is_empty()
+                && window[2].contains("println!")
+                && window[3].contains("}")
+        }));
+    }
+
+    #[test]
+    fn cache_key_includes_theme_styles() {
+        let mut red_theme = Theme::default();
+        red_theme.code = ratatui::style::Style::default().fg(ratatui::style::Color::Rgb(255, 0, 0));
+        let mut blue_theme = Theme::default();
+        blue_theme.code =
+            ratatui::style::Style::default().fg(ratatui::style::Color::Rgb(0, 0, 255));
+
+        let red_lines = markdown_to_lines("`x`", &red_theme);
+        let blue_lines = markdown_to_lines("`x`", &blue_theme);
+
+        let red_style = red_lines[0].spans[0].style;
+        let blue_style = blue_lines[0].spans[0].style;
+        assert_eq!(red_style, red_theme.code);
+        assert_eq!(blue_style, blue_theme.code);
+        assert_ne!(red_style, blue_style);
     }
 }
