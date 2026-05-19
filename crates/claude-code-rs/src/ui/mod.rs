@@ -22,6 +22,8 @@ pub mod memory;
 #[allow(dead_code)]
 pub mod messages;
 #[allow(dead_code)]
+pub mod notifications;
+#[allow(dead_code)]
 pub mod permissions;
 #[allow(dead_code)]
 pub mod skills;
@@ -123,6 +125,9 @@ pub mod clipboard_paste;
 #[path = "input/clipboard_text.rs"]
 pub mod clipboard_text;
 #[allow(dead_code)]
+#[path = "input/completions.rs"]
+pub mod completions;
+#[allow(dead_code)]
 #[path = "input/file_search.rs"]
 pub mod file_search;
 #[path = "input/form_navigation.rs"]
@@ -137,15 +142,6 @@ pub mod keybindings;
 #[path = "input/mention_codec.rs"]
 pub mod mention_codec;
 #[allow(dead_code)]
-#[path = "input/slash_command.rs"]
-pub mod slash_command;
-#[allow(dead_code)]
-#[path = "input/vim.rs"]
-pub mod vim;
-#[allow(dead_code)]
-#[path = "input/completions.rs"]
-pub mod completions;
-#[allow(dead_code)]
 #[path = "input/path_completion.rs"]
 pub mod path_completion;
 #[allow(dead_code)]
@@ -154,6 +150,12 @@ pub mod shell_history_completion;
 #[allow(dead_code)]
 #[path = "input/slack_channel_completion.rs"]
 pub mod slack_channel_completion;
+#[allow(dead_code)]
+#[path = "input/slash_command.rs"]
+pub mod slash_command;
+#[allow(dead_code)]
+#[path = "input/vim.rs"]
+pub mod vim;
 
 // Rendering: shared text shaping, visual effects, styles, scroll calculation,
 // and message/tool presentation helpers.

@@ -1,3 +1,4 @@
+use crate::ui::notifications::in_app::{InAppNotification, NotificationPriority, NotificationTone};
 use crate::ui::status_line::{
     build_payload_from_snapshot, payload, StatusLinePayload, StatusLineRunner, StatusLineSnapshot,
 };
@@ -75,6 +76,20 @@ impl App {
             self.effort_label = effort;
             self.remote_indicator_label = remote_indicator;
             self.dirty = true;
+        }
+
+        if state.verbose {
+            self.add_notification(
+                InAppNotification::new(
+                    "verbose-mode-indicator",
+                    NotificationPriority::Low,
+                    "Verbose mode enabled",
+                )
+                .with_tone(NotificationTone::Dim)
+                .with_fold(true),
+            );
+        } else {
+            self.remove_notification("verbose-mode-indicator");
         }
     }
 

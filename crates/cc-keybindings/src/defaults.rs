@@ -75,6 +75,11 @@ pub const DEFAULTS: &[Default] = &[
     },
     Default {
         context: Context::Chat,
+        chord: "ctrl+x ctrl+a",
+        action: "agents:tree",
+    },
+    Default {
+        context: Context::Chat,
         chord: "shift+tab",
         action: "chat:cycleMode",
     },

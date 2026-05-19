@@ -52,9 +52,12 @@ use terminal_guard::TerminalGuard;
 
 use cc_engine::lifecycle::QueryEngine;
 use cc_ipc::subsystem_events::SubsystemEventBus;
+use cc_ipc_protocol::BackendMessage;
+use cc_types::agent_channel::AgentIpcEvent;
+use cc_types::agent_events::AgentCommand;
 use cc_types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
 
-use super::app::{App, AppAction};
+use super::app::{app_event::AppEvent, App, AppAction};
 
 fn lsp_event_to_subsystem(
     event: cc_lsp_service::LspEvent,
@@ -132,6 +135,32 @@ fn lsp_event_to_subsystem(
         },
     };
     SubsystemEvent::Lsp(event)
+}
+
+fn handle_agent_ipc_event(app: &mut App, event: AgentIpcEvent) {
+    let message = match event {
+        AgentIpcEvent::Agent(event) => BackendMessage::AgentEvent { event },
+        AgentIpcEvent::Team(event) => BackendMessage::TeamEvent { event },
+    };
+    app.handle_app_event(AppEvent::backend(message));
+}
+
+fn handle_agent_backend_messages(app: &mut App, messages: Vec<BackendMessage>) {
+    for message in messages {
+        match message {
+            BackendMessage::SystemInfo { text, level } => match level.as_str() {
+                "error" => add_system_error(app, &text),
+                _ => add_system_info(app, &text),
+            },
+            BackendMessage::AgentEvent { .. }
+            | BackendMessage::TeamEvent { .. }
+            | BackendMessage::NotificationSent { .. }
+            | BackendMessage::Error { .. } => {
+                app.handle_app_event(AppEvent::backend(message));
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Run the full TUI application, connecting the App UI with the QueryEngine.
@@ -240,6 +269,8 @@ pub async fn run_tui(
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
     install_tui_permission_callback(&engine, engine_tx.clone());
     install_tui_tool_progress_callback(&engine, engine_tx.clone());
+    let (agent_tx, mut agent_rx) = cc_types::agent_channel::agent_channel();
+    engine.set_bg_agent_tx(agent_tx);
     let mut pending_permission_response: Option<oneshot::Sender<String>> = None;
     let mut streaming_state = StreamingState::new();
 
@@ -389,6 +420,21 @@ pub async fn run_tui(
                                         .send(permission_choice_to_decision(choice).to_string());
                                 }
                             }
+                            AppAction::AgentThreadSelected(agent_id) => {
+                                let messages =
+                                    cc_ipc::agent_handlers::handle_agent_command(
+                                        AgentCommand::QueryAgentOutput { agent_id },
+                                    );
+                                handle_agent_backend_messages(&mut app, messages);
+                            }
+                            AppAction::KillAgentThreads(agent_ids) => {
+                                for agent_id in agent_ids {
+                                    let messages = cc_ipc::agent_handlers::handle_agent_command(
+                                        AgentCommand::AbortAgent { agent_id },
+                                    );
+                                    handle_agent_backend_messages(&mut app, messages);
+                                }
+                            }
                             AppAction::LspRecommendationResponse {
                                 request_id,
                                 plugin_name,
@@ -443,6 +489,10 @@ pub async fn run_tui(
                     }
                     _ => {}
                 }
+            }
+
+            Some(agent_event) = agent_rx.recv() => {
+                handle_agent_ipc_event(&mut app, agent_event);
             }
 
             // Engine events (query results)

@@ -105,6 +105,10 @@ impl App {
             return AppAction::None;
         }
 
+        if self.agent_tree_dialog.is_some() {
+            return self.handle_agent_tree_key(key);
+        }
+
         if self.history_search_dialog.is_some() {
             return self.handle_history_search_key(key);
         }
@@ -419,6 +423,48 @@ impl App {
         }
     }
 
+    fn handle_agent_tree_key(&mut self, key: KeyEvent) -> AppAction {
+        let Some(mut dialog) = self.agent_tree_dialog.take() else {
+            return AppAction::None;
+        };
+        let current_thread_id = self.current_agent_thread_id().to_string();
+
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Esc) | (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
+                self.agent_tree_dialog = None;
+                self.dirty = true;
+            }
+            (_, KeyCode::Up) => {
+                dialog.move_prev(&self.agent_nav, &current_thread_id);
+                self.agent_tree_dialog = Some(dialog);
+                self.dirty = true;
+            }
+            (_, KeyCode::Down) | (_, KeyCode::Tab) => {
+                dialog.move_next(&self.agent_nav, &current_thread_id);
+                self.agent_tree_dialog = Some(dialog);
+                self.dirty = true;
+            }
+            (_, KeyCode::Enter) => {
+                if let Some(selected) =
+                    dialog.selected_thread_id(&self.agent_nav, &current_thread_id)
+                {
+                    self.current_agent_thread_id = Some(selected);
+                    let selected = self.current_agent_thread_id().to_string();
+                    self.agent_tree_dialog = None;
+                    self.dirty = true;
+                    return AppAction::AgentThreadSelected(selected);
+                }
+                self.agent_tree_dialog = None;
+                self.dirty = true;
+            }
+            _ => {
+                self.agent_tree_dialog = Some(dialog);
+            }
+        }
+
+        AppAction::None
+    }
+
     pub fn handle_mouse_event(&mut self, mouse: MouseEvent) -> AppAction {
         match mouse.kind {
             MouseEventKind::ScrollUp => {
@@ -646,6 +692,13 @@ impl App {
                     self.take_prompt_submission()
                         .map_or(AppAction::None, AppAction::Submit),
                 );
+            }
+            "chat:killAgents" => {
+                return Some(AppAction::KillAgentThreads(self.active_agent_thread_ids()));
+            }
+            "agents:tree" => {
+                self.toggle_agent_tree_dialog();
+                return Some(AppAction::None);
             }
             "chat:messageActions" => {
                 self.enter_message_actions();

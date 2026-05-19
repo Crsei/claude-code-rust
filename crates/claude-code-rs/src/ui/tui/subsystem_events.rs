@@ -1,6 +1,7 @@
 use super::engine_events::now_ts;
 use crate::ui::app::App;
 use crate::ui::command_surface::CommandSurface;
+use crate::ui::notifications::in_app::{InAppNotification, NotificationPriority, NotificationTone};
 use cc_ipc_protocol::subsystem_events::{LspCommand, LspEvent, SubsystemEvent};
 use cc_ipc_protocol::BackendMessage;
 use cc_types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
@@ -57,12 +58,33 @@ fn add_system_message(app: &mut App, text: &str, level: InfoLevel) {
     app.add_message(Message::System(SystemMessage {
         uuid: uuid::Uuid::new_v4(),
         timestamp: now_ts(),
-        subtype: SystemSubtype::Informational { level },
+        subtype: SystemSubtype::Informational {
+            level: level.clone(),
+        },
         content: text.to_string(),
     }));
+    app.add_notification(system_notice_notification(text, level));
 }
 
 /// Add an error system message to the app.
 pub(super) fn add_system_error(app: &mut App, text: &str) {
     add_system_message(app, text, InfoLevel::Error);
+}
+
+fn system_notice_notification(text: &str, level: InfoLevel) -> InAppNotification {
+    let trimmed = text.trim();
+    let message = if trimmed.is_empty() {
+        "System notice"
+    } else {
+        trimmed
+    };
+    let (priority, tone, timeout_ms) = match level {
+        InfoLevel::Error => (NotificationPriority::High, NotificationTone::Error, 8000),
+        InfoLevel::Warning => (NotificationPriority::High, NotificationTone::Warning, 6500),
+        InfoLevel::Info => (NotificationPriority::Medium, NotificationTone::Info, 4500),
+    };
+    InAppNotification::new("system-notice", priority, message)
+        .with_tone(tone)
+        .with_timeout_ms(timeout_ms)
+        .with_fold(true)
 }

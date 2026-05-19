@@ -1,5 +1,5 @@
-#[allow(dead_code)]
 pub mod agent_navigation;
+mod agent_tree_dialog;
 #[allow(dead_code)]
 pub mod app_backtrack;
 #[allow(dead_code)]
@@ -23,9 +23,13 @@ mod tests;
 mod transcript_mode;
 mod voice;
 mod workspace_trust;
+use agent_navigation::{AgentNavigationState, AgentThreadEntry};
+use agent_tree_dialog::AgentTreeDialog;
 use cc_config::settings::StatusLineSettings;
+use cc_ipc_protocol::BackendMessage;
 use cc_keybindings::KeybindingRegistry;
 use cc_services::prompt_suggestion::PromptSuggestion;
+use cc_types::agent_events::{AgentEvent, TeamEvent};
 use cc_types::message::Message;
 use cc_voice::VoiceController;
 use status::SessionUsageSnapshot;
@@ -34,6 +38,9 @@ use workspace_trust::is_workspace_trusted;
 use super::command_palette::CommandPalette;
 use super::command_surface::CommandSurface;
 use super::history_search_dialog::{HistorySearchDialog, HistorySearchEntry};
+use super::notifications::in_app::{
+    InAppNotification, NotificationPriority, NotificationState, NotificationTone,
+};
 use super::permissions::{PermissionChoice, PermissionDialog};
 use super::prompt_input::PromptInput;
 use super::spinner::SpinnerState;
@@ -43,6 +50,7 @@ use super::theme::{Theme, ThemeProvider};
 use super::transcript::{TranscriptState, ViewMode};
 use super::vim::VimState;
 use super::virtual_scroll::VirtualScroll;
+use app_event::AppEvent;
 
 /// Actions produced by the app in response to user input.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +62,8 @@ pub enum AppAction {
     ScrollUp,
     ScrollDown,
     PermissionResponse(PermissionChoice),
+    AgentThreadSelected(String),
+    KillAgentThreads(Vec<String>),
     LspRecommendationResponse {
         request_id: String,
         plugin_name: String,
@@ -64,6 +74,49 @@ pub enum AppAction {
     /// spawns the editor so `App` stays free of IO.
     ExportTranscript(String),
     CopyMessage(String),
+}
+
+fn notification_from_app_event(
+    key: String,
+    message: String,
+    level: String,
+    timeout_ms: Option<u64>,
+) -> InAppNotification {
+    let (priority, tone) = match level.to_ascii_lowercase().as_str() {
+        "immediate" => (NotificationPriority::Immediate, NotificationTone::Error),
+        "error" => (NotificationPriority::High, NotificationTone::Error),
+        "warning" | "warn" => (NotificationPriority::High, NotificationTone::Warning),
+        "high" => (NotificationPriority::High, NotificationTone::Info),
+        "low" => (NotificationPriority::Low, NotificationTone::Dim),
+        "dim" | "debug" => (NotificationPriority::Low, NotificationTone::Dim),
+        "medium" | "info" | "notice" => (NotificationPriority::Medium, NotificationTone::Info),
+        _ => (NotificationPriority::Medium, NotificationTone::Info),
+    };
+    let mut notification = InAppNotification::new(key, priority, message)
+        .with_tone(tone)
+        .with_fold(true);
+    if let Some(timeout_ms) = timeout_ms {
+        notification = notification.with_timeout_ms(timeout_ms);
+    }
+    notification
+}
+
+fn notification_from_backend_message(message: &BackendMessage) -> Option<InAppNotification> {
+    match message {
+        BackendMessage::NotificationSent { title, level } => Some(notification_from_app_event(
+            "backend-notification".to_string(),
+            title.clone(),
+            level.clone(),
+            Some(4500),
+        )),
+        BackendMessage::Error { message, .. } => Some(notification_from_app_event(
+            "backend-error".to_string(),
+            message.clone(),
+            "error".to_string(),
+            Some(8000),
+        )),
+        _ => None,
+    }
 }
 
 /// Main TUI application state.
@@ -100,10 +153,15 @@ pub struct App {
     command_palette: CommandPalette,
     command_surface: Option<CommandSurface>,
     history_search_dialog: Option<HistorySearchDialog>,
+    agent_nav: AgentNavigationState,
+    agent_tree_dialog: Option<AgentTreeDialog>,
+    show_agent_footer: bool,
+    current_agent_thread_id: Option<String>,
 
     // Prompt suggestions
     /// Next-prompt suggestions shown after an assistant turn completes.
     suggestions: Option<Vec<PromptSuggestion>>,
+    notifications: NotificationState,
 
     // Optimizations
     /// Virtual scroll: per-message height cache + prefix-sum offsets.
@@ -187,12 +245,17 @@ impl App {
             workspace_trust_pending: false,
             workspace_trust_selection: 0,
             suggestions: None,
+            notifications: NotificationState::default(),
             history: Vec::new(),
             history_index: None,
             saved_input: String::new(),
             command_palette: CommandPalette::new(),
             command_surface: None,
             history_search_dialog: None,
+            agent_nav: AgentNavigationState::default(),
+            agent_tree_dialog: None,
+            show_agent_footer: true,
+            current_agent_thread_id: None,
             vscroll: VirtualScroll::new(),
             dirty: true,
             tick_counter: 0,
@@ -235,6 +298,7 @@ impl App {
             self.show_welcome = false;
         }
         self.messages.push(msg);
+        self.sync_primary_agent_thread();
         self.clamp_selected_message();
         self.vscroll
             .invalidate_from(self.messages.len().saturating_sub(1));
@@ -248,6 +312,7 @@ impl App {
         } else {
             self.messages.push(msg);
         }
+        self.sync_primary_agent_thread();
         self.clamp_selected_message();
         self.vscroll
             .invalidate_from(self.messages.len().saturating_sub(1));
@@ -257,6 +322,7 @@ impl App {
 
     pub fn remove_last_message(&mut self) {
         if self.messages.pop().is_some() {
+            self.sync_primary_agent_thread();
             self.clamp_selected_message();
             self.vscroll.invalidate_from(self.messages.len());
             self.scroll_to_bottom_deferred();
@@ -286,6 +352,9 @@ impl App {
         self.selected_message = None;
         self.selected_message_expanded = false;
         self.scroll_offset = 0;
+        self.agent_nav.clear();
+        self.current_agent_thread_id = None;
+        self.sync_primary_agent_thread();
         self.vscroll.invalidate_all();
         self.dirty = true;
     }
@@ -342,6 +411,9 @@ impl App {
             self.spinner_state.tick();
             self.dirty = true;
         }
+        if self.notifications.process_queue() {
+            self.dirty = true;
+        }
     }
 
     pub fn set_model_name(&mut self, name: String) {
@@ -355,7 +427,12 @@ impl App {
     }
 
     pub fn set_session_id(&mut self, id: String) {
+        let previous_session_id = self.session_id.clone();
         self.session_id = id;
+        if !previous_session_id.is_empty() && previous_session_id != self.session_id {
+            self.agent_nav.remove(&previous_session_id);
+        }
+        self.sync_primary_agent_thread();
         self.dirty = true;
     }
 
@@ -463,6 +540,251 @@ impl App {
         self.dirty = true;
     }
 
+    pub fn add_notification(&mut self, notification: InAppNotification) {
+        if self.notifications.add_notification(notification) {
+            self.dirty = true;
+        }
+    }
+
+    pub fn handle_app_event(&mut self, event: AppEvent) {
+        match event {
+            AppEvent::Notification {
+                key,
+                message,
+                level,
+                timeout_ms,
+            } => {
+                self.add_notification(notification_from_app_event(key, message, level, timeout_ms));
+            }
+            AppEvent::LocalNotice { message } => {
+                self.add_notification(
+                    InAppNotification::new("local-notice", NotificationPriority::Medium, message)
+                        .with_timeout_ms(4500)
+                        .with_fold(true),
+                );
+            }
+            AppEvent::Tick => self.tick(),
+            AppEvent::Shutdown => {
+                self.should_quit = true;
+                self.dirty = true;
+            }
+            AppEvent::Backend { message } => {
+                self.update_agent_navigation_from_backend(&message);
+                if let Some(notification) = notification_from_backend_message(&message) {
+                    self.add_notification(notification);
+                }
+            }
+        }
+    }
+
+    pub(super) fn agent_footer_visible(&self) -> bool {
+        self.show_agent_footer
+            && self.agent_nav.active_non_primary_count() > 0
+            && self
+                .agent_nav
+                .entry(self.current_agent_thread_id())
+                .is_some_and(|entry| !entry.is_primary && !entry.is_closed)
+    }
+
+    pub(super) fn active_agent_thread_ids(&self) -> Vec<String> {
+        self.agent_nav.active_non_primary_thread_ids()
+    }
+
+    pub(super) fn current_agent_thread_id(&self) -> &str {
+        self.current_agent_thread_id
+            .as_deref()
+            .filter(|id| self.agent_nav.contains_thread(id))
+            .or_else(|| (!self.session_id.is_empty()).then_some(self.session_id.as_str()))
+            .or_else(|| {
+                self.agent_nav
+                    .ordered_threads()
+                    .first()
+                    .map(|entry| entry.thread_id.as_str())
+            })
+            .unwrap_or("")
+    }
+
+    pub(super) fn current_agent_label(&self) -> Option<String> {
+        self.agent_nav
+            .active_agent_label(self.current_agent_thread_id())
+            .or_else(|| self.agent_footer_visible().then_some("Primary".to_string()))
+    }
+
+    pub(super) fn toggle_agent_tree_dialog(&mut self) {
+        if self.agent_tree_dialog.is_some() {
+            self.agent_tree_dialog = None;
+        } else if self.agent_nav.thread_count() > 1 {
+            self.agent_tree_dialog = Some(AgentTreeDialog::from_state(
+                &self.agent_nav,
+                self.current_agent_thread_id(),
+            ));
+        }
+        self.dirty = true;
+    }
+
+    fn sync_primary_agent_thread(&mut self) {
+        if self.session_id.is_empty() {
+            return;
+        }
+        self.agent_nav.upsert(AgentThreadEntry {
+            thread_id: self.session_id.clone(),
+            agent_nickname: Some("Primary".to_string()),
+            agent_role: Some("main".to_string()),
+            is_primary: true,
+            is_closed: false,
+        });
+
+        if self
+            .current_agent_thread_id
+            .as_deref()
+            .is_none_or(|id| !self.agent_nav.contains_thread(id))
+        {
+            self.current_agent_thread_id = Some(self.session_id.clone());
+        }
+    }
+
+    fn update_agent_navigation_from_backend(&mut self, message: &BackendMessage) {
+        match message {
+            BackendMessage::AgentEvent { event } => self.apply_agent_event(event),
+            BackendMessage::TeamEvent { event } => self.apply_team_event(event),
+            _ => {}
+        }
+    }
+
+    fn apply_agent_event(&mut self, event: &AgentEvent) {
+        self.sync_primary_agent_thread();
+        match event {
+            AgentEvent::Spawned {
+                agent_id,
+                description,
+                agent_type,
+                ..
+            } => {
+                self.agent_nav.upsert(AgentThreadEntry {
+                    thread_id: agent_id.clone(),
+                    agent_nickname: short_agent_label(description, agent_id),
+                    agent_role: agent_type.clone(),
+                    is_primary: false,
+                    is_closed: false,
+                });
+                self.current_agent_thread_id = Some(agent_id.clone());
+            }
+            AgentEvent::Completed { agent_id, .. }
+            | AgentEvent::Error { agent_id, .. }
+            | AgentEvent::Aborted { agent_id } => {
+                self.agent_nav.mark_closed(agent_id);
+                self.normalize_current_agent_thread();
+            }
+            AgentEvent::TreeSnapshot { roots } => {
+                let current = self.current_agent_thread_id().to_string();
+                self.agent_nav.clear();
+                self.sync_primary_agent_thread();
+                for node in roots {
+                    self.collect_agent_tree_node(node);
+                }
+                if self.agent_nav.contains_thread(&current) {
+                    self.current_agent_thread_id = Some(current);
+                }
+            }
+            AgentEvent::StreamDelta { agent_id, .. }
+            | AgentEvent::ThinkingDelta { agent_id, .. }
+            | AgentEvent::ToolUse { agent_id, .. }
+            | AgentEvent::ToolResult { agent_id, .. } => {
+                if self.agent_nav.contains_thread(agent_id) {
+                    self.current_agent_thread_id = Some(agent_id.clone());
+                }
+            }
+        }
+        self.dirty = true;
+    }
+
+    fn apply_team_event(&mut self, event: &TeamEvent) {
+        self.sync_primary_agent_thread();
+        match event {
+            TeamEvent::MemberJoined {
+                agent_id,
+                agent_name,
+                role,
+                ..
+            } => {
+                self.agent_nav.upsert(AgentThreadEntry {
+                    thread_id: agent_id.clone(),
+                    agent_nickname: Some(agent_name.clone()),
+                    agent_role: role.clone(),
+                    is_primary: false,
+                    is_closed: false,
+                });
+            }
+            TeamEvent::MemberLeft { agent_id, .. } => {
+                self.agent_nav.mark_closed(agent_id);
+                self.normalize_current_agent_thread();
+            }
+            TeamEvent::StatusSnapshot { members, .. } => {
+                for member in members {
+                    self.agent_nav.upsert(AgentThreadEntry {
+                        thread_id: member.agent_id.clone(),
+                        agent_nickname: Some(member.agent_name.clone()),
+                        agent_role: member.role.clone(),
+                        is_primary: false,
+                        is_closed: !member.is_active,
+                    });
+                }
+            }
+            TeamEvent::MessageRouted { from, to, .. } => {
+                if self.agent_nav.contains_thread(from) {
+                    self.current_agent_thread_id = Some(from.clone());
+                } else if self.agent_nav.contains_thread(to) {
+                    self.current_agent_thread_id = Some(to.clone());
+                }
+            }
+        }
+        self.dirty = true;
+    }
+
+    fn normalize_current_agent_thread(&mut self) {
+        let current_is_active = self
+            .current_agent_thread_id
+            .as_deref()
+            .and_then(|id| self.agent_nav.entry(id))
+            .is_some_and(|entry| !entry.is_closed);
+        if current_is_active {
+            return;
+        }
+        if !self.session_id.is_empty() && self.agent_nav.contains_thread(&self.session_id) {
+            self.current_agent_thread_id = Some(self.session_id.clone());
+            return;
+        }
+        self.current_agent_thread_id = self
+            .agent_nav
+            .ordered_threads()
+            .into_iter()
+            .find(|entry| !entry.is_closed)
+            .map(|entry| entry.thread_id.clone());
+    }
+
+    fn collect_agent_tree_node(&mut self, node: &cc_types::agent_types::AgentNode) {
+        self.agent_nav.upsert(AgentThreadEntry {
+            thread_id: node.agent_id.clone(),
+            agent_nickname: short_agent_label(&node.description, &node.agent_id),
+            agent_role: node.agent_type.clone(),
+            is_primary: false,
+            is_closed: !agent_state_is_active(&node.state),
+        });
+        for child in &node.children {
+            self.collect_agent_tree_node(child);
+        }
+    }
+
+    pub fn remove_notification(&mut self, key: &str) {
+        if self.notifications.remove_notification(key) {
+            self.dirty = true;
+        }
+    }
+
+    pub fn current_notification(&self) -> Option<&InAppNotification> {
+        self.notifications.current()
+    }
+
     pub fn clear_suggestions(&mut self) {
         if self.suggestions.is_some() {
             self.suggestions = None;
@@ -536,4 +858,27 @@ fn current_unix_secs() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or_default()
+}
+
+fn short_agent_label(description: &str, fallback: &str) -> Option<String> {
+    let trimmed = description.trim();
+    if trimmed.is_empty() {
+        return Some(fallback.to_string());
+    }
+    let mut words = trimmed.split_whitespace();
+    let first = words.next().unwrap_or_default();
+    let second = words.next().unwrap_or_default();
+    let label = if second.is_empty() {
+        first.to_string()
+    } else {
+        format!("{first} {second}")
+    };
+    Some(label)
+}
+
+fn agent_state_is_active(state: &str) -> bool {
+    matches!(
+        state.to_ascii_lowercase().as_str(),
+        "running" | "active" | "spawned"
+    )
 }

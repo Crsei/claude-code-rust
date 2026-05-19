@@ -1,7 +1,12 @@
+use super::app_event::AppEvent;
 use super::workspace_trust::trusted_workspaces_path;
 use super::*;
+use crate::ui::notifications::in_app::{InAppNotification, NotificationPriority, NotificationTone};
 use cc_engine::types::app_state::AppState;
 use cc_engine::types::tool::PermissionMode;
+use cc_ipc_protocol::BackendMessage;
+use cc_keybindings::action::Action;
+use cc_types::agent_events::AgentEvent;
 use cc_types::message::{ContentBlock, MessageContent, UserMessage};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::backend::TestBackend;
@@ -76,6 +81,169 @@ fn render_places_prompt_after_short_chat_content() {
         !content[22].trim_start().starts_with(">"),
         "prompt should not be pinned to the bottom row"
     );
+}
+
+#[test]
+fn in_app_notification_renders_in_footer_region() {
+    let mut app = App::new();
+    app.add_notification(
+        InAppNotification::new(
+            "api-key-warning",
+            NotificationPriority::High,
+            "API key missing",
+        )
+        .with_tone(NotificationTone::Warning),
+    );
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+
+    let content = buffer_to_lines(terminal.backend().buffer(), 80, 24).join("\n");
+    assert!(content.contains("API key missing"));
+}
+
+#[test]
+fn immediate_notification_overrides_spinner_row() {
+    let mut app = App::new();
+    app.set_streaming(true);
+    app.set_spinner_message("Thinking...".to_string());
+    app.add_notification(
+        InAppNotification::new(
+            "rate-limit",
+            NotificationPriority::Immediate,
+            "Rate limit reached",
+        )
+        .with_tone(NotificationTone::Error),
+    );
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+
+    let content = buffer_to_lines(terminal.backend().buffer(), 80, 24).join("\n");
+    assert!(content.contains("Rate limit reached"));
+    assert!(!content.contains("Thinking..."));
+}
+
+#[test]
+fn app_event_notification_is_routed_to_in_app_notification() {
+    let mut app = App::new();
+
+    app.handle_app_event(AppEvent::Notification {
+        key: "rate-limit".to_string(),
+        message: "Rate limit reached".to_string(),
+        level: "error".to_string(),
+        timeout_ms: Some(5000),
+    });
+
+    let notification = app.current_notification().expect("notification");
+    assert_eq!(notification.key, "rate-limit");
+    assert_eq!(notification.text, "Rate limit reached");
+    assert_eq!(notification.priority, NotificationPriority::High);
+    assert_eq!(notification.tone, NotificationTone::Error);
+}
+
+#[test]
+fn backend_notification_event_is_routed_to_in_app_notification() {
+    let mut app = App::new();
+
+    app.handle_app_event(AppEvent::Backend {
+        message: Box::new(BackendMessage::NotificationSent {
+            title: "Background task finished".to_string(),
+            level: "info".to_string(),
+        }),
+    });
+
+    let notification = app.current_notification().expect("notification");
+    assert_eq!(notification.key, "backend-notification");
+    assert_eq!(notification.text, "Background task finished");
+    assert_eq!(notification.priority, NotificationPriority::Medium);
+}
+
+#[test]
+fn high_priority_notification_preempts_verbose_indicator() {
+    let mut app = App::new();
+    let mut state = AppState::default();
+    state.verbose = true;
+    app.sync_status_context_from_state(&state);
+
+    app.handle_app_event(AppEvent::Notification {
+        key: "system-error".to_string(),
+        message: "Subsystem failed".to_string(),
+        level: "error".to_string(),
+        timeout_ms: Some(5000),
+    });
+
+    let notification = app.current_notification().expect("notification");
+    assert_eq!(notification.key, "system-error");
+    assert_eq!(notification.text, "Subsystem failed");
+}
+
+#[test]
+fn agent_event_updates_navigation_and_footer_rendering() {
+    let mut app = App::new();
+    app.set_session_id("session-main".to_string());
+    app.handle_app_event(AppEvent::Backend {
+        message: Box::new(BackendMessage::AgentEvent {
+            event: spawned_agent_event("worker-1", "Builder worker", Some("builder")),
+        }),
+    });
+
+    assert_eq!(app.agent_nav.thread_count(), 2);
+    assert!(app.agent_footer_visible());
+    assert_eq!(app.current_agent_thread_id(), "worker-1");
+
+    let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+    let content = buffer_to_lines(terminal.backend().buffer(), 120, 24).join("\n");
+    assert!(content.contains("Ctrl+X Ctrl+A open tree"));
+    assert!(content.contains("agent:Builder worker"));
+}
+
+#[test]
+fn agent_tree_dialog_navigation_select_and_close() {
+    let mut app = App::new();
+    app.set_session_id("session-main".to_string());
+    app.handle_app_event(AppEvent::Backend {
+        message: Box::new(BackendMessage::AgentEvent {
+            event: spawned_agent_event("worker-1", "Builder one", Some("builder")),
+        }),
+    });
+    app.handle_app_event(AppEvent::Backend {
+        message: Box::new(BackendMessage::AgentEvent {
+            event: spawned_agent_event("worker-2", "Builder two", Some("reviewer")),
+        }),
+    });
+
+    assert_eq!(
+        app.dispatch_bound_action(&Action::new_static("chat:killAgents")),
+        Some(AppAction::KillAgentThreads(vec![
+            "worker-1".to_string(),
+            "worker-2".to_string()
+        ]))
+    );
+    assert!(app.agent_tree_dialog.is_none());
+
+    assert_eq!(
+        app.dispatch_bound_action(&Action::new_static("agents:tree")),
+        Some(AppAction::None)
+    );
+    assert!(app.agent_tree_dialog.is_some());
+
+    assert_eq!(send_key(&mut app, KeyCode::Up), AppAction::None);
+    assert_eq!(
+        send_key(&mut app, KeyCode::Enter),
+        AppAction::AgentThreadSelected("worker-1".to_string())
+    );
+    assert_eq!(app.current_agent_thread_id(), "worker-1");
+    assert!(app.agent_tree_dialog.is_none());
+
+    assert_eq!(
+        app.dispatch_bound_action(&Action::new_static("agents:tree")),
+        Some(AppAction::None)
+    );
+    assert!(app.agent_tree_dialog.is_some());
+    assert_eq!(send_key(&mut app, KeyCode::Esc), AppAction::None);
+    assert!(app.agent_tree_dialog.is_none());
 }
 
 #[test]
@@ -519,6 +687,19 @@ fn lsp_recommendation_payload(
         plugin_description,
         file_extension: ".rs".to_string(),
         language_id: Some("rust".to_string()),
+    }
+}
+
+fn spawned_agent_event(agent_id: &str, description: &str, agent_type: Option<&str>) -> AgentEvent {
+    AgentEvent::Spawned {
+        agent_id: agent_id.to_string(),
+        parent_agent_id: None,
+        description: description.to_string(),
+        agent_type: agent_type.map(ToString::to_string),
+        model: None,
+        is_background: true,
+        depth: 1,
+        chain_id: "chain-main".to_string(),
     }
 }
 

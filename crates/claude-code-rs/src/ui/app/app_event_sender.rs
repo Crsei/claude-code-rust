@@ -26,6 +26,21 @@ impl AppEventSender {
             message: message.into(),
         })
     }
+
+    pub fn notification(
+        &self,
+        key: impl Into<String>,
+        message: impl Into<String>,
+        level: impl Into<String>,
+        timeout_ms: Option<u64>,
+    ) -> Result<(), mpsc::error::SendError<AppEvent>> {
+        self.send(AppEvent::Notification {
+            key: key.into(),
+            message: message.into(),
+            level: level.into(),
+            timeout_ms,
+        })
+    }
 }
 
 pub fn channel() -> (AppEventSender, mpsc::UnboundedReceiver<AppEvent>) {

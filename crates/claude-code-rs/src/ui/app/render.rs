@@ -6,11 +6,13 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
 use super::App;
+use crate::ui::agents::agents_menu::AgentsMenuState;
 use crate::ui::command_palette::CommandPalette;
 use crate::ui::command_surface::CommandSurface;
 use crate::ui::history_search_dialog::HistorySearchDialog;
 use crate::ui::keyboard_shortcut::{render_shortcut_hints, ShortcutHint};
 use crate::ui::messages::render_messages;
+use crate::ui::notifications::in_app::{NotificationPriority, NotificationTone};
 use crate::ui::prompt_input::PromptInputRenderContext;
 use crate::ui::theme::Theme;
 use crate::ui::transcript::{self, TranscriptInputMode, ViewMode};
@@ -57,18 +59,29 @@ impl App {
                 Vec::new()
             };
 
-        let spinner_height = if self.is_streaming { 1u16 } else { 0 };
-        let suggestion_height = if !self.is_streaming && self.suggestions.is_some() {
+        let current_notification = self.current_notification();
+        let immediate_notification = current_notification
+            .is_some_and(|notification| notification.priority == NotificationPriority::Immediate);
+        let spinner_height = if self.is_streaming && !immediate_notification {
             1u16
         } else {
             0
         };
+        let suggestion_height =
+            if !self.is_streaming && self.suggestions.is_some() && !immediate_notification {
+                1u16
+            } else {
+                0
+            };
         let command_palette_height = self.command_palette.preferred_height();
         let completion_popup_height = self.completion_popup_height();
         let cwd_path = std::path::Path::new(&self.cwd);
         let command_arg_help_height =
             CommandPalette::argument_help_height(&self.prompt.input, cwd_path);
-        let paste_notice_height = u16::from(self.prompt.large_paste_notice().is_some());
+        let paste_notice_height =
+            u16::from(self.prompt.large_paste_notice().is_some() && !immediate_notification);
+        let notification_height = u16::from(current_notification.is_some());
+        let agent_footer_height = u16::from(self.agent_footer_visible() && !immediate_notification);
         let input_height = 1u16;
         let status_height = if custom_lines.is_empty() {
             1u16
@@ -82,6 +95,8 @@ impl App {
             + command_arg_help_height
             + paste_notice_height
             + input_height
+            + notification_height
+            + agent_footer_height
             + status_height;
         let max_content_height = size.height.saturating_sub(bottom_height);
         let content_height = if self.show_welcome {
@@ -154,16 +169,18 @@ impl App {
             );
         }
 
-        // Bottom area: spinner + suggestions + paste_notice + input + completion_popup + palette + arg_help + status
-        let has_suggestions = !self.is_streaming && self.suggestions.is_some();
+        // Bottom area: spinner + suggestions + paste_notice + input + completion_popup + palette + arg_help + notification + agent_footer + status
+        let has_suggestions = suggestion_height > 0;
         let bottom_chunks = Layout::vertical([
-            Constraint::Length(if self.is_streaming { 1 } else { 0 }),
-            Constraint::Length(if has_suggestions { 1 } else { 0 }),
+            Constraint::Length(spinner_height),
+            Constraint::Length(suggestion_height),
             Constraint::Length(paste_notice_height),
             Constraint::Length(1),
             Constraint::Length(completion_popup_height),
             Constraint::Length(command_palette_height),
             Constraint::Length(command_arg_help_height),
+            Constraint::Length(notification_height),
+            Constraint::Length(agent_footer_height),
             Constraint::Length(status_height),
         ])
         .split(bottom_area);
@@ -211,7 +228,15 @@ impl App {
             &self.theme,
         );
 
-        self.render_status_bar(bottom_chunks[7], frame.buffer_mut(), &custom_lines);
+        if notification_height > 0 {
+            self.render_notification(bottom_chunks[7], frame.buffer_mut());
+        }
+
+        if agent_footer_height > 0 {
+            self.render_agent_footer(bottom_chunks[8], frame.buffer_mut());
+        }
+
+        self.render_status_bar(bottom_chunks[9], frame.buffer_mut(), &custom_lines);
 
         if let Some(ref surface) = self.command_surface {
             render_command_surface_overlay(surface, size, frame.buffer_mut(), &self.theme);
@@ -219,6 +244,18 @@ impl App {
 
         if let Some(ref dialog) = self.history_search_dialog {
             render_history_search_overlay(dialog, size, frame.buffer_mut(), &self.theme);
+        }
+
+        let current_thread_id = self.current_agent_thread_id().to_string();
+        if let Some(ref mut dialog) = self.agent_tree_dialog {
+            render_agent_tree_overlay(
+                dialog,
+                &self.agent_nav,
+                &current_thread_id,
+                size,
+                frame.buffer_mut(),
+                &self.theme,
+            );
         }
 
         if let Some(ref dialog) = self.permission_dialog {
@@ -257,6 +294,43 @@ impl App {
             ]);
             buf.set_line(area.x, area.y, &line, area.width);
         }
+    }
+
+    fn render_notification(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        if area.height == 0 {
+            return;
+        }
+        let Some(notification) = self.current_notification() else {
+            return;
+        };
+        let line = if let Some(spans) = notification.rendered.as_ref() {
+            Line::from(spans.clone())
+        } else {
+            Line::from(vec![
+                Span::styled(" notice ", self.theme.info),
+                Span::styled(
+                    notification.text.as_str(),
+                    notification_style(notification.tone, &self.theme),
+                ),
+            ])
+        };
+        buf.set_line(area.x, area.y, &line, area.width);
+    }
+
+    fn render_agent_footer(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        if area.height == 0 || !self.agent_footer_visible() {
+            return;
+        }
+
+        let active_label = self
+            .current_agent_label()
+            .unwrap_or_else(|| "Primary".to_string());
+        let line = Line::from(vec![
+            Span::styled(" agents ", self.theme.info),
+            Span::styled(format!("{active_label} | "), self.theme.dim),
+            Span::styled("Ctrl+X Ctrl+A open tree", self.theme.dim),
+        ]);
+        buf.set_line(area.x, area.y, &line, area.width);
     }
 
     fn prompt_placeholder(&self) -> &'static str {
@@ -328,6 +402,9 @@ impl App {
                 .unwrap_or(&self.model_name);
             let short_model = short_model.split('-').take(2).collect::<Vec<_>>().join("-");
             parts.push(short_model);
+        }
+        if let Some(active_agent) = self.current_agent_label() {
+            parts.push(format!("agent:{active_agent}"));
         }
         parts.push(format!("{} msgs", msg_count));
         if self.session_cost_usd > 0.0 {
@@ -541,6 +618,15 @@ impl App {
         buf.set_line(area.x, area.y, &line, area.width);
     }
 }
+
+fn notification_style(tone: NotificationTone, theme: &Theme) -> Style {
+    match tone {
+        NotificationTone::Info => theme.info,
+        NotificationTone::Warning => theme.warning,
+        NotificationTone::Error => theme.error,
+        NotificationTone::Dim => theme.dim,
+    }
+}
 fn render_workspace_trust_prompt(
     area: Rect,
     buf: &mut ratatui::buffer::Buffer,
@@ -688,6 +774,52 @@ fn render_history_search_overlay(
         .render(inner, buf);
 }
 
+fn render_agent_tree_overlay(
+    dialog: &mut super::agent_tree_dialog::AgentTreeDialog,
+    state: &super::agent_navigation::AgentNavigationState,
+    current_thread_id: &str,
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+    theme: &Theme,
+) {
+    if area.width < 24 || area.height < 8 {
+        return;
+    }
+
+    let width = area.width.saturating_sub(6).clamp(24, 100);
+    let height = area.height.saturating_sub(6).clamp(8, 20);
+    let overlay = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+
+    Clear.render(overlay, buf);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Agent Threads ")
+        .border_style(theme.dim);
+    let inner = block.inner(overlay);
+    block.render(overlay, buf);
+
+    let mut lines = dialog.render_lines(state, current_thread_id, theme);
+    let total = state.thread_count();
+    let menu =
+        AgentsMenuState::default_with_counts(total, 1.min(total), 0, total.saturating_sub(1))
+            .render();
+    if let Some(summary_row) = menu.lines().nth(1) {
+        lines.insert(
+            1,
+            Line::from(Span::styled(format!("Menu: {summary_row}"), theme.dim)),
+        );
+    }
+    Paragraph::new(lines)
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: false })
+        .render(inner, buf);
+}
+
 // ---------------------------------------------------------------------------
 // Completion popup rendering helpers
 // ---------------------------------------------------------------------------
@@ -728,11 +860,7 @@ impl App {
     }
 
     /// Render the active completion popup.
-    fn render_completion_popup(
-        &self,
-        area: Rect,
-        buf: &mut ratatui::buffer::Buffer,
-    ) {
+    fn render_completion_popup(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
         if area.height < 3 || area.width < 20 {
             return;
         }
@@ -752,15 +880,13 @@ impl App {
         let mut lines: Vec<Line<'_>> = Vec::new();
 
         // Header line
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!(
-                    " {} items | Tab:accept | Shift+Tab:prev | Enter:fill ",
-                    state.items.len()
-                ),
-                self.theme.dim,
+        lines.push(Line::from(vec![Span::styled(
+            format!(
+                " {} items | Tab:accept | Shift+Tab:prev | Enter:fill ",
+                state.items.len()
             ),
-        ]));
+            self.theme.dim,
+        )]));
 
         // Determine visible window
         let max_visible = (inner.height as usize).saturating_sub(2).max(1);
@@ -801,10 +927,7 @@ impl App {
                         Style::default().fg(Color::DarkGray)
                     },
                 ),
-                Span::styled(
-                    format!("{:<30}", truncate(&item.label, 28)),
-                    style,
-                ),
+                Span::styled(format!("{:<30}", truncate(&item.label, 28)), style),
                 Span::styled(format!(" {} ", source), self.theme.dim),
                 if !detail.is_empty() {
                     Span::styled(detail, self.theme.dim)

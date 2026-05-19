@@ -67,6 +67,34 @@ impl AgentNavigationState {
             .collect()
     }
 
+    pub fn thread_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn contains_thread(&self, thread_id: &str) -> bool {
+        self.entries.contains_key(thread_id)
+    }
+
+    pub fn entry(&self, thread_id: &str) -> Option<&AgentThreadEntry> {
+        self.entries.get(thread_id)
+    }
+
+    pub fn active_non_primary_count(&self) -> usize {
+        self.entries
+            .values()
+            .filter(|entry| !entry.is_primary && !entry.is_closed)
+            .count()
+    }
+
+    pub fn active_non_primary_thread_ids(&self) -> Vec<String> {
+        self.order
+            .iter()
+            .filter_map(|thread_id| self.entries.get(thread_id))
+            .filter(|entry| !entry.is_primary && !entry.is_closed)
+            .map(|entry| entry.thread_id.clone())
+            .collect()
+    }
+
     pub fn adjacent_thread_id(
         &self,
         current_thread_id: &str,

@@ -1,12 +1,19 @@
 mod bel;
+pub mod in_app;
 mod osc9;
 
 use std::env;
 use std::io;
 
 use bel::BelBackend;
-use codex_config::types::NotificationMethod;
 use osc9::Osc9Backend;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationMethod {
+    Auto,
+    Osc9,
+    Bel,
+}
 
 #[derive(Debug)]
 pub enum DesktopNotificationBackend {
@@ -74,7 +81,7 @@ fn supports_osc9() -> bool {
 #[cfg(test)]
 mod tests {
     use super::detect_backend;
-    use codex_config::types::NotificationMethod;
+    use super::NotificationMethod;
     use serial_test::serial;
     use std::ffi::OsString;
 
