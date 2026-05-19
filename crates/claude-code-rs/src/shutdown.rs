@@ -109,6 +109,15 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
         }
     }
 
+    let skill_usage_path = cc_config::paths::skill_usage_path();
+    if let Err(e) = cc_skills::save_skill_usage(&skill_usage_path) {
+        warn!(
+            error = %e,
+            path = %skill_usage_path.display(),
+            "failed to persist skill usage during shutdown"
+        );
+    }
+
     // Step 5: Reset terminal state
     graceful_shutdown_sync();
 

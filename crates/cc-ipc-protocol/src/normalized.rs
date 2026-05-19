@@ -2,7 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{BackendMessage, ConversationMessage, ToolResultContentInfo};
+use crate::protocol::{
+    BackendMessage, CompletionItemDTO, ConversationMessage, InstallProgress, LspRecommendationDTO,
+    ToolResultContentInfo,
+};
 use crate::subsystem_types::SubsystemStatusSnapshot;
 
 /// Backward-compatible alias for the legacy backend wire enum.
@@ -130,6 +133,24 @@ pub enum FlowControlEvent {
     },
     SubsystemStatus {
         status: SubsystemStatusSnapshot,
+    },
+    Completions {
+        items: Vec<CompletionItemDTO>,
+        request_id: String,
+    },
+    PluginInstallProgress {
+        plugin_id: String,
+        status: InstallProgress,
+    },
+    TelemetryStatus {
+        enabled: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        #[serde(default)]
+        errors: Vec<String>,
+    },
+    LspRecommendations {
+        recommendations: Vec<LspRecommendationDTO>,
     },
 }
 
@@ -338,6 +359,32 @@ pub fn legacy_backend_to_payload(message: &BackendMessage) -> LegacyBackendPaylo
                 status: status.clone(),
             })
         }
+        BackendMessage::Completions { items, request_id } => {
+            LegacyBackendPayload::FlowControl(FlowControlEvent::Completions {
+                items: items.clone(),
+                request_id: request_id.clone(),
+            })
+        }
+        BackendMessage::PluginInstallProgress { plugin_id, status } => {
+            LegacyBackendPayload::FlowControl(FlowControlEvent::PluginInstallProgress {
+                plugin_id: plugin_id.clone(),
+                status: status.clone(),
+            })
+        }
+        BackendMessage::TelemetryStatus {
+            enabled,
+            session_id,
+            errors,
+        } => LegacyBackendPayload::FlowControl(FlowControlEvent::TelemetryStatus {
+            enabled: *enabled,
+            session_id: session_id.clone(),
+            errors: errors.clone(),
+        }),
+        BackendMessage::LspRecommendations { recommendations } => {
+            LegacyBackendPayload::FlowControl(FlowControlEvent::LspRecommendations {
+                recommendations: recommendations.clone(),
+            })
+        }
         BackendMessage::Error {
             message,
             recoverable,
@@ -413,6 +460,70 @@ mod tests {
                 tool,
                 ..
             }) if tool_use_id == "tool-1" && tool == "Bash"
+        ));
+    }
+
+    #[test]
+    fn phase2_flow_control_messages_map_to_normalized_payload() {
+        let completions = legacy_backend_to_payload(&BackendMessage::Completions {
+            request_id: "req-1".to_string(),
+            items: vec![CompletionItemDTO {
+                label: "/help".to_string(),
+                insert_text: "/help ".to_string(),
+                kind: "command".to_string(),
+                detail: Some("Show help".to_string()),
+            }],
+        });
+        assert!(matches!(
+            completions,
+            LegacyBackendPayload::FlowControl(FlowControlEvent::Completions {
+                request_id,
+                items,
+            }) if request_id == "req-1" && items.len() == 1
+        ));
+
+        let telemetry = legacy_backend_to_payload(&BackendMessage::TelemetryStatus {
+            enabled: true,
+            session_id: Some("session-1".to_string()),
+            errors: Vec::new(),
+        });
+        assert!(matches!(
+            telemetry,
+            LegacyBackendPayload::FlowControl(FlowControlEvent::TelemetryStatus {
+                enabled: true,
+                session_id: Some(session_id),
+                ..
+            }) if session_id == "session-1"
+        ));
+
+        let install = legacy_backend_to_payload(&BackendMessage::PluginInstallProgress {
+            plugin_id: "rust-lsp".to_string(),
+            status: InstallProgress::Installed,
+        });
+        assert!(matches!(
+            install,
+            LegacyBackendPayload::FlowControl(FlowControlEvent::PluginInstallProgress {
+                plugin_id,
+                status: InstallProgress::Installed,
+            }) if plugin_id == "rust-lsp"
+        ));
+
+        let lsp = legacy_backend_to_payload(&BackendMessage::LspRecommendations {
+            recommendations: vec![LspRecommendationDTO {
+                plugin_id: "rust-lsp".to_string(),
+                plugin_name: "Rust LSP".to_string(),
+                description: None,
+                languages: vec!["rust".to_string()],
+                confidence: 0.9,
+                is_installed: false,
+                is_dismissed: false,
+            }],
+        });
+        assert!(matches!(
+            lsp,
+            LegacyBackendPayload::FlowControl(FlowControlEvent::LspRecommendations {
+                recommendations,
+            }) if recommendations.len() == 1
         ));
     }
 

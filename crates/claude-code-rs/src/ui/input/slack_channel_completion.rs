@@ -210,7 +210,7 @@ impl Default for SlackChannelCompletionProvider {
 mod tests {
     use super::*;
 
-    fn make_ctx(input: &str, cursor_pos: usize) -> CompletionContext {
+    fn make_ctx(input: &str, cursor_pos: usize) -> CompletionContext<'_> {
         CompletionContext::new(input, cursor_pos, &[])
     }
 

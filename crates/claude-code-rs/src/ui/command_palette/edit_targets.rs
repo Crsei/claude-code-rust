@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use super::CommandItem;
 
 #[derive(Debug, Clone)]
-pub(super) struct EditTarget {
+pub(crate) struct EditTarget {
     pub(super) label: String,
     pub(super) display: String,
     pub(super) insert: String,

@@ -297,20 +297,19 @@ fn save_lsp_recommendation_settings(settings: &LspRecommendationSettings) {
 /// Apply a user decision from an [`LspEvent::RecommendationRequest`] prompt.
 ///
 /// Returns the updated settings snapshot plus an optional info-level
-/// message the frontend can surface in its system log. `yes` / `no` do
-/// not mutate persistent state — the install itself is carried out
-/// elsewhere (or postponed to the next session); only `never` and
-/// `disable` are sticky.
+/// message the frontend can surface in its system log. `yes` attempts the
+/// plugin install immediately; `no` is transient, while `never` and `disable`
+/// are sticky.
 fn apply_recommendation_decision(
     plugin_name: &str,
     decision: &str,
 ) -> (LspRecommendationSettings, Option<String>) {
     let mut settings = load_lsp_recommendation_settings();
     let info = match decision {
-        "yes" => Some(format!(
-            "Install of LSP plugin '{}' is not yet wired up — track in /lsp when the install path lands.",
-            plugin_name
-        )),
+        "yes" => Some(match install_lsp_recommendation_plugin(plugin_name) {
+            Ok(summary) => summary,
+            Err(error) => format!("Failed to install LSP plugin '{}': {}", plugin_name, error),
+        }),
         "no" => None,
         "never" => {
             if !settings.muted_plugins.iter().any(|p| p == plugin_name) {
@@ -335,6 +334,29 @@ fn apply_recommendation_decision(
         }
     };
     (settings, info)
+}
+
+fn install_lsp_recommendation_plugin(plugin_name: &str) -> anyhow::Result<String> {
+    let source = plugin_name.to_string();
+    let policy = crate::command_runtime_bridge::managed_policy_for_commands();
+    let (available_plugins, all_manifests) =
+        crate::command_runtime_bridge::plugin_dependency_context();
+    let result = crate::command_runtime_bridge::block_on_in_worker(async move {
+        cc_plugins::installation::install_plugin(
+            &source,
+            None,
+            Some(env!("CARGO_PKG_VERSION")),
+            policy.as_ref(),
+            &available_plugins,
+            &all_manifests,
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("{}", error))
+    })?;
+    Ok(format!(
+        "Installed LSP plugin '{}' v{}.",
+        result.plugin.name, result.plugin.version
+    ))
 }
 
 /// Remove `plugin_name` from the muted list and persist the result.
@@ -1817,15 +1839,14 @@ mod tests {
     }
 
     #[test]
-    fn apply_recommendation_decision_yes_emits_placeholder_info() {
-        // Until the install path is wired up, `yes` returns the placeholder
-        // info text. When the real install lands this test should be
-        // replaced — the point here is that `yes` *does* surface a message
-        // so the user knows something happened.
+    fn apply_recommendation_decision_yes_attempts_install() {
         let (_settings, info) = apply_recommendation_decision("rust-analyzer", "yes");
         assert!(info.is_some());
         let text = info.unwrap();
         assert!(text.contains("rust-analyzer"));
+        assert!(
+            text.contains("Installed LSP plugin") || text.contains("Failed to install LSP plugin")
+        );
     }
 
     #[test]

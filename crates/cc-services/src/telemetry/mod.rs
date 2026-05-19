@@ -33,9 +33,7 @@ use parking_lot::Mutex;
 // Re-exports
 // ---------------------------------------------------------------------------
 
-pub use self::instrumentation::{
-    InputType, InteractionSpan, ModelSpan, ToolSpan, HookSpan,
-};
+pub use self::instrumentation::{HookSpan, InputType, InteractionSpan, ModelSpan, ToolSpan};
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -184,9 +182,7 @@ struct TelemetryInner {
 impl TelemetryHandle {
     fn new(config: TelemetryConfig) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(TelemetryInner {
-                events: Vec::new(),
-            })),
+            inner: Arc::new(Mutex::new(TelemetryInner { events: Vec::new() })),
             config,
         }
     }
@@ -253,6 +249,14 @@ impl TelemetryHandle {
                 return; // skipped by sampling
             }
         }
+
+        let event = match serde_json::to_value(&event) {
+            Ok(mut value) => {
+                privacy::redact_for_telemetry(&mut value, &self.config.redaction);
+                serde_json::from_value(value).unwrap_or(event)
+            }
+            Err(_) => event,
+        };
 
         self.inner.lock().events.push(event);
     }
@@ -366,5 +370,24 @@ mod tests {
         let mut span = handle.start_interaction("sess_01".into(), "sub_01".into());
         span.finish("claude-sonnet-4", 100, 200);
         // Should not panic
+    }
+
+    #[test]
+    fn record_redacts_before_buffering() {
+        let config = TelemetryConfig {
+            enabled: true,
+            exporter: TelemetryExporter::None,
+            ..Default::default()
+        };
+        let handle = init_telemetry(config);
+        handle.record(TelemetryEvent::InputEvent {
+            input_summary: r#"{"api_key":"secret","file_path":"/home/alice/project"}"#.into(),
+            input_type: "UserMessage".into(),
+        });
+
+        let inner = handle.inner.lock();
+        let value = serde_json::to_value(&inner.events[0]).unwrap();
+        assert!(!value.to_string().contains("secret"));
+        assert!(!value.to_string().contains("/home/alice"));
     }
 }

@@ -28,12 +28,7 @@ const SENSITIVE_KEY_PATTERNS: &[&str] = &[
 ];
 
 /// File path patterns that may contain user names.
-const FILE_PATH_PATTERNS: &[&str] = &[
-    "/home/",
-    "/Users/",
-    "~",
-    "C:\\Users\\",
-];
+const FILE_PATH_PATTERNS: &[&str] = &["/home/", "/Users/", "~", "C:\\Users\\"];
 
 // ---------------------------------------------------------------------------
 // Redaction entry point
@@ -102,6 +97,18 @@ pub fn redact_for_telemetry(value: &mut Value, config: &TelemetryRedaction) {
                 redact_for_telemetry(item, config);
             }
         }
+        Value::String(text) => {
+            let lower = text.to_ascii_lowercase();
+            if SENSITIVE_KEY_PATTERNS
+                .iter()
+                .any(|pattern| lower.contains(pattern))
+                || (config.redact_environment && lower.contains("env"))
+            {
+                *text = "[REDACTED]".to_string();
+            } else if config.redact_file_paths && contains_file_path_pattern(text) {
+                *text = "[PATH REDACTED]".to_string();
+            }
+        }
         _ => {}
     }
 }
@@ -119,9 +126,7 @@ fn is_sensitive_key(key: &str) -> bool {
 
 /// Check if a string value contains a file path pattern.
 fn contains_file_path_pattern(s: &str) -> bool {
-    FILE_PATH_PATTERNS
-        .iter()
-        .any(|pattern| s.contains(pattern))
+    FILE_PATH_PATTERNS.iter().any(|pattern| s.contains(pattern))
 }
 
 /// Summarize an input string for telemetry (truncate + sanitize).

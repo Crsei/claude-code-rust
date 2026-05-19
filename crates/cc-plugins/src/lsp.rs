@@ -77,12 +77,20 @@ pub fn collect_plugin_lsp_declarations(
             let args: Vec<String> = server_config
                 .get("args")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             let extensions: Vec<String> = server_config
                 .get("extensions")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             let config = server_config.get("settings").cloned();
 
@@ -103,7 +111,6 @@ pub fn collect_plugin_lsp_declarations(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     fn make_plugin_entry(id: &str, cache_path: &str) -> PluginEntry {
         PluginEntry {
@@ -111,7 +118,9 @@ mod tests {
             name: id.to_string(),
             version: "1.0.0".to_string(),
             description: "".to_string(),
-            source: crate::PluginSource::Local { path: cache_path.to_string() },
+            source: crate::PluginSource::Local {
+                path: cache_path.to_string(),
+            },
             status: crate::PluginStatus::Installed,
             marketplace: None,
             cache_path: Some(std::path::PathBuf::from(cache_path)),
@@ -162,7 +171,11 @@ mod tests {
                 }
             }
         });
-        std::fs::write(dir.path().join("plugin.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+        std::fs::write(
+            dir.path().join("plugin.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
 
         let plugin = make_plugin_entry("lsp-plugin", dir.path().to_str().unwrap());
         let decls = collect_plugin_lsp_declarations(&[plugin]);
@@ -195,7 +208,11 @@ mod tests {
                 }
             }
         });
-        std::fs::write(dir.path().join("plugin.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+        std::fs::write(
+            dir.path().join("plugin.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
 
         let plugin = make_plugin_entry("lsp-plugin", dir.path().to_str().unwrap());
         let decls = collect_plugin_lsp_declarations(&[plugin]);

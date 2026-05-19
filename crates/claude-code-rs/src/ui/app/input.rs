@@ -6,6 +6,9 @@ use crate::ui::completions::{
 };
 use crate::ui::history_search_dialog::{HistorySearchDialog, HistorySearchDialogEvent};
 use crate::ui::messages::{message_copy_text, message_primary_reference};
+use crate::ui::path_completion::PathCompletionProvider;
+use crate::ui::shell_history_completion::ShellHistoryCompletionProvider;
+use crate::ui::slack_channel_completion::SlackChannelCompletionProvider;
 use crate::ui::transcript::ViewMode;
 use crate::ui::vim::VimAction;
 
@@ -28,6 +31,9 @@ impl CompletionState {
     pub fn new() -> Self {
         let mut completer = CombinedCompleter::new();
         completer.add_provider(Box::new(CommandCompletionProvider::new()));
+        completer.add_provider(Box::new(PathCompletionProvider::new()));
+        completer.add_provider(Box::new(ShellHistoryCompletionProvider::new()));
+        completer.add_provider(Box::new(SlackChannelCompletionProvider::new()));
 
         Self {
             items: Vec::new(),
@@ -309,8 +315,7 @@ impl App {
                         if self.completion_state.active {
                             // Show ghost suffix for first item
                             if let Some(item) = self.completion_state.selected_item() {
-                                self.prompt
-                                    .set_ghost_suffix(item.ghost_suffix.clone());
+                                self.prompt.set_ghost_suffix(item.ghost_suffix.clone());
                                 self.prompt.set_show_ghost(true);
                             }
                             self.dirty = true;
@@ -322,8 +327,7 @@ impl App {
                     if self.completion_state.active {
                         self.completion_state.select_prev();
                         if let Some(item) = self.completion_state.selected_item() {
-                            self.prompt
-                                .set_ghost_suffix(item.ghost_suffix.clone());
+                            self.prompt.set_ghost_suffix(item.ghost_suffix.clone());
                         }
                         self.dirty = true;
                         return AppAction::None;

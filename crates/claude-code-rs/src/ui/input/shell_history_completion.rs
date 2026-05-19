@@ -237,7 +237,7 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    fn make_ctx(input: &str, cursor_pos: usize) -> CompletionContext {
+    fn make_ctx(input: &str, cursor_pos: usize) -> CompletionContext<'_> {
         CompletionContext::new(input, cursor_pos, &[])
     }
 

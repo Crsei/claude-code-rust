@@ -53,6 +53,12 @@ pub enum PluginSource {
         url: String,
         ref_spec: Option<String>,
     },
+    /// Direct HTTP(S) download URL.
+    #[serde(rename = "url")]
+    Url { url: String },
+    /// Marketplace entry resolved from a configured marketplace index.
+    #[serde(rename = "marketplace")]
+    Marketplace { id: String, source_name: String },
     /// Local filesystem path.
     #[serde(rename = "local")]
     Local { path: String },

@@ -23,7 +23,7 @@ use crate::system_prompt;
 use crate::types::config::{QueryParams, QuerySource};
 use crate::types::message::{
     AssistantMessage, Attachment, ContentBlock, Message, MessageContent, QueryYield, StreamEvent,
-    SystemSubtype,
+    SystemSubtype, UserMessage,
 };
 use cc_engine::query::loop_impl;
 use cc_types::sdk::*;
@@ -581,6 +581,119 @@ async fn fire_instructions_loaded_hook(
     }
 }
 
+fn skill_args_from_prompt(prompt: &str, skill_name: &str) -> String {
+    let trimmed = prompt.trim();
+    let Some(without_slash) = trimmed.strip_prefix('/') else {
+        return String::new();
+    };
+    without_slash
+        .strip_prefix(skill_name)
+        .unwrap_or_default()
+        .trim_start()
+        .to_string()
+}
+
+async fn bash_mode_result_message(prompt: &str, cwd: &str) -> anyhow::Result<Message> {
+    let command_text = prompt.trim().trim_start_matches('!').trim();
+    if command_text.is_empty() {
+        anyhow::bail!("bash mode command cannot be empty");
+    }
+
+    #[cfg(windows)]
+    let mut command = {
+        let mut cmd = tokio::process::Command::new("cmd");
+        cmd.arg("/C").arg(command_text);
+        cmd
+    };
+
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut cmd = tokio::process::Command::new("sh");
+        cmd.arg("-lc").arg(command_text);
+        cmd
+    };
+
+    command.current_dir(cwd);
+    let output = tokio::time::timeout(Duration::from_secs(30), command.output())
+        .await
+        .map_err(|_| anyhow::anyhow!("bash mode command timed out after 30s"))??;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let exit_code = output
+        .status
+        .code()
+        .map(|code| code.to_string())
+        .unwrap_or_else(|| "terminated by signal".to_string());
+    let content = format!(
+        "<bash_command>\n$ {command_text}\n\nexit_code: {exit_code}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}\n</bash_command>"
+    );
+
+    Ok(Message::User(UserMessage {
+        uuid: Uuid::new_v4(),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+        role: "user".to_string(),
+        content: MessageContent::Text(content),
+        is_meta: true,
+        tool_use_result: None,
+        source_tool_assistant_uuid: None,
+    }))
+}
+
+#[cfg(feature = "telemetry")]
+fn start_submit_telemetry(
+    session_id: &str,
+    submit_id: &str,
+) -> Option<crate::telemetry_bridge::SpanId> {
+    crate::telemetry_bridge::with_bridge(|bridge| bridge.start_submit(session_id, submit_id))
+}
+
+#[cfg(not(feature = "telemetry"))]
+fn start_submit_telemetry(_session_id: &str, _submit_id: &str) -> Option<u64> {
+    None
+}
+
+#[cfg(feature = "telemetry")]
+fn finish_submit_telemetry(
+    span_id: &mut Option<crate::telemetry_bridge::SpanId>,
+    model: &str,
+    usage: &UsageTracking,
+) {
+    if let Some(span_id) = span_id.take() {
+        let _ = crate::telemetry_bridge::with_bridge(|bridge| {
+            bridge.end_submit(
+                span_id,
+                model,
+                usage.total_input_tokens,
+                usage.total_output_tokens,
+            )
+        });
+    }
+}
+
+#[cfg(not(feature = "telemetry"))]
+fn finish_submit_telemetry(_span_id: &mut Option<u64>, _model: &str, _usage: &UsageTracking) {}
+
+#[cfg(feature = "telemetry")]
+fn start_hook_telemetry(hook_name: &str) -> Option<crate::telemetry_bridge::SpanId> {
+    crate::telemetry_bridge::with_bridge(|bridge| bridge.start_hook(hook_name))
+}
+
+#[cfg(not(feature = "telemetry"))]
+fn start_hook_telemetry(_hook_name: &str) -> Option<u64> {
+    None
+}
+
+#[cfg(feature = "telemetry")]
+fn finish_hook_telemetry(span_id: Option<crate::telemetry_bridge::SpanId>, result: &str) {
+    if let Some(span_id) = span_id {
+        let _ = crate::telemetry_bridge::with_bridge(|bridge| bridge.end_hook(span_id, result));
+    }
+}
+
+#[cfg(not(feature = "telemetry"))]
+fn finish_hook_telemetry(_span_id: Option<u64>, _result: &str) {}
+
 impl QueryEngine {
     /// Submit a user message and return a stream of `SdkMessage` items.
     ///
@@ -615,6 +728,9 @@ impl QueryEngine {
 
         let stream = async_stream::stream! {
             let mut submit_turn = SubmitTurnState::new();
+            let submit_id = Uuid::new_v4().to_string();
+            let mut telemetry_submit_span =
+                start_submit_telemetry(session_id.as_str(), &submit_id);
 
             // Emit submit.received audit event
             {
@@ -640,6 +756,7 @@ impl QueryEngine {
                 let hooks_map = state_ref.read().app_state.hooks.clone();
                 let configs = hook_runner.load_hook_configs(&hooks_map, "UserPromptSubmit");
                 if !configs.is_empty() {
+                    let hook_span = start_hook_telemetry("UserPromptSubmit");
                     let payload = serde_json::json!({
                         "prompt": &prompt,
                     });
@@ -653,6 +770,18 @@ impl QueryEngine {
                                 let reason = output.reason
                                     .or(output.stop_reason)
                                     .unwrap_or_else(|| "Blocked by UserPromptSubmit hook".to_string());
+                                finish_hook_telemetry(hook_span, "blocked");
+                                let telemetry_model = config
+                                    .user_specified_model
+                                    .clone()
+                                    .unwrap_or_else(|| {
+                                        state_ref.read().app_state.main_loop_model.clone()
+                                    });
+                                finish_submit_telemetry(
+                                    &mut telemetry_submit_span,
+                                    &telemetry_model,
+                                    &UsageTracking::default(),
+                                );
                                 yield SdkMessage::Result(SdkResult {
                                     subtype: ResultSubtype::Success,
                                     is_error: false,
@@ -671,8 +800,10 @@ impl QueryEngine {
                                 });
                                 return;
                             }
+                            finish_hook_telemetry(hook_span, "success");
                         }
                         Err(e) => {
+                            finish_hook_telemetry(hook_span, "error");
                             warn!(error = %e, "UserPromptSubmit hook error, continuing");
                         }
                     }
@@ -695,7 +826,7 @@ impl QueryEngine {
                 command_dispatcher.as_ref(),
             );
 
-            let local_command = handle_parsed_command(
+            let mut local_command = handle_parsed_command(
                 &mut processed,
                 &current_msgs_snapshot,
                 &config,
@@ -706,6 +837,64 @@ impl QueryEngine {
                 command_executor.as_ref(),
             )
             .await;
+
+            if let Some(skill_name) = processed.skill_invocation.clone() {
+                match cc_skills::find_skill(&skill_name) {
+                    Some(skill) => {
+                        let args = skill_args_from_prompt(&prompt, &skill_name);
+                        let main_loop_model = state_ref.read().app_state.main_loop_model.clone();
+                        let prepared = cc_skills::invocation::prepare_skill_invocation(
+                            &skill,
+                            &args,
+                            &main_loop_model,
+                            Some(session_id.as_str()),
+                        );
+                        processed.messages = match prepared {
+                            cc_skills::invocation::PreparedSkillInvocation::Inline {
+                                new_messages,
+                                ..
+                            } => new_messages,
+                            cc_skills::invocation::PreparedSkillInvocation::Fork { .. } => {
+                                vec![cc_skills::invocation::make_skill_message(
+                                    &skill,
+                                    &args,
+                                    Some(session_id.as_str()),
+                                )]
+                            }
+                        };
+                        processed.should_query = true;
+                        processed.result_text = None;
+                    }
+                    None => {
+                        local_command.is_error = true;
+                        processed.result_text = Some(format!(
+                            "Skill /{} is not loaded.",
+                            skill_name
+                        ));
+                        processed.should_query = false;
+                        processed.messages.clear();
+                    }
+                }
+            }
+
+            if processed.bash_mode {
+                match bash_mode_result_message(&prompt, &config.cwd).await {
+                    Ok(message) => {
+                        processed.messages = vec![message];
+                        processed.should_query = true;
+                        processed.result_text = None;
+                    }
+                    Err(error) => {
+                        local_command.is_error = true;
+                        processed.result_text = Some(format!(
+                            "Bash mode command failed: {}",
+                            error
+                        ));
+                        processed.should_query = false;
+                        processed.messages.clear();
+                    }
+                }
+            }
 
             // A.3: Push processed messages into mutable_messages
             {
@@ -763,6 +952,11 @@ impl QueryEngine {
                     .result_text
                     .clone()
                     .unwrap_or_default();
+                finish_submit_telemetry(
+                    &mut telemetry_submit_span,
+                    &model_name,
+                    &UsageTracking::default(),
+                );
 
                 yield SdkMessage::Result(SdkResult {
                     subtype: if local_command.is_error {
@@ -845,6 +1039,11 @@ impl QueryEngine {
                     "No API provider configured. Set an API key in environment or use /login."
                         .to_string()
                 };
+                finish_submit_telemetry(
+                    &mut telemetry_submit_span,
+                    &model_name,
+                    &UsageTracking::default(),
+                );
 
                 yield SdkMessage::Result(SdkResult {
                     subtype: ResultSubtype::ErrorDuringExecution,
@@ -1088,6 +1287,11 @@ impl QueryEngine {
                                     Some(&result_text),
                                     Some(crate::services::langfuse::TraceStatus::Error),
                                 );
+                                finish_submit_telemetry(
+                                    &mut telemetry_submit_span,
+                                    &model_name,
+                                    &usage_snap,
+                                );
 
                                 yield SdkMessage::Result(SdkResult {
                                     subtype: ResultSubtype::ErrorMaxTurns,
@@ -1272,6 +1476,11 @@ impl QueryEngine {
                             Some(&result_text),
                             Some(crate::services::langfuse::TraceStatus::Error),
                         );
+                        finish_submit_telemetry(
+                            &mut telemetry_submit_span,
+                            &model_name,
+                            &usage_snap,
+                        );
 
                         yield SdkMessage::Result(SdkResult {
                             subtype: ResultSubtype::ErrorMaxBudgetUsd,
@@ -1363,6 +1572,7 @@ impl QueryEngine {
                     Some(crate::services::langfuse::TraceStatus::Error)
                 },
             );
+            finish_submit_telemetry(&mut telemetry_submit_span, &model_name, &usage_snap);
 
             yield SdkMessage::Result(SdkResult {
                 subtype,
@@ -1510,9 +1720,7 @@ pub fn submit_preprocessed_input(
             // Add existing text content
             match &user.content {
                 MessageContent::Text(text) if !text.trim().is_empty() => {
-                    all_blocks.push(ContentBlock::Text {
-                        text: text.clone(),
-                    });
+                    all_blocks.push(ContentBlock::Text { text: text.clone() });
                 }
                 MessageContent::Blocks(existing) => {
                     all_blocks.extend(existing.clone());

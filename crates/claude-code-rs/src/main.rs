@@ -476,10 +476,12 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.3a-i: Wire plugin LSP declarations into the LSP config provider
     // (Phase 2 integration: Serial Integration Lane)
+    cc_lsp_service::set_recommendation_engine(
+        cc_lsp_service::recommendation::RecommendationEngine::from_builtin(),
+    );
     {
         let enabled_plugins = cc_plugins::get_enabled_plugins();
-        let lsp_decls =
-            cc_plugins::lsp::collect_plugin_lsp_declarations(&enabled_plugins);
+        let lsp_decls = cc_plugins::lsp::collect_plugin_lsp_declarations(&enabled_plugins);
         if !lsp_decls.is_empty() {
             let provider_configs: Vec<cc_lsp_service::LspServerConfig> = lsp_decls
                 .into_iter()
@@ -497,9 +499,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 })
                 .collect();
             if !provider_configs.is_empty() {
-                cc_lsp_service::set_config_provider(Some(std::sync::Arc::new(
-                    move || provider_configs.clone(),
-                )));
+                cc_lsp_service::set_config_provider(Some(std::sync::Arc::new(move || {
+                    provider_configs.clone()
+                })));
             }
         }
     }
@@ -509,29 +511,25 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     {
         use cc_commands::dynamic_registry::{CommandSource, DynamicCommandEntry};
         for plugin in &all_plugins {
-            if !matches!(
-                plugin.status,
-                cc_plugins::PluginStatus::Installed
-            ) {
+            if !matches!(plugin.status, cc_plugins::PluginStatus::Installed) {
                 continue;
             }
             if let Some(ref cache_path) = plugin.cache_path {
-                if let Ok(manifest) =
-                    cc_plugins::manifest::load_manifest(cache_path)
-                {
+                if let Ok(manifest) = cc_plugins::manifest::load_manifest(cache_path) {
                     for cmd in manifest.commands {
-                        cc_commands::DYNAMIC_REGISTRY.lock().register(
-                            DynamicCommandEntry {
+                        cc_commands::DYNAMIC_REGISTRY
+                            .lock()
+                            .register(DynamicCommandEntry {
                                 name: cmd.name,
                                 aliases: cmd.aliases,
                                 description: cmd.description,
                                 source: CommandSource::Plugin,
+                                plugin_id: Some(plugin.id.clone()),
                                 hidden: false,
                                 usage_score: 0.0,
                                 execution_strategy:
                                     cc_commands::dynamic_registry::ExecutionStrategy::Plugin,
-                            },
-                        );
+                            });
                     }
                 }
             }
@@ -544,8 +542,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     {
         use cc_engine::telemetry_bridge::{self, EngineTelemetry, SpanId};
         use cc_services::telemetry::{
-            init_telemetry, TelemetryConfig, TelemetryExporter, TelemetryHandle,
-            TelemetryRedaction,
+            init_telemetry, TelemetryConfig, TelemetryExporter, TelemetryHandle, TelemetryRedaction,
         };
         use std::sync::atomic::{AtomicU64, Ordering};
         use std::sync::Mutex;
@@ -565,35 +562,19 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             handle: TelemetryHandle,
             span_counter: AtomicU64,
             // Live spans keyed by SpanId so finish() can find them.
-            active_spans: Mutex<
-                std::collections::HashMap<
-                    SpanId,
-                    cc_services::telemetry::InteractionSpan,
-                >,
-            >,
+            active_spans:
+                Mutex<std::collections::HashMap<SpanId, cc_services::telemetry::InteractionSpan>>,
             // Live hook spans
-            active_hooks: Mutex<
-                std::collections::HashMap<
-                    SpanId,
-                    cc_services::telemetry::HookSpan,
-                >,
-            >,
+            active_hooks:
+                Mutex<std::collections::HashMap<SpanId, cc_services::telemetry::HookSpan>>,
         }
 
         impl EngineTelemetry for EngineTelemetryBridge {
-            fn start_submit(
-                &self,
-                session_id: &str,
-                submit_id: &str,
-            ) -> SpanId {
-                let id =
-                    self.span_counter.fetch_add(1, Ordering::Relaxed);
+            fn start_submit(&self, session_id: &str, submit_id: &str) -> SpanId {
+                let id = self.span_counter.fetch_add(1, Ordering::Relaxed);
                 let span = self
                     .handle
-                    .start_interaction(
-                        session_id.to_string(),
-                        submit_id.to_string(),
-                    );
+                    .start_interaction(session_id.to_string(), submit_id.to_string());
                 self.active_spans.lock().unwrap().insert(id, span);
                 id
             }
@@ -605,20 +586,13 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 input_tokens: u64,
                 output_tokens: u64,
             ) {
-                if let Some(mut span) =
-                    self.active_spans.lock().unwrap().remove(&span_id)
-                {
-                    span.finish(
-                        model,
-                        input_tokens as u32,
-                        output_tokens as u32,
-                    );
+                if let Some(mut span) = self.active_spans.lock().unwrap().remove(&span_id) {
+                    span.finish(model, input_tokens as u32, output_tokens as u32);
                 }
             }
 
             fn start_hook(&self, hook_name: &str) -> SpanId {
-                let id =
-                    self.span_counter.fetch_add(1, Ordering::Relaxed);
+                let id = self.span_counter.fetch_add(1, Ordering::Relaxed);
                 let span = cc_services::telemetry::HookSpan::start(
                     hook_name.to_string(),
                     self.handle.clone(),
@@ -628,9 +602,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             }
 
             fn end_hook(&self, span_id: SpanId, _result: &str) {
-                if let Some(mut span) =
-                    self.active_hooks.lock().unwrap().remove(&span_id)
-                {
+                if let Some(mut span) = self.active_hooks.lock().unwrap().remove(&span_id) {
                     if _result == "error" {
                         span.record_error("hook returned error");
                     } else {
@@ -653,6 +625,15 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     let mut tools = registry::get_tools_for_active_session();
 
     // B.3c: Initialize skills (bundled/user/project + plugin)
+    let skill_usage_path = cc_config::paths::skill_usage_path();
+    if let Err(error) = cc_skills::load_skill_usage(&skill_usage_path) {
+        warn!(
+            error = %error,
+            path = %skill_usage_path.display(),
+            "failed to load persisted skill usage"
+        );
+    }
+
     let plugin_skills = discover_plugin_skills_for_root();
     if !plugin_skills.is_empty() {
         info!(
@@ -667,6 +648,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         cc_skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
     );
     log_skill_report("startup", &skill_report);
+    register_user_invocable_skill_commands();
 
     // Start Chrome setup before registering the synthetic MCP bridge so the
     // manifest/shims are in place before the bridge begins serving requests.
@@ -1294,16 +1276,19 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         {
             warn!(error = %err, "failed to write daemon stopped state");
         }
+        persist_skill_usage();
         return daemon_result;
     }
 
     // B.12: Enter TUI or headless mode
     if cli.headless {
-        return cc_ipc::headless::run_headless(crate::app_runtime_adapters::headless_config(
+        let result = cc_ipc::headless::run_headless(crate::app_runtime_adapters::headless_config(
             engine, model,
         ))
         .await
         .map(|()| ExitCode::SUCCESS);
+        persist_skill_usage();
+        return result;
     }
 
     // Register shutdown handler
@@ -1337,5 +1322,45 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             error!("TUI error: {:#}", e);
             Ok(ExitCode::FAILURE)
         }
+    }
+}
+
+fn register_user_invocable_skill_commands() {
+    use cc_commands::dynamic_registry::{CommandSource, DynamicCommandEntry, ExecutionStrategy};
+
+    let skills = cc_skills::get_user_invocable_skills();
+    let mut registry = cc_commands::DYNAMIC_REGISTRY.lock();
+    let stale_skill_names: Vec<String> = registry
+        .list_all()
+        .into_iter()
+        .filter(|entry| entry.source == CommandSource::Skill)
+        .map(|entry| entry.name.clone())
+        .collect();
+    for name in stale_skill_names {
+        registry.unregister(&name, CommandSource::Skill);
+    }
+
+    for skill in skills {
+        registry.register(DynamicCommandEntry {
+            name: skill.name.clone(),
+            aliases: Vec::new(),
+            description: skill.frontmatter.description.clone(),
+            source: CommandSource::Skill,
+            plugin_id: None,
+            hidden: false,
+            usage_score: cc_skills::skill_usage_score(&skill.name),
+            execution_strategy: ExecutionStrategy::Skill,
+        });
+    }
+}
+
+fn persist_skill_usage() {
+    let path = cc_config::paths::skill_usage_path();
+    if let Err(error) = cc_skills::save_skill_usage(&path) {
+        warn!(
+            error = %error,
+            path = %path.display(),
+            "failed to persist skill usage"
+        );
     }
 }

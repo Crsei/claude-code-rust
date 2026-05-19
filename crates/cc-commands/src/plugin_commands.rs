@@ -32,6 +32,7 @@ pub fn register_plugin_commands(
             aliases: Vec::new(),
             description: candidate.description,
             source: CommandSource::Plugin,
+            plugin_id: Some(candidate.plugin_id),
             hidden: false,
             usage_score: 0.0,
             execution_strategy: ExecutionStrategy::Plugin,
@@ -43,19 +44,23 @@ pub fn register_plugin_commands(
 
 /// Unregister all commands from a specific plugin.
 ///
-/// # Note
-///
-/// Full plugin-id tracking in the registry is a future extension (Lane D).
-/// Currently this is a stub that returns 0; the plugin loader should track
-/// which entries it registered and call [`DynamicRegistry::unregister`] with
-/// [`CommandSource::Plugin`] for each.
-pub fn unregister_plugin_commands(
-    _registry: &mut DynamicRegistry,
-    _plugin_id: &str,
-) -> usize {
-    // TODO(Lane D): add plugin_id field to DynamicCommandEntry so we can
-    // filter by plugin. For now, callers must track their own entries.
-    0
+pub fn unregister_plugin_commands(registry: &mut DynamicRegistry, plugin_id: &str) -> usize {
+    let names: Vec<String> = registry
+        .list_all()
+        .into_iter()
+        .filter(|entry| {
+            entry.source == CommandSource::Plugin && entry.plugin_id.as_deref() == Some(plugin_id)
+        })
+        .map(|entry| entry.name.clone())
+        .collect();
+
+    let mut removed = 0usize;
+    for name in names {
+        if registry.unregister(&name, CommandSource::Plugin).is_some() {
+            removed += 1;
+        }
+    }
+    removed
 }
 
 #[cfg(test)]
@@ -100,7 +105,10 @@ mod tests {
         register_plugin_commands(&mut registry, candidates);
 
         let entry = registry.find("test").unwrap();
-        assert!(matches!(entry.execution_strategy, ExecutionStrategy::Plugin));
+        assert!(matches!(
+            entry.execution_strategy,
+            ExecutionStrategy::Plugin
+        ));
     }
 
     #[test]
@@ -115,6 +123,7 @@ mod tests {
             aliases: vec![],
             description: "Builtin".to_string(),
             source: CommandSource::Builtin,
+            plugin_id: None,
             hidden: false,
             usage_score: 0.0,
             execution_strategy: ExecutionStrategy::Inline,
@@ -136,9 +145,27 @@ mod tests {
     }
 
     #[test]
-    fn unregister_plugin_commands_stub() {
+    fn unregister_plugin_commands_removes_only_owner() {
         let mut registry = DynamicRegistry::new();
-        let count = unregister_plugin_commands(&mut registry, "any-plugin");
-        assert_eq!(count, 0);
+        register_plugin_commands(
+            &mut registry,
+            vec![
+                PluginCommandCandidate {
+                    name: "one".to_string(),
+                    description: "One".to_string(),
+                    plugin_id: "plugin-a".to_string(),
+                },
+                PluginCommandCandidate {
+                    name: "two".to_string(),
+                    description: "Two".to_string(),
+                    plugin_id: "plugin-b".to_string(),
+                },
+            ],
+        );
+
+        let count = unregister_plugin_commands(&mut registry, "plugin-a");
+        assert_eq!(count, 1);
+        assert!(registry.find("one").is_none());
+        assert!(registry.find("two").is_some());
     }
 }

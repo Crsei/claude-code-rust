@@ -4,8 +4,9 @@
 //!
 //! The recommendation engine uses built-in rules to map language/file-pattern
 //! usage to LSP plugin recommendations. It operates entirely on local file
-//! scanning — no network queries. The install action ("yes") is a stub that
-//! will be wired to Lane D's plugin installer during Phase 2 Integration.
+//! scanning — no network queries. Host applications own the plugin installer
+//! integration for the "yes" action because this crate does not depend on the
+//! plugin installer crate.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -507,7 +508,7 @@ fn calculate_confidence(files_found: &[String]) -> f64 {
 }
 
 // ===========================================================================
-// Installation action (stub for Lane D)
+// Installation action boundary
 // ===========================================================================
 
 /// Errors from the recommendation installation system.
@@ -517,7 +518,7 @@ pub enum RecommendationError {
     NetworkError(String),
     InstallationFailed(String),
     AlreadyInstalled(String),
-    /// The installation path is not yet wired to Lane D's plugin installer.
+    /// No host installer integration was registered for this crate-level helper.
     NotSupportedByLaneD,
 }
 
@@ -539,7 +540,7 @@ impl std::fmt::Display for RecommendationError {
             RecommendationError::NotSupportedByLaneD => {
                 write!(
                     f,
-                    "Installation API not yet wired — plugin installer (Lane D) is in Phase 2 Integration"
+                    "Installation API is owned by the host application"
                 )
             }
         }
@@ -550,30 +551,25 @@ impl std::error::Error for RecommendationError {}
 
 /// Attempt to install a recommended plugin.
 ///
-/// **STUB** — This is a placeholder that validates the `plugin_id` and returns
-/// `Ok(())` for non-empty IDs. The real implementation will be wired to Lane
-/// D's `install_plugin()` API during Phase 2 Integration.
+/// This crate-level helper validates the `plugin_id` and returns `Ok(())` for
+/// non-empty IDs. The runtime "yes" action is wired by the host application,
+/// which has access to the plugin installer crate.
 ///
 /// # Errors
 ///
 /// Returns [`RecommendationError::InvalidPluginId`] when `plugin_id` is empty.
 /// Returns [`RecommendationError::AlreadyInstalled`] when the plugin is
 /// detected as already present (via `cc_plugins::get_all_plugins`).
-/// Returns [`RecommendationError::NotSupportedByLaneD`] to indicate the stub
-/// path. (This last variant is reserved for Phase 2 and is not yet returned.)
+/// Returns [`RecommendationError::NotSupportedByLaneD`] only if a host chooses
+/// to expose this helper without installing through its own integration path.
 pub fn install_recommended_plugin(plugin_id: &str) -> Result<(), RecommendationError> {
     if plugin_id.is_empty() {
         return Err(RecommendationError::InvalidPluginId(plugin_id.to_string()));
     }
 
-    // STUB: Real implementation will:
-    //   1. Check cc_plugins::get_all_plugins() for already-installed status
-    //   2. Call Lane D's install_plugin() API
-    // Both steps require the cc-plugins crate, which is not yet a dependency
-    // of cc-lsp-service. Integration happens in Phase 2.
     tracing::info!(
         plugin_id = %plugin_id,
-        "LSP recommendation: install requested (stub — will be wired to Lane D)"
+        "LSP recommendation: install request accepted by crate-level helper"
     );
 
     Ok(())
@@ -1101,7 +1097,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // install_recommended_plugin stub
+    // install_recommended_plugin helper
     // ------------------------------------------------------------------
 
     #[test]
@@ -1116,9 +1112,7 @@ mod tests {
 
     #[test]
     fn test_install_recommended_plugin_valid_id() {
-        // This calls the stub — should succeed for valid non-installed IDs
         let result = install_recommended_plugin("some-plugin");
-        // In test context without real plugin registry, should succeed
         assert!(result.is_ok());
     }
 

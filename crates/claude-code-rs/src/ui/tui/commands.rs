@@ -2,8 +2,9 @@ use super::subsystem_events::{add_system_error, add_system_info};
 use crate::ui::app::App;
 use crate::ui::command_surface::CommandSurface;
 use cc_commands as slash_commands;
-use cc_commands::{CommandContext, CommandResult};
+use cc_engine::command_runtime::{CommandContext, CommandResult};
 use cc_engine::lifecycle::QueryEngine;
+use cc_types::commands::CommandDispatcher;
 use cc_types::message::{ContentBlock, Message, MessageContent};
 use std::sync::Arc;
 // ---------------------------------------------------------------------------
@@ -46,9 +47,12 @@ pub(super) async fn try_execute_command(
         return None;
     }
 
-    let (cmd_idx, args) = slash_commands::parse_command_input(trimmed)?;
-    let all_commands = slash_commands::get_all_commands();
-    let cmd = &all_commands[cmd_idx];
+    let dispatcher = slash_commands::DefaultCommandDispatcher::for_full_registry();
+    let parsed = dispatcher.parse_command_input(trimmed)?;
+    let args = parsed.args.clone();
+    let command_name = dispatcher
+        .command_name(parsed.index)
+        .unwrap_or_else(|| trimmed.trim_start_matches('/').to_string());
     let original_messages = engine.messages();
 
     let mut ctx = CommandContext {
@@ -59,13 +63,17 @@ pub(super) async fn try_execute_command(
     };
 
     if let Some(surface) =
-        CommandSurface::for_slash_command(&cmd.name, &args, &ctx.app_state, &ctx.cwd)
+        CommandSurface::for_slash_command(&command_name, &args, &ctx.app_state, &ctx.cwd)
     {
         app.open_command_surface(surface);
         return Some(CmdAction::Handled);
     }
 
-    match cmd.handler.execute(&args, &mut ctx).await {
+    let command_executor = engine.command_executor();
+    match command_executor
+        .execute(parsed, command_name.clone(), &mut ctx)
+        .await
+    {
         Ok(result) => match result {
             CommandResult::Output(text) => {
                 if conversation_changed(&original_messages, &ctx.messages) {

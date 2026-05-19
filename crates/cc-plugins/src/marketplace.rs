@@ -124,7 +124,10 @@ impl MarketplaceIndex {
             .filter(|entry| {
                 entry.name.to_lowercase().contains(&query_lower)
                     || entry.description.to_lowercase().contains(&query_lower)
-                    || entry.tags.iter().any(|t| t.to_lowercase().contains(&query_lower))
+                    || entry
+                        .tags
+                        .iter()
+                        .any(|t| t.to_lowercase().contains(&query_lower))
                     || entry.id.to_lowercase().contains(&query_lower)
             })
             .cloned()
@@ -194,6 +197,20 @@ impl MarketplaceIndex {
         Ok(())
     }
 
+    /// Refresh all registered marketplace sources and populate cached entries.
+    pub async fn refresh_all(&self) -> Result<usize> {
+        let sources = self.list_sources();
+        let mut total = 0usize;
+        for source in sources {
+            let entries = load_entries_from_source(&source)
+                .await
+                .with_context(|| format!("Failed to refresh marketplace '{}'", source.name))?;
+            total += entries.len();
+            self.set_marketplace_entries(&source.name, entries);
+        }
+        Ok(total)
+    }
+
     /// Save known marketplaces to a JSON file.
     pub fn save_to_file(&self, path: &Path) -> Result<()> {
         let sources = self.list_sources();
@@ -237,9 +254,97 @@ pub fn search_marketplace(query: &str) -> Vec<MarketplacePluginEntry> {
     GLOBAL_MARKETPLACE_INDEX.search(query)
 }
 
+/// Refresh all configured marketplace sources in the global index.
+pub async fn refresh_all_marketplaces() -> Result<usize> {
+    GLOBAL_MARKETPLACE_INDEX.refresh_all().await
+}
+
 /// Get the marketplace directory path.
 pub fn marketplaces_cache_dir() -> PathBuf {
     crate::marketplaces_dir()
+}
+
+async fn load_entries_from_source(
+    source: &MarketplaceSource,
+) -> Result<Vec<MarketplacePluginEntry>> {
+    let content = match &source.source {
+        PluginSource::Local { path } => {
+            let path = PathBuf::from(path);
+            let index_path = if path.is_dir() {
+                let marketplace = path.join("marketplace.json");
+                if marketplace.exists() {
+                    marketplace
+                } else {
+                    path.join("index.json")
+                }
+            } else {
+                path
+            };
+            std::fs::read_to_string(&index_path).with_context(|| {
+                format!("Failed to read marketplace index: {}", index_path.display())
+            })?
+        }
+        PluginSource::Git { url, .. } | PluginSource::Url { url } => {
+            let response = reqwest::get(url)
+                .await
+                .with_context(|| format!("Failed to fetch marketplace index: {url}"))?;
+            if !response.status().is_success() {
+                anyhow::bail!(
+                    "Marketplace index {} returned HTTP {}",
+                    url,
+                    response.status()
+                );
+            }
+            response
+                .text()
+                .await
+                .context("Failed to read marketplace index response body")?
+        }
+        PluginSource::GitHub { repo, ref_spec } => {
+            let branch = ref_spec.as_deref().unwrap_or("main");
+            let url = format!("https://raw.githubusercontent.com/{repo}/{branch}/marketplace.json");
+            let response = reqwest::get(&url)
+                .await
+                .with_context(|| format!("Failed to fetch GitHub marketplace index: {url}"))?;
+            if !response.status().is_success() {
+                anyhow::bail!(
+                    "GitHub marketplace index {} returned HTTP {}",
+                    url,
+                    response.status()
+                );
+            }
+            response
+                .text()
+                .await
+                .context("Failed to read GitHub marketplace index response body")?
+        }
+        PluginSource::Npm { .. } | PluginSource::Marketplace { .. } => {
+            anyhow::bail!("Unsupported marketplace source kind: {:?}", source.source);
+        }
+    };
+
+    let mut entries = parse_marketplace_entries(&content)?;
+    for entry in &mut entries {
+        if entry.source_name.trim().is_empty() {
+            entry.source_name = source.name.clone();
+        }
+    }
+    Ok(entries)
+}
+
+fn parse_marketplace_entries(content: &str) -> Result<Vec<MarketplacePluginEntry>> {
+    let value: serde_json::Value =
+        serde_json::from_str(content).context("Failed to parse marketplace index JSON")?;
+    if value.is_array() {
+        return serde_json::from_value(value).context("Failed to parse marketplace entries array");
+    }
+    for key in ["plugins", "entries"] {
+        if let Some(entries) = value.get(key) {
+            return serde_json::from_value(entries.clone())
+                .with_context(|| format!("Failed to parse marketplace '{key}' array"));
+        }
+    }
+    anyhow::bail!("Marketplace index must be an array or contain a plugins/entries array");
 }
 
 #[cfg(test)]
@@ -258,7 +363,9 @@ mod tests {
         let index = MarketplaceIndex::new();
         let source = MarketplaceSource {
             name: "test-mp".into(),
-            source: PluginSource::Local { path: "/tmp".into() },
+            source: PluginSource::Local {
+                path: "/tmp".into(),
+            },
             description: "Test marketplace".into(),
             auto_update: true,
             priority: 0,
@@ -392,7 +499,9 @@ mod tests {
         let index = MarketplaceIndex::new();
         index.register_source(MarketplaceSource {
             name: "official".into(),
-            source: PluginSource::Local { path: "/tmp".into() },
+            source: PluginSource::Local {
+                path: "/tmp".into(),
+            },
             description: "Official".into(),
             auto_update: true,
             priority: 0,
@@ -403,5 +512,52 @@ mod tests {
         loaded.load_from_file(&path).unwrap();
         assert_eq!(loaded.list_sources().len(), 1);
         assert_eq!(loaded.list_sources()[0].name, "official");
+    }
+
+    #[tokio::test]
+    async fn refresh_local_marketplace_populates_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_path = dir.path().join("marketplace.json");
+        std::fs::write(
+            &index_path,
+            r#"{
+                "plugins": [
+                    {
+                        "id": "rust-tools",
+                        "name": "Rust Tools",
+                        "description": "Rust helpers",
+                        "version": "1.2.3",
+                        "download_url": "file:///tmp/rust-tools.zip",
+                        "tags": ["rust"]
+                    },
+                    {
+                        "id": "python-tools",
+                        "name": "Python Tools",
+                        "description": "Python helpers",
+                        "version": "2.0.0"
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let index = MarketplaceIndex::new();
+        index.register_source(MarketplaceSource {
+            name: "local-fixture".into(),
+            source: PluginSource::Local {
+                path: index_path.to_string_lossy().to_string(),
+            },
+            description: "Local fixture".into(),
+            auto_update: true,
+            priority: 0,
+        });
+
+        let count = index.refresh_all().await.unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(index.search("rust").len(), 1);
+        assert_eq!(
+            index.find_plugin("rust-tools").unwrap().source_name,
+            "local-fixture"
+        );
     }
 }

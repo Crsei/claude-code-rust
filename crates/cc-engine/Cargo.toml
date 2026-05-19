@@ -31,6 +31,10 @@ serde_json = { workspace = true }
 # Errors / logging
 anyhow = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-langfuse = { workspace = true, optional = true }
 
 # Shared primitives
 chrono = { workspace = true }
@@ -65,10 +69,13 @@ cc-shell-command = { workspace = true }
 
 [features]
 default = []
-# Telemetry is a pass-through flag exposed so higher crates can
-# gate telemetry-dependent code. Actual telemetry deps live in
-# cc-services and are enabled from the root crate (claude-code-rs).
-telemetry = []
+# Telemetry enables engine-owned Langfuse and bridge call sites.
+telemetry = [
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-langfuse",
+]
 
 [dev-dependencies]
 tempfile = { workspace = true }

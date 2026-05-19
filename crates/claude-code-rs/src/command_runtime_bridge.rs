@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 
 use cc_commands::CommandContext;
@@ -9,6 +10,7 @@ pub(crate) fn install_command_runtime_providers() {
         cc_ipc::subsystem_handlers::build_lsp_server_info_list,
         cc_ipc::subsystem_handlers::load_lsp_recommendation_settings,
     );
+    cc_commands::runtime::set_lsp_recommendations_provider(lsp_recommendations_for_commands);
     cc_commands::runtime::set_agent_runtime_providers(
         builtin_agent_entries_for_commands,
         builtin_agent_prompt_for_commands,
@@ -187,7 +189,32 @@ fn team_context_for_session(session_id: &str) -> Option<cc_types::teams::TeamCon
 }
 
 fn command_metadata_for_commands() -> Vec<cc_commands::CommandMetadata> {
-    cc_commands::command_metadata(&cc_commands::get_all_commands())
+    cc_commands::get_dynamic_metadata()
+}
+
+fn lsp_recommendations_for_commands() -> Vec<cc_commands::runtime::LspPluginRecommendationInfo> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let installed: Vec<String> = cc_plugins::loader::load_installed_plugins()
+        .into_iter()
+        .map(|plugin| plugin.id)
+        .collect();
+    let settings = cc_ipc::subsystem_handlers::load_lsp_recommendation_settings();
+
+    cc_lsp_service::generate_recommendations(&cwd, &installed)
+        .into_iter()
+        .map(|rec| cc_commands::runtime::LspPluginRecommendationInfo {
+            is_dismissed: settings
+                .muted_plugins
+                .iter()
+                .any(|plugin| plugin == &rec.plugin_id || plugin == &rec.plugin_name),
+            plugin_id: rec.plugin_id,
+            plugin_name: rec.plugin_name,
+            description: rec.description,
+            languages: rec.languages,
+            confidence: rec.confidence,
+            is_already_installed: rec.is_already_installed,
+        })
+        .collect()
 }
 
 fn all_tools_for_commands() -> cc_engine::types::tool::Tools {
@@ -350,13 +377,10 @@ fn emit_plugin_event_external_for_commands(
         }
         PluginEvent::ValidationFailed {
             plugin_id,
-            name,
+            name: _,
             errors,
-        } => cc_plugins::PluginSubsystemEvent::ValidationFailed {
-            plugin_id,
-            errors,
-        },
-        PluginEvent::ConfigChanged { plugin_id, name } => {
+        } => cc_plugins::PluginSubsystemEvent::ValidationFailed { plugin_id, errors },
+        PluginEvent::ConfigChanged { plugin_id, name: _ } => {
             cc_plugins::PluginSubsystemEvent::ConfigChanged { plugin_id }
         }
     };
@@ -521,32 +545,35 @@ fn install_plugin_for_commands(
     source: &str,
     _version: Option<&str>,
 ) -> Result<String, anyhow::Error> {
-    use std::collections::HashMap;
-
     let engine_version = Some(env!("CARGO_PKG_VERSION"));
-    let available_plugins: HashMap<String, String> = HashMap::new();
-    let all_manifests: HashMap<String, cc_plugins::manifest::PluginManifest> = HashMap::new();
+    let policy = managed_policy_for_commands();
+    let (available_plugins, all_manifests) = plugin_dependency_context();
+    let source = source.to_string();
 
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
-    let result = rt
-        .block_on(cc_plugins::installation::install_plugin(
-            source,
+    let result = block_on_in_worker(async move {
+        cc_plugins::installation::install_plugin(
+            &source,
             None,
             engine_version,
-            None,
+            policy.as_ref(),
             &available_plugins,
             &all_manifests,
-        ))
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))
+    })?;
     Ok(format!(
         "Installed {} v{}",
         result.plugin.name, result.plugin.version
     ))
 }
 
-fn list_marketplace_for_commands(_query: &str) -> Result<Vec<String>, anyhow::Error> {
-    let all = cc_plugins::marketplace::list_all_marketplaces();
+fn list_marketplace_for_commands(query: &str) -> Result<Vec<String>, anyhow::Error> {
+    let all = if query.trim().is_empty() {
+        cc_plugins::marketplace::list_all_marketplaces()
+    } else {
+        cc_plugins::marketplace::search_marketplace(query.trim())
+    };
     if all.is_empty() {
         // No marketplace entries cached yet; return empty list without error
         // so the caller can distinguish "not implemented" from "nothing found".
@@ -565,37 +592,39 @@ fn list_marketplace_for_commands(_query: &str) -> Result<Vec<String>, anyhow::Er
 }
 
 fn refresh_marketplace_cache_for_commands() -> Result<String, anyhow::Error> {
-    // GLOBAL_MARKETPLACE_INDEX loads from known_marketplaces.json; the
-    // refresh itself is a no-op in the current phase (marketplace sources
-    // are static until Lane E integration).
     let path = cc_plugins::marketplaces_dir().join("known_marketplaces.json");
     let idx = &*cc_plugins::marketplace::GLOBAL_MARKETPLACE_INDEX;
     if path.exists() {
         idx.load_from_file(&path)?;
-        Ok("Marketplace cache refreshed".to_string())
+        let count = block_on_in_worker(async {
+            cc_plugins::marketplace::refresh_all_marketplaces().await
+        })?;
+        Ok(format!(
+            "Marketplace cache refreshed: {} plugin entries",
+            count
+        ))
     } else {
         Ok("No known marketplaces file found; cache is empty".to_string())
     }
 }
 
 fn update_plugin_for_commands(plugin_id: &str) -> Result<String, anyhow::Error> {
-    use std::collections::HashMap;
-
     let engine_version = Some(env!("CARGO_PKG_VERSION"));
-    let available_plugins: HashMap<String, String> = HashMap::new();
-    let all_manifests: HashMap<String, cc_plugins::manifest::PluginManifest> = HashMap::new();
+    let policy = managed_policy_for_commands();
+    let (available_plugins, all_manifests) = plugin_dependency_context();
+    let plugin_id = plugin_id.to_string();
 
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
-    let result = rt
-        .block_on(cc_plugins::installation::update_plugin(
-            plugin_id,
+    let result = block_on_in_worker(async move {
+        cc_plugins::installation::update_plugin(
+            &plugin_id,
             engine_version,
-            None,
+            policy.as_ref(),
             &available_plugins,
             &all_manifests,
-        ))
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))
+    })?;
     Ok(format!(
         "Updated {} to v{}",
         result.plugin.name, result.plugin.version
@@ -614,7 +643,7 @@ fn validate_plugin_for_commands(plugin_id: &str) -> Result<Vec<String>, anyhow::
         .map(|e| format!("[{:?}] {}: {}", e.severity, e.field, e.message))
         .collect();
     if messages.is_empty() {
-        Ok(vec!["Plugin validation passed".to_string()])
+        Ok(Vec::new())
     } else {
         Ok(messages)
     }
@@ -637,4 +666,47 @@ fn get_plugin_info_for_commands(plugin_id: &str) -> Result<String, anyhow::Error
         "installed_at": plugin.installed_at,
     }))?;
     Ok(info)
+}
+
+pub(crate) fn block_on_in_worker<F, T>(future: F) -> anyhow::Result<T>
+where
+    F: Future<Output = anyhow::Result<T>> + Send + 'static,
+    T: Send + 'static,
+{
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
+        rt.block_on(future)
+    })
+    .join()
+    .map_err(|_| anyhow::anyhow!("plugin worker thread panicked"))?
+}
+
+pub(crate) fn managed_policy_for_commands() -> Option<cc_config::mdm::ManagedPolicy> {
+    cc_config::mdm::load_managed_settings_policy()
+        .ok()
+        .and_then(|cfg| cfg.managed)
+        .and_then(|managed| managed.policy)
+}
+
+pub(crate) fn plugin_dependency_context() -> (
+    std::collections::HashMap<String, String>,
+    std::collections::HashMap<String, cc_plugins::manifest::PluginManifest>,
+) {
+    let installed = cc_plugins::loader::load_installed_plugins();
+    let mut available = std::collections::HashMap::new();
+    let mut manifests = std::collections::HashMap::new();
+
+    for plugin in installed {
+        available.insert(plugin.id.clone(), plugin.version.clone());
+        available.insert(plugin.name.clone(), plugin.version.clone());
+        if let Some(cache_path) = plugin.cache_path.as_ref() {
+            if let Ok(manifest) = cc_plugins::manifest::load_manifest(cache_path) {
+                manifests.insert(manifest.name.clone(), manifest.clone());
+                manifests.insert(plugin.id.clone(), manifest);
+            }
+        }
+    }
+
+    (available, manifests)
 }

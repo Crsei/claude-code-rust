@@ -19,11 +19,11 @@ use crate::flagging;
 use crate::loader;
 use crate::manifest::{load_manifest, PluginManifest};
 use crate::marketplace;
-use crate::mcpb::parse_mcpb_from_bytes;
+use crate::mcpb::{parse_mcpb_from_bytes, verify_mcpb_integrity};
 use crate::policy::{PluginPolicyEnforcer, PolicyDecision};
 use crate::sources::{resolve_source, ResolveSource};
 use crate::versioning::check_engine_compatibility;
-use crate::zip_cache::extract_zip_to;
+use crate::zip_cache::{extract_tgz_to, extract_zip_to};
 use crate::{PluginEntry, PluginSource, PluginStatus};
 
 /// Installation scope for a plugin.
@@ -142,8 +142,11 @@ pub async fn install_plugin(
         }
         PolicyDecision::Flagged { reason } => {
             warn!(plugin = %source, %reason, "Plugin flagged during installation");
-            flagging::GLOBAL_FLAGGING
-                .flag_plugin(source, flagging::FlagReason::PolicyViolation(reason.clone()), "Flagged during install");
+            flagging::GLOBAL_FLAGGING.flag_plugin(
+                source,
+                flagging::FlagReason::PolicyViolation(reason.clone()),
+                "Flagged during install",
+            );
         }
         PolicyDecision::Allowed => {}
     }
@@ -162,21 +165,36 @@ pub async fn install_plugin(
     }
 
     // 6. Download/resolve the plugin package
-    let dest_dir = crate::cache_dir().join(&scope.as_str()).join(sanitize_id(source));
+    let dest_dir = crate::cache_dir()
+        .join(&scope.as_str())
+        .join(sanitize_id(source));
     let resolved_plugin = resolve_source(&resolved.resolve_source, &dest_dir).await?;
 
     // 7. Extract or process the package
-    let install_path = if resolved_plugin.extension == "mcpb" {
+    let install_path = if resolved_plugin.extension == "dir" {
+        resolved_plugin.path.clone()
+    } else if resolved_plugin.extension == "mcpb" {
         // MCPB format
+        if !verify_mcpb_integrity(&resolved_plugin.path)? {
+            return Err(InstallError::ValidationFailed(
+                "MCPB integrity check failed".to_string(),
+            ));
+        }
         let bundle = parse_mcpb_from_bytes(&std::fs::read(&resolved_plugin.path)?)?;
         let extract_dir = dest_dir.join("extracted");
         // Extract payload (which is a ZIP)
         extract_zip_to(&bundle.payload, &extract_dir)?;
         extract_dir
-    } else if resolved_plugin.extension == "zip" || resolved_plugin.extension == "tgz" {
+    } else if resolved_plugin.extension == "zip" {
         let extract_dir = dest_dir.join("extracted");
         let zip_data = std::fs::read(&resolved_plugin.path)?;
         extract_zip_to(&zip_data, &extract_dir)?;
+        extract_dir
+    } else if resolved_plugin.extension == "tgz" || resolved_plugin.extension == "tar.gz" {
+        let extract_dir = dest_dir.join("extracted");
+        let tgz_data = std::fs::read(&resolved_plugin.path)?;
+        extract_tgz_to(&tgz_data, &extract_dir)?;
+        normalize_npm_package_root(&extract_dir)?;
         extract_dir
     } else {
         // Single file plugin
@@ -212,23 +230,37 @@ pub async fn install_plugin(
     }
 
     // 12. Create plugin entry
-    let plugin_id = format!("{}@local", manifest.name);
+    let marketplace_name = resolved.marketplace.clone();
+    let plugin_id = format!(
+        "{}@{}",
+        manifest.name,
+        marketplace_name.as_deref().unwrap_or("local")
+    );
     let entry = PluginEntry {
         id: plugin_id,
-        name: manifest.display_name.clone().unwrap_or_else(|| manifest.name.clone()),
+        name: manifest
+            .display_name
+            .clone()
+            .unwrap_or_else(|| manifest.name.clone()),
         version: manifest.version.clone(),
         description: manifest.description.clone(),
         source: resolved.source,
         status: PluginStatus::Installed,
-        marketplace: None,
+        marketplace: marketplace_name,
         cache_path: Some(install_path.clone()),
         tools: manifest.tools.iter().map(|t| t.name.clone()).collect(),
         skills: manifest.skills.iter().map(|s| s.name.clone()).collect(),
-        mcp_servers: manifest.mcp_servers.iter().map(|m| m.name.clone()).collect(),
-        installed_at: Some(std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64),
+        mcp_servers: manifest
+            .mcp_servers
+            .iter()
+            .map(|m| m.name.clone())
+            .collect(),
+        installed_at: Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+        ),
         updated_at: None,
     };
 
@@ -255,10 +287,7 @@ pub async fn install_plugin(
 }
 
 /// Enhanced uninstall with optional purge and scope awareness.
-pub fn uninstall_plugin_ext(
-    plugin_id: &str,
-    purge: bool,
-) -> Result<Option<PluginEntry>> {
+pub fn uninstall_plugin_ext(plugin_id: &str, purge: bool) -> Result<Option<PluginEntry>> {
     crate::uninstall_plugin(plugin_id, purge)
 }
 
@@ -284,15 +313,17 @@ pub async fn update_plugin(
     let old_version = existing.version.clone();
 
     // 2. Re-install from the same source
-    let _source_str = match &existing.source {
+    let source_str = match &existing.source {
         PluginSource::Local { path } => path.clone(),
         PluginSource::Npm { package, .. } => format!("npm:{}", package),
         PluginSource::GitHub { repo, .. } => format!("github:{}", repo),
         PluginSource::Git { url, .. } => url.clone(),
+        PluginSource::Url { url } => url.clone(),
+        PluginSource::Marketplace { id, .. } => id.clone(),
     };
 
     let result = install_plugin(
-        &existing.name,
+        &source_str,
         Some(InstallScope::User),
         engine_version,
         policy,
@@ -319,11 +350,17 @@ pub async fn update_plugin(
 /// - `github:<owner/repo>` format
 /// - URL (http:// or https://)
 /// - Local file path
-pub async fn lookup_plugin_by_source(source: &str) -> std::result::Result<PluginLookupResult, InstallError> {
+pub async fn lookup_plugin_by_source(
+    source: &str,
+) -> std::result::Result<PluginLookupResult, InstallError> {
     let (resolve_source, plugin_source) = if source.starts_with("npm:") {
         let package = source.trim_start_matches("npm:");
         let (pkg, ver) = package.split_once('@').unwrap_or((package, ""));
-        let version = if ver.is_empty() { None } else { Some(ver.to_string()) };
+        let version = if ver.is_empty() {
+            None
+        } else {
+            Some(ver.to_string())
+        };
         (
             ResolveSource::Npm {
                 package: pkg.to_string(),
@@ -340,19 +377,26 @@ pub async fn lookup_plugin_by_source(source: &str) -> std::result::Result<Plugin
         (
             ResolveSource::GitHub {
                 repo: r.to_string(),
-                tag: if tag.is_empty() { None } else { Some(tag.to_string()) },
+                tag: if tag.is_empty() {
+                    None
+                } else {
+                    Some(tag.to_string())
+                },
             },
             PluginSource::GitHub {
                 repo: r.to_string(),
-                ref_spec: if tag.is_empty() { None } else { Some(tag.to_string()) },
+                ref_spec: if tag.is_empty() {
+                    None
+                } else {
+                    Some(tag.to_string())
+                },
             },
         )
     } else if source.starts_with("http://") || source.starts_with("https://") {
         (
             ResolveSource::Url(source.to_string()),
-            PluginSource::Git {
+            PluginSource::Url {
                 url: source.to_string(),
-                ref_spec: None,
             },
         )
     } else if Path::new(source).exists() {
@@ -368,13 +412,16 @@ pub async fn lookup_plugin_by_source(source: &str) -> std::result::Result<Plugin
         match entry {
             Some(mp_entry) => {
                 let url = mp_entry.download_url.clone().unwrap_or_else(|| {
-                    format!("https://plugins.claude-code.dev/plugins/{}/download", source)
+                    format!(
+                        "https://plugins.claude-code.dev/plugins/{}/download",
+                        source
+                    )
                 });
                 (
-                    ResolveSource::Url(url),
-                    PluginSource::Git {
-                        url: mp_entry.homepage.unwrap_or_default(),
-                        ref_spec: None,
+                    ResolveSource::Url(url.clone()),
+                    PluginSource::Marketplace {
+                        id: mp_entry.id.clone(),
+                        source_name: mp_entry.source_name.clone(),
                     },
                 )
             }
@@ -387,9 +434,15 @@ pub async fn lookup_plugin_by_source(source: &str) -> std::result::Result<Plugin
         }
     };
 
+    let marketplace = match &plugin_source {
+        PluginSource::Marketplace { source_name, .. } => Some(source_name.clone()),
+        _ => None,
+    };
+
     Ok(PluginLookupResult {
         resolve_source,
         source: plugin_source,
+        marketplace,
     })
 }
 
@@ -397,12 +450,41 @@ pub async fn lookup_plugin_by_source(source: &str) -> std::result::Result<Plugin
 pub struct PluginLookupResult {
     pub resolve_source: ResolveSource,
     pub source: PluginSource,
+    pub marketplace: Option<String>,
 }
 
 fn sanitize_id(id: &str) -> String {
     id.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
+}
+
+fn normalize_npm_package_root(extract_dir: &Path) -> std::result::Result<(), InstallError> {
+    let package_dir = extract_dir.join("package");
+    if !package_dir.is_dir() || !package_dir.join("plugin.json").exists() {
+        return Ok(());
+    }
+
+    for entry in std::fs::read_dir(&package_dir)? {
+        let entry = entry?;
+        let target = extract_dir.join(entry.file_name());
+        if target.exists() {
+            if target.is_dir() {
+                std::fs::remove_dir_all(&target)?;
+            } else {
+                std::fs::remove_file(&target)?;
+            }
+        }
+        std::fs::rename(entry.path(), target)?;
+    }
+    std::fs::remove_dir_all(package_dir)?;
+    Ok(())
 }
 
 #[cfg(test)]

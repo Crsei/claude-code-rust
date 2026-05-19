@@ -764,6 +764,9 @@ dependencies = [
  "futures",
  "git2",
  "libc",
+ "opentelemetry",
+ "opentelemetry-langfuse",
+ "opentelemetry_sdk",
  "parking_lot",
  "serde",
  "serde_json",
@@ -772,6 +775,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-opentelemetry",
  "uuid",
 ]
 
@@ -946,6 +950,7 @@ dependencies = [
  "cc-tools",
  "cc-types",
  "chrono",
+ "flate2",
  "hex",
  "lru",
  "parking_lot",

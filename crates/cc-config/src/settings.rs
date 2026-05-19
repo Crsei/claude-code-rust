@@ -1057,6 +1057,85 @@ fn apply_env_overrides(merged: &mut EffectiveSettings, sources: &mut SourceMap) 
     }
 }
 
+fn apply_managed_non_overridable(
+    merged: &mut EffectiveSettings,
+    sources: &mut SourceMap,
+    managed: &RawSettings,
+) {
+    if let Some(managed_permissions) = managed.permissions.as_ref() {
+        if let Some(mode) = managed_permissions
+            .default_mode
+            .as_ref()
+            .or(managed.permission_mode.as_ref())
+        {
+            merged.permission_mode = Some(mode.clone());
+            merged.permissions.default_mode = Some(mode.clone());
+            sources.insert("permissionMode".to_string(), SettingsSource::Managed);
+            sources.insert(
+                "permissions.defaultMode".to_string(),
+                SettingsSource::Managed,
+            );
+        }
+        if let Some(value) = managed_permissions.enable_auto_mode {
+            merged.permissions.enable_auto_mode = Some(value);
+            sources.insert(
+                "permissions.enableAutoMode".to_string(),
+                SettingsSource::Managed,
+            );
+        }
+        if let Some(value) = managed_permissions.enable_bypass_mode {
+            merged.permissions.enable_bypass_mode = Some(value);
+            sources.insert(
+                "permissions.enableBypassMode".to_string(),
+                SettingsSource::Managed,
+            );
+        }
+    } else if let Some(mode) = managed.permission_mode.as_ref() {
+        merged.permission_mode = Some(mode.clone());
+        merged.permissions.default_mode = Some(mode.clone());
+        sources.insert("permissionMode".to_string(), SettingsSource::Managed);
+        sources.insert(
+            "permissions.defaultMode".to_string(),
+            SettingsSource::Managed,
+        );
+    }
+
+    let Some(managed_sandbox) = managed.sandbox.as_ref() else {
+        return;
+    };
+
+    if let Some(value) = managed_sandbox.allow_managed_read_paths_only {
+        merged.sandbox.allow_managed_read_paths_only = Some(value);
+        sources.insert(
+            "sandbox.allowManagedReadPathsOnly".to_string(),
+            SettingsSource::Managed,
+        );
+        if value {
+            merged.sandbox.filesystem.allow_read = managed_sandbox.filesystem.allow_read.clone();
+            sources.insert(
+                "sandbox.filesystem.allowRead".to_string(),
+                SettingsSource::Managed,
+            );
+        }
+    }
+
+    if let Some(value) = managed_sandbox.allow_managed_domains_only {
+        merged.sandbox.allow_managed_domains_only = Some(value);
+        sources.insert(
+            "sandbox.allowManagedDomainsOnly".to_string(),
+            SettingsSource::Managed,
+        );
+        if value {
+            merged.sandbox.network.allowed_domains =
+                managed_sandbox.network.allowed_domains.clone();
+            sources.insert(
+                "sandbox.network.allowedDomains".to_string(),
+                SettingsSource::Managed,
+            );
+        }
+    }
+}
+
 /// Load the full four-layer stack (managed/user/project/local) plus env.
 ///
 /// This is the preferred entry point for new code. The legacy
@@ -1108,6 +1187,9 @@ pub fn load_effective(cwd: &Path) -> Result<LoadedSettings> {
 
     // 5. env
     apply_env_overrides(&mut effective, &mut sources);
+    if let Some(raw) = managed.as_ref() {
+        apply_managed_non_overridable(&mut effective, &mut sources, raw);
+    }
 
     Ok(LoadedSettings {
         effective,
@@ -1393,6 +1475,12 @@ mod tests {
             Self { key, previous }
         }
 
+        fn set_value(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+
         fn unset(key: &'static str) -> Self {
             let previous = std::env::var(key).ok();
             std::env::remove_var(key);
@@ -1479,6 +1567,125 @@ mod tests {
         let eff = EffectiveSettings::from_raw(raw);
         assert_eq!(eff.permissions.default_mode.as_deref(), Some("bypass"));
         assert!(eff.permissions.allow.contains(&"Grep".to_string()));
+    }
+
+    #[test]
+    #[serial]
+    fn managed_permission_fields_override_user_project_local_and_env() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let project = temp.path().join("repo");
+        std::fs::create_dir_all(home.join("plugins")).unwrap();
+        std::fs::create_dir_all(project.join(".cc-rust")).unwrap();
+        let managed_path = temp.path().join("managed.json");
+        std::fs::write(
+            &managed_path,
+            r#"{
+                "permissions": {
+                    "defaultMode": "ask",
+                    "enableAutoMode": false,
+                    "enableBypassMode": false
+                }
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            home.join("settings.json"),
+            r#"{"permissions":{"defaultMode":"bypass","enableAutoMode":true,"enableBypassMode":true}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            project.join(".cc-rust/settings.json"),
+            r#"{"permissions":{"defaultMode":"auto","enableAutoMode":true,"enableBypassMode":true}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            project.join(".cc-rust/settings.local.json"),
+            r#"{"permissions":{"defaultMode":"bypass","enableAutoMode":true,"enableBypassMode":true}}"#,
+        )
+        .unwrap();
+
+        let _managed = EnvGuard::set_path("CC_RUST_MANAGED_SETTINGS", &managed_path);
+        let _home = EnvGuard::set_path("CC_RUST_HOME", &home);
+        let _env = EnvGuard::set_value("CLAUDE_PERMISSION_MODE", "bypass");
+
+        let loaded = load_effective(&project).unwrap();
+        assert_eq!(loaded.effective.permission_mode.as_deref(), Some("ask"));
+        assert_eq!(
+            loaded.effective.permissions.default_mode.as_deref(),
+            Some("ask")
+        );
+        assert_eq!(loaded.effective.permissions.enable_auto_mode, Some(false));
+        assert_eq!(loaded.effective.permissions.enable_bypass_mode, Some(false));
+        assert_eq!(
+            loaded.source_of("permissions.enableAutoMode"),
+            SettingsSource::Managed
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn managed_only_sandbox_lists_ignore_lower_sources() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let project = temp.path().join("repo");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(project.join(".cc-rust")).unwrap();
+        let managed_path = temp.path().join("managed.json");
+        std::fs::write(
+            &managed_path,
+            r#"{
+                "sandbox": {
+                    "allowManagedReadPathsOnly": true,
+                    "allowManagedDomainsOnly": true,
+                    "filesystem": {"allowRead": ["/managed/read"]},
+                    "network": {"allowedDomains": ["managed.example.com"]}
+                }
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            home.join("settings.json"),
+            r#"{
+                "sandbox": {
+                    "filesystem": {"allowRead": ["/user/read"]},
+                    "network": {"allowedDomains": ["user.example.com"]}
+                }
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            project.join(".cc-rust/settings.local.json"),
+            r#"{
+                "sandbox": {
+                    "filesystem": {"allowRead": ["/local/read"]},
+                    "network": {"allowedDomains": ["local.example.com"]}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let _managed = EnvGuard::set_path("CC_RUST_MANAGED_SETTINGS", &managed_path);
+        let _home = EnvGuard::set_path("CC_RUST_HOME", &home);
+        let _perm = EnvGuard::unset("CLAUDE_PERMISSION_MODE");
+
+        let loaded = load_effective(&project).unwrap();
+        assert_eq!(
+            loaded.effective.sandbox.filesystem.allow_read,
+            vec!["/managed/read".to_string()]
+        );
+        assert_eq!(
+            loaded.effective.sandbox.network.allowed_domains,
+            vec!["managed.example.com".to_string()]
+        );
+        assert_eq!(
+            loaded.effective.sandbox.allow_managed_read_paths_only,
+            Some(true)
+        );
+        assert_eq!(
+            loaded.effective.sandbox.allow_managed_domains_only,
+            Some(true)
+        );
     }
 
     #[test]

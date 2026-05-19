@@ -27,6 +27,7 @@ telemetry = [
     "dep:opentelemetry",
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-langfuse",
+    "cc-engine/telemetry",
     "cc-services/telemetry",
     "cc-startup/telemetry",
 ]

@@ -102,6 +102,11 @@ impl CompletionItem {
         self
     }
 
+    pub fn with_filter_text(mut self, filter_text: impl Into<String>) -> Self {
+        self.filter_text = filter_text.into();
+        self
+    }
+
     pub fn with_ghost_suffix(mut self, suffix: impl Into<String>) -> Self {
         self.ghost_suffix = Some(suffix.into());
         self
@@ -130,11 +135,7 @@ pub struct CompletionContext<'a> {
 }
 
 impl<'a> CompletionContext<'a> {
-    pub fn new(
-        input: &'a str,
-        cursor_pos: usize,
-        skill_scores: &'a [(String, f64)],
-    ) -> Self {
+    pub fn new(input: &'a str, cursor_pos: usize, skill_scores: &'a [(String, f64)]) -> Self {
         Self {
             input,
             cursor_pos,
@@ -241,6 +242,10 @@ impl CompletionProvider for CommandCompletionProvider {
             .iter()
             .map(|e| (e.name.as_str(), e.usage_score))
             .collect();
+        let source_priority_map: std::collections::HashMap<&str, u8> = all_entries
+            .iter()
+            .map(|e| (e.name.as_str(), e.source.priority()))
+            .collect();
 
         // Also get builtin commands via cc_commands
         let builtins = cc_commands::get_all_commands();
@@ -254,11 +259,13 @@ impl CompletionProvider for CommandCompletionProvider {
             let aliases = &cmd.aliases;
             let description = &cmd.description;
 
-            let all_names = std::iter::once(name.as_str())
-                .chain(aliases.iter().map(String::as_str));
+            let all_names =
+                std::iter::once(name.as_str()).chain(aliases.iter().map(String::as_str));
 
             let _matched = match best_fuzzy_match(
-                all_names.clone().chain(std::iter::once(description.as_str())),
+                all_names
+                    .clone()
+                    .chain(std::iter::once(description.as_str())),
                 &query_lower,
             ) {
                 Some(m) => m,
@@ -271,24 +278,20 @@ impl CompletionProvider for CommandCompletionProvider {
             let _usage = usage_map.get(name.as_str()).copied().unwrap_or(0.0);
             let source_group = "Builtin";
 
-            let mut item = CompletionItem::new(
-                CompletionKind::Command,
-                &label,
-                &insert,
-                range.clone(),
-            )
-            .with_detail(description.clone())
-            .with_source_group(source_group)
-            .with_ghost_suffix(format!("{}", name));
-
-            // Attach score for sorting via the `score` field — we store it
-            // temporarily in `filter_text` as a sort key.
-            // We use a synthetic sort score since CompletionItem doesn't have one.
-            item.ghost_suffix = if query_lower.is_empty() {
+            let typed_len = query.len().min(name.len());
+            let ghost_suffix = if query_lower.is_empty() {
                 None
             } else {
-                Some(name[cursor_pos.saturating_sub(range.start).min(name.len())..].to_string())
+                Some(name[typed_len..].to_string())
             };
+
+            let mut item =
+                CompletionItem::new(CompletionKind::Command, &label, &insert, range.clone())
+                    .with_filter_text(name.to_ascii_lowercase())
+                    .with_detail(description.clone())
+                    .with_source_group(source_group);
+
+            item.ghost_suffix = ghost_suffix;
 
             items.push(item);
         }
@@ -322,34 +325,41 @@ impl CompletionProvider for CommandCompletionProvider {
 
             let insert = format!("/{} ", name);
             let label = format!("/{}", name);
+            let typed_len = query.len().min(name.len());
 
-            items.push(
+            let mut item =
                 CompletionItem::new(CompletionKind::Command, &label, &insert, range.clone())
+                    .with_filter_text(name.to_ascii_lowercase())
                     .with_detail(description.clone())
-                    .with_source_group(source_group)
-                    .with_ghost_suffix(if query_lower.is_empty() {
-                        String::new()
-                    } else {
-                        name[cursor_pos.saturating_sub(range.start).min(name.len())..].to_string()
-                    }),
-            );
+                    .with_source_group(source_group);
+            if !query_lower.is_empty() {
+                item.ghost_suffix = Some(name[typed_len..].to_string());
+            }
+            items.push(item);
         }
 
         // Step 4: Sort — exact matches first, then by source priority + usage
         items.sort_by(|a, b| {
             let a_is_exact = a.filter_text == query_lower;
             let b_is_exact = b.filter_text == query_lower;
+            let a_name = a.label.trim_start_matches('/');
+            let b_name = b.label.trim_start_matches('/');
+            let a_priority = if builtins.iter().any(|cmd| cmd.name == a_name) {
+                CommandSource::Builtin.priority()
+            } else {
+                source_priority_map.get(a_name).copied().unwrap_or_default()
+            };
+            let b_priority = if builtins.iter().any(|cmd| cmd.name == b_name) {
+                CommandSource::Builtin.priority()
+            } else {
+                source_priority_map.get(b_name).copied().unwrap_or_default()
+            };
             b_is_exact
                 .cmp(&a_is_exact)
+                .then_with(|| b_priority.cmp(&a_priority))
                 .then_with(|| {
-                    let a_usage = usage_map
-                        .get(a.label.trim_start_matches('/'))
-                        .copied()
-                        .unwrap_or(0.0);
-                    let b_usage = usage_map
-                        .get(b.label.trim_start_matches('/'))
-                        .copied()
-                        .unwrap_or(0.0);
+                    let a_usage = usage_map.get(a_name).copied().unwrap_or(0.0);
+                    let b_usage = usage_map.get(b_name).copied().unwrap_or(0.0);
                     b_usage
                         .partial_cmp(&a_usage)
                         .unwrap_or(std::cmp::Ordering::Equal)
@@ -396,21 +406,20 @@ impl CombinedCompleter {
     /// Compute all completion items from all providers, sorted by priority
     /// and then by label.
     pub fn compute(&self, ctx: &CompletionContext) -> Vec<CompletionItem> {
-        let mut all: Vec<(u32, CompletionItem)> = Vec::new();
+        let mut all: Vec<(u32, usize, CompletionItem)> = Vec::new();
 
         for provider in &self.providers {
             let priority = provider.priority();
             for item in provider.compute(ctx) {
-                all.push((priority, item));
+                let seq = all.len();
+                all.push((priority, seq, item));
             }
         }
 
-        // Sort by priority descending, then by label
-        all.sort_by(|(pa, a), (pb, b)| {
-            pb.cmp(pa).then_with(|| a.label.cmp(&b.label))
-        });
+        // Preserve provider-internal ordering inside the same priority band.
+        all.sort_by(|(pa, seq_a, _), (pb, seq_b, _)| pb.cmp(pa).then_with(|| seq_a.cmp(seq_b)));
 
-        all.into_iter().map(|(_, item)| item).collect()
+        all.into_iter().map(|(_, _, item)| item).collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -448,7 +457,13 @@ pub fn find_command_token_range(input: &str, cursor_pos: usize) -> Option<Range<
 
     // Find the last `/` preceded by whitespace or at BOL
     let slash_pos = prefix.rfind('/')?;
-    if slash_pos > 0 && input.as_bytes().get(slash_pos - 1).map(|&b| b != b' ').unwrap_or(false) {
+    if slash_pos > 0
+        && input
+            .as_bytes()
+            .get(slash_pos - 1)
+            .map(|&b| b != b' ')
+            .unwrap_or(false)
+    {
         return None; // `/` is part of a word, not a command
     }
 
@@ -465,7 +480,7 @@ pub fn find_command_token_range(input: &str, cursor_pos: usize) -> Option<Range<
 mod tests {
     use super::*;
 
-    fn make_context(input: &str, cursor_pos: usize) -> CompletionContext {
+    fn make_context(input: &str, cursor_pos: usize) -> CompletionContext<'_> {
         CompletionContext::new(input, cursor_pos, &[])
     }
 
@@ -517,9 +532,19 @@ mod tests {
         let provider = CommandCompletionProvider::new();
         let ctx = make_context("/he", 3);
         let items = provider.compute(&ctx);
-        // Some items should have ghost suffix suggesting full command
-        let has_ghost = items.iter().any(|i| i.ghost_suffix.is_some());
-        assert!(has_ghost, "expected ghost suffix for partial match");
+        let help = items
+            .iter()
+            .find(|i| i.label == "/help")
+            .expect("expected /help completion");
+        assert_eq!(help.ghost_suffix.as_deref(), Some("lp"));
+    }
+
+    #[test]
+    fn command_exact_match_uses_name_without_slash() {
+        let provider = CommandCompletionProvider::new();
+        let ctx = make_context("/help", 5);
+        let items = provider.compute(&ctx);
+        assert_eq!(items.first().map(|i| i.label.as_str()), Some("/help"));
     }
 
     #[test]

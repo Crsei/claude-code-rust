@@ -8,6 +8,7 @@ use super::metadata::command_meta;
 use super::CommandItem;
 
 /// Source category for grouping in the UI.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CommandGroup {
     RecentlyUsed,
@@ -69,8 +70,8 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
         // Multi-field weighted fuzzy match
         let best = best_fuzzy_multi(
             &[
-                (cmd.name.as_str(), 1.0),           // name: full weight
-                (&cmd.description, 0.5),             // description: half weight
+                (cmd.name.as_str(), 1.0), // name: full weight
+                (&cmd.description, 0.5),  // description: half weight
             ],
             &cmd.aliases.iter().map(String::as_str).collect::<Vec<_>>(),
             query_lower.as_str(),
@@ -156,11 +157,12 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
 
         // Hidden exact-name priority: hidden commands that match exactly get
         // bumped ahead regardless of score
-        let effective_score = if entry.hidden && matched.kind == crate::ui::fuzzy_match::FuzzyMatchKind::Exact {
-            0
-        } else {
-            matched.score
-        };
+        let effective_score =
+            if entry.hidden && matched.kind == crate::ui::fuzzy_match::FuzzyMatchKind::Exact {
+                0
+            } else {
+                matched.score
+            };
 
         scored.push((
             100 - source_weight as usize, // invert so higher priority = lower sort key
@@ -200,13 +202,11 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
     } else {
         // Non-empty query: score → usage_score (tie-break)
         scored.sort_by(|(_, a), (_, b)| {
-            a.score
-                .cmp(&b.score)
-                .then_with(|| {
-                    b.usage_score
-                        .partial_cmp(&a.usage_score)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
+            a.score.cmp(&b.score).then_with(|| {
+                b.usage_score
+                    .partial_cmp(&a.usage_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
     }
 
@@ -218,7 +218,7 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
 /// Scores the candidate against name (full weight), description (half weight),
 /// and aliases (0.75 weight each). Returns the lowest score across all fields.
 fn best_fuzzy_multi(
-    primary_fields: &[(&str, f64)],    // (field, weight)
+    primary_fields: &[(&str, f64)], // (field, weight)
     alias_fields: &[&str],
     query: &str,
 ) -> Option<crate::ui::fuzzy_match::FuzzyMatch> {
@@ -229,7 +229,8 @@ fn best_fuzzy_multi(
             let weighted = (m.score as f64 * weight) as usize;
             let is_better = match best {
                 Some((ref best_score, ref best_kind)) => {
-                    m.kind as u8 > *best_kind as u8 || (m.kind == *best_kind && weighted < *best_score)
+                    m.kind as u8 > *best_kind as u8
+                        || (m.kind == *best_kind && weighted < *best_score)
                 }
                 None => true,
             };
@@ -244,7 +245,8 @@ fn best_fuzzy_multi(
             let weighted = (m.score as f64 * 0.75) as usize;
             let is_better = match best {
                 Some((ref best_score, ref best_kind)) => {
-                    m.kind as u8 > *best_kind as u8 || (m.kind == *best_kind && weighted < *best_score)
+                    m.kind as u8 > *best_kind as u8
+                        || (m.kind == *best_kind && weighted < *best_score)
                 }
                 None => true,
             };
@@ -290,6 +292,7 @@ pub(super) fn command_from_argument_input(input: &str, cwd: &Path) -> Option<Com
 ///
 /// Given input like `look at /help for docs` with cursor at position 14,
 /// this returns the `/help` command.
+#[allow(dead_code)]
 pub(crate) fn find_mid_input_slash_command(
     input: &str,
     cursor_pos: usize,
@@ -323,7 +326,10 @@ mod tests {
         let commands = filtered_commands("cp", Path::new("/repo"));
 
         // "copy" is an alias or match for "cp"
-        let first = commands.first().map(|command| command.name.as_str()).unwrap_or("");
+        let _first = commands
+            .first()
+            .map(|command| command.name.as_str())
+            .unwrap_or("");
         // "compact" should appear but after exact matches
         assert!(commands.iter().any(|command| command.name == "compact"));
     }
@@ -331,7 +337,10 @@ mod tests {
     #[test]
     fn empty_query_groups_by_source() {
         let commands = filtered_commands("", Path::new("/repo"));
-        assert!(!commands.is_empty(), "empty query should return all commands");
+        assert!(
+            !commands.is_empty(),
+            "empty query should return all commands"
+        );
     }
 
     #[test]
@@ -352,6 +361,9 @@ mod tests {
     #[test]
     fn find_mid_input_slash_with_args_returns_none() {
         let result = find_mid_input_slash_command("do /help me now", 13);
-        assert!(result.is_none(), "slash with args should not trigger mid-input completion");
+        assert!(
+            result.is_none(),
+            "slash with args should not trigger mid-input completion"
+        );
     }
 }

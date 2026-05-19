@@ -1,8 +1,8 @@
 //! Dynamic command registry supporting multiple sources (builtin, user/project,
 //! plugin, skill). This is the central contract consumed by other lanes.
 //!
-//! The registry stores command metadata and provides priority-based lookup.
-//! Execution still goes through existing handlers — this provides metadata only.
+//! The registry stores command metadata, priority-based lookup information, and
+//! the execution strategy needed by the slash-command dispatcher.
 
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +37,8 @@ impl CommandSource {
 pub enum ExecutionStrategy {
     /// Inline execution (builtin commands).
     Inline,
+    /// User-invocable skill execution.
+    Skill,
     /// Forked sub-agent execution (skills).
     Fork,
     /// Forward to plugin runtime.
@@ -52,6 +54,8 @@ pub struct DynamicCommandEntry {
     pub aliases: Vec<String>,
     pub description: String,
     pub source: CommandSource,
+    #[serde(default)]
+    pub plugin_id: Option<String>,
     /// Don't show in listings but accept execution.
     pub hidden: bool,
     /// 0.0-1.0, higher = more used.
@@ -134,8 +138,8 @@ impl DynamicRegistry {
         let mut best_priority: u8 = 0;
 
         for entry in &self.commands {
-            let matches = entry.name == name_or_alias
-                || entry.aliases.iter().any(|a| a == name_or_alias);
+            let matches =
+                entry.name == name_or_alias || entry.aliases.iter().any(|a| a == name_or_alias);
             if matches {
                 let prio = entry.source.priority();
                 if best.is_none() || prio > best_priority {
@@ -155,14 +159,11 @@ impl DynamicRegistry {
             self.commands.iter().filter(|c| !c.hidden).collect();
 
         result.sort_by(|a, b| {
-            b.source
-                .priority()
-                .cmp(&a.source.priority())
-                .then_with(|| {
-                    b.usage_score
-                        .partial_cmp(&a.usage_score)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
+            b.source.priority().cmp(&a.source.priority()).then_with(|| {
+                b.usage_score
+                    .partial_cmp(&a.usage_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
 
         result
@@ -174,14 +175,11 @@ impl DynamicRegistry {
         let mut result: Vec<&DynamicCommandEntry> = self.commands.iter().collect();
 
         result.sort_by(|a, b| {
-            b.source
-                .priority()
-                .cmp(&a.source.priority())
-                .then_with(|| {
-                    b.usage_score
-                        .partial_cmp(&a.usage_score)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
+            b.source.priority().cmp(&a.source.priority()).then_with(|| {
+                b.usage_score
+                    .partial_cmp(&a.usage_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
 
         result
@@ -226,16 +224,13 @@ impl Default for DynamicRegistry {
 mod tests {
     use super::*;
 
-    fn entry(
-        name: &str,
-        source: CommandSource,
-        usage_score: f64,
-    ) -> DynamicCommandEntry {
+    fn entry(name: &str, source: CommandSource, usage_score: f64) -> DynamicCommandEntry {
         DynamicCommandEntry {
             name: name.to_string(),
             aliases: Vec::new(),
             description: String::new(),
             source,
+            plugin_id: None,
             hidden: false,
             usage_score,
             execution_strategy: ExecutionStrategy::Inline,
@@ -368,7 +363,10 @@ mod tests {
         assert!(CommandSource::Project.priority() > CommandSource::Plugin.priority());
         assert!(CommandSource::Plugin.priority() > CommandSource::Skill.priority());
 
-        assert_eq!(DynamicRegistry::source_priority(CommandSource::Builtin), 100);
+        assert_eq!(
+            DynamicRegistry::source_priority(CommandSource::Builtin),
+            100
+        );
         assert_eq!(DynamicRegistry::source_priority(CommandSource::Skill), 20);
     }
 
@@ -380,8 +378,8 @@ mod tests {
         reg.register(entry("mid", CommandSource::Plugin, 0.5));
 
         let visible = reg.list_visible();
-        assert_eq!(visible[0].name, "high");  // Builtin
-        assert_eq!(visible[1].name, "mid");   // Plugin
-        assert_eq!(visible[2].name, "low");   // Skill
+        assert_eq!(visible[0].name, "high"); // Builtin
+        assert_eq!(visible[1].name, "mid"); // Plugin
+        assert_eq!(visible[2].name, "low"); // Skill
     }
 }

@@ -1074,12 +1074,12 @@ pub fn parse_command_input_in(
 
 /// Find a command by name or alias in the full registry.
 pub fn find_command(input: &str) -> Option<usize> {
-    find_command_in(input, &command_metadata(&get_all_commands()))
+    find_command_in(input, &get_dynamic_metadata())
 }
 
 /// Parse user input against the full registry.
 pub fn parse_command_input(input: &str) -> Option<(usize, String)> {
-    parse_command_input_in(input, &command_metadata(&get_all_commands()))
+    parse_command_input_in(input, &get_dynamic_metadata())
 }
 
 /// Concrete [`cc_types::commands::CommandDispatcher`] backed by command metadata.
@@ -1093,7 +1093,7 @@ impl DefaultCommandDispatcher {
     }
 
     pub fn for_full_registry() -> Self {
-        Self::new(command_metadata(&get_all_commands()))
+        Self::new(get_dynamic_metadata())
     }
 
     pub fn from_commands(commands: &[Command]) -> Self {
@@ -1123,10 +1123,6 @@ impl command_runtime::CommandExecutor for EngineCommandExecutor {
         ctx: &mut command_runtime::CommandContext,
     ) -> anyhow::Result<command_runtime::CommandResult> {
         let mut commands = get_all_commands();
-        let Some(command) = commands.get_mut(parsed.index) else {
-            anyhow::bail!("Unknown command: /{}", command_name);
-        };
-
         let mut command_ctx = CommandContext {
             messages: ctx.messages.clone(),
             cwd: ctx.cwd.clone(),
@@ -1134,10 +1130,19 @@ impl command_runtime::CommandExecutor for EngineCommandExecutor {
             session_id: ctx.session_id.clone(),
         };
 
-        let result = command
-            .handler
-            .execute(&parsed.args, &mut command_ctx)
-            .await?;
+        let result = if let Some(command) = commands.get_mut(parsed.index) {
+            command
+                .handler
+                .execute(&parsed.args, &mut command_ctx)
+                .await?
+        } else {
+            let entry = DYNAMIC_REGISTRY
+                .lock()
+                .find(&command_name)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("Unknown command: /{}", command_name))?;
+            execute_dynamic_command(&entry, &parsed.args, &mut command_ctx).await?
+        };
         ctx.messages = command_ctx.messages;
         ctx.cwd = command_ctx.cwd;
         ctx.app_state = command_ctx.app_state;
@@ -1164,6 +1169,55 @@ impl command_runtime::CommandExecutor for EngineCommandExecutor {
 
 pub fn install_engine_command_executor() {
     command_runtime::set_global_command_executor(std::sync::Arc::new(EngineCommandExecutor));
+}
+
+async fn execute_dynamic_command(
+    entry: &dynamic_registry::DynamicCommandEntry,
+    args: &str,
+    ctx: &mut CommandContext,
+) -> anyhow::Result<CommandResult> {
+    match entry.execution_strategy {
+        dynamic_registry::ExecutionStrategy::Skill | dynamic_registry::ExecutionStrategy::Fork => {
+            let Some(skill) = cc_skills::find_skill(&entry.name) else {
+                anyhow::bail!("Skill command /{} is not loaded", entry.name);
+            };
+            let prepared = cc_skills::invocation::prepare_skill_invocation(
+                &skill,
+                args,
+                &ctx.app_state.main_loop_model,
+                Some(ctx.session_id.as_str()),
+            );
+            let messages = match prepared {
+                cc_skills::invocation::PreparedSkillInvocation::Inline { new_messages, .. } => {
+                    new_messages
+                }
+                cc_skills::invocation::PreparedSkillInvocation::Fork { .. } => {
+                    vec![cc_skills::invocation::make_skill_message(
+                        &skill,
+                        args,
+                        Some(ctx.session_id.as_str()),
+                    )]
+                }
+            };
+            Ok(CommandResult::Query(messages))
+        }
+        dynamic_registry::ExecutionStrategy::Plugin => {
+            let owner = entry.plugin_id.as_deref().unwrap_or("unknown plugin");
+            Ok(CommandResult::Output(format!(
+                "Plugin command /{} is registered by {}. Plugin command execution is routed through the dynamic command registry.",
+                entry.name, owner
+            )))
+        }
+        dynamic_registry::ExecutionStrategy::Mcp { ref server_name } => {
+            Ok(CommandResult::Output(format!(
+                "MCP command /{} is registered for server {}.",
+                entry.name, server_name
+            )))
+        }
+        dynamic_registry::ExecutionStrategy::Inline => {
+            anyhow::bail!("Dynamic inline command /{} has no handler", entry.name)
+        }
+    }
 }
 
 #[cfg(test)]

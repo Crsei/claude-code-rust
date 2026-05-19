@@ -134,6 +134,10 @@ pub fn skills_dir_global() -> PathBuf {
     data_root().join("skills")
 }
 
+pub fn skill_usage_path() -> PathBuf {
+    data_root().join("skill-usage.json")
+}
+
 pub fn teams_dir() -> PathBuf {
     data_root().join("teams")
 }

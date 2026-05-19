@@ -57,13 +57,10 @@ impl PluginPolicyEnforcer {
         // Check allowed sources
         if !install_policy.allowed_sources.is_empty() {
             let source_category = categorize_source(source);
-            let source_allowed = install_policy
-                .allowed_sources
-                .iter()
-                .any(|allowed| {
-                    let allowed_str = format!("{:?}", allowed).to_lowercase();
-                    source_category == allowed_str
-                });
+            let source_allowed = install_policy.allowed_sources.iter().any(|allowed| {
+                let allowed_str = format!("{:?}", allowed).to_lowercase();
+                source_category == allowed_str
+            });
 
             if !source_allowed {
                 return PolicyDecision::Blocked {
@@ -102,6 +99,8 @@ fn categorize_source(source: &PluginSource) -> String {
         PluginSource::Npm { .. } => "marketplace".to_string(),
         PluginSource::GitHub { .. } => "git".to_string(),
         PluginSource::Git { .. } => "git".to_string(),
+        PluginSource::Url { .. } => "url".to_string(),
+        PluginSource::Marketplace { .. } => "marketplace".to_string(),
         PluginSource::Local { .. } => "local".to_string(),
     }
 }
@@ -109,9 +108,7 @@ fn categorize_source(source: &PluginSource) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cc_config::mdm::{
-        ManagedPolicy, PluginInstallPolicy, PluginSource as PolicyPluginSource,
-    };
+    use cc_config::mdm::{ManagedPolicy, PluginInstallPolicy, PluginSource as PolicyPluginSource};
 
     fn make_policy_with_sources(sources: Vec<PolicyPluginSource>) -> ManagedPolicy {
         ManagedPolicy {
@@ -126,8 +123,13 @@ mod tests {
 
     #[test]
     fn test_no_policy_allows_all() {
-        let decision =
-            PluginPolicyEnforcer::check_plugin_allowed("test", &PluginSource::Local { path: "/tmp".into() }, None);
+        let decision = PluginPolicyEnforcer::check_plugin_allowed(
+            "test",
+            &PluginSource::Local {
+                path: "/tmp".into(),
+            },
+            None,
+        );
         assert!(decision.is_allowed());
     }
 
@@ -136,7 +138,9 @@ mod tests {
         let policy = make_policy_with_sources(vec![PolicyPluginSource::Local]);
         let decision = PluginPolicyEnforcer::check_plugin_allowed(
             "test",
-            &PluginSource::Local { path: "/tmp".into() },
+            &PluginSource::Local {
+                path: "/tmp".into(),
+            },
             Some(&policy),
         );
         assert!(decision.is_allowed());
@@ -147,7 +151,9 @@ mod tests {
         let policy = make_policy_with_sources(vec![PolicyPluginSource::Marketplace]);
         let decision = PluginPolicyEnforcer::check_plugin_allowed(
             "test",
-            &PluginSource::Local { path: "/tmp".into() },
+            &PluginSource::Local {
+                path: "/tmp".into(),
+            },
             Some(&policy),
         );
         assert!(decision.is_blocked());
@@ -161,6 +167,20 @@ mod tests {
             &PluginSource::Npm {
                 package: "pkg".into(),
                 version: None,
+            },
+            Some(&policy),
+        );
+        assert!(decision.is_allowed());
+    }
+
+    #[test]
+    fn test_marketplace_source_category() {
+        let policy = make_policy_with_sources(vec![PolicyPluginSource::Marketplace]);
+        let decision = PluginPolicyEnforcer::check_plugin_allowed(
+            "test",
+            &PluginSource::Marketplace {
+                id: "test".into(),
+                source_name: "local-market".into(),
             },
             Some(&policy),
         );

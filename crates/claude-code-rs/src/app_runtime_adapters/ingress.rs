@@ -8,14 +8,22 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use tracing::{debug, warn};
 
-use cc_commands::{CommandContext, CommandResult};
+use cc_engine::command_runtime::{CommandContext, CommandResult};
 use cc_engine::lifecycle::QueryEngine;
 use cc_services::prompt_suggestion::PromptSuggestionService;
+use cc_types::commands::CommandDispatcher;
 use cc_types::message::{ContentBlock, Message, MessageContent};
 
 use super::query_runner::spawn_query_turn;
+use crate::ui::completions::{
+    CombinedCompleter, CommandCompletionProvider, CompletionContext, CompletionItem, CompletionKind,
+};
+use crate::ui::path_completion::PathCompletionProvider;
+use crate::ui::shell_history_completion::ShellHistoryCompletionProvider;
+use crate::ui::slack_channel_completion::SlackChannelCompletionProvider;
 use cc_ipc::runtime::SessionRuntime;
 use cc_ipc_client::sink::FrontendSink;
+use cc_ipc_protocol::protocol::{CompletionItemDTO, InstallProgress, LspRecommendationDTO};
 use cc_ipc_protocol::{BackendMessage, ConversationMessage, FrontendMessage};
 
 // ---------------------------------------------------------------------------
@@ -233,9 +241,6 @@ pub(crate) async fn dispatch(
             );
         }
 
-        // ── Phase 2 integration (Serial Integration Lane) ──
-        // Stub handlers — fully wired in a follow-up pass.
-
         FrontendMessage::RequestCompletions {
             input,
             cursor_pos,
@@ -245,47 +250,141 @@ pub(crate) async fn dispatch(
                 "headless: request_completions id={} cursor={}",
                 request_id, cursor_pos
             );
-            // TODO: route to CombinedCompleter
-            let _ = sink.send(&BackendMessage::Completions {
-                items: vec![],
-                request_id,
-            });
+            let items = compute_headless_completions(&input, cursor_pos);
+            let _ = sink.send(&BackendMessage::Completions { items, request_id });
         }
 
-        FrontendMessage::AcceptCompletion {
-            request_id,
-            index,
-        } => {
+        FrontendMessage::AcceptCompletion { request_id, index } => {
             debug!(
                 "headless: accept_completion id={} index={}",
                 request_id, index
             );
-            // TODO: emit CompletionProvided subsystem event
+            let _ = sink.send(&BackendMessage::SystemInfo {
+                text: format!("Completion {} accepted for request {}.", index, request_id),
+                level: "info".to_string(),
+            });
         }
 
         FrontendMessage::InstallRecommendedPlugin { plugin_id } => {
             debug!("headless: install_recommended_plugin {}", plugin_id);
-            // TODO: route to cc_plugins::installation::install_plugin
+            let _ = sink.send(&BackendMessage::PluginInstallProgress {
+                plugin_id: plugin_id.clone(),
+                status: InstallProgress::Downloading,
+            });
+            let policy = crate::command_runtime_bridge::managed_policy_for_commands();
+            let (available_plugins, all_manifests) =
+                crate::command_runtime_bridge::plugin_dependency_context();
+            match cc_plugins::installation::install_plugin(
+                &plugin_id,
+                None,
+                Some(env!("CARGO_PKG_VERSION")),
+                policy.as_ref(),
+                &available_plugins,
+                &all_manifests,
+            )
+            .await
+            {
+                Ok(_) => {
+                    let _ = sink.send(&BackendMessage::PluginInstallProgress {
+                        plugin_id,
+                        status: InstallProgress::Installed,
+                    });
+                }
+                Err(error) => {
+                    let _ = sink.send(&BackendMessage::PluginInstallProgress {
+                        plugin_id,
+                        status: InstallProgress::Failed {
+                            error: error.to_string(),
+                        },
+                    });
+                }
+            }
         }
 
         FrontendMessage::RefreshPluginTelemetry => {
             debug!("headless: refresh_plugin_telemetry");
-            // TODO: emit TelemetryFlush subsystem event
+            let _ = sink.send(&BackendMessage::TelemetryStatus {
+                enabled: telemetry_bridge_active(),
+                session_id: Some(engine.current_session_id().to_string()),
+                errors: Vec::new(),
+            });
         }
 
         FrontendMessage::RequestLspRecommendations { language } => {
-            debug!(
-                "headless: request_lsp_recommendations lang={:?}",
-                language
-            );
-            // TODO: route to cc_lsp_service::generate_recommendations
+            debug!("headless: request_lsp_recommendations lang={:?}", language);
+            let cwd = engine.cwd();
+            let installed: Vec<String> = cc_plugins::loader::load_installed_plugins()
+                .into_iter()
+                .map(|plugin| plugin.id)
+                .collect();
+            let mut recommendations =
+                cc_lsp_service::generate_recommendations(std::path::Path::new(&cwd), &installed);
+            if let Some(language) = language.as_ref() {
+                recommendations.retain(|rec| {
+                    rec.languages
+                        .iter()
+                        .any(|candidate| candidate.eq_ignore_ascii_case(language))
+                });
+            }
             let _ = sink.send(&BackendMessage::LspRecommendations {
-                recommendations: vec![],
+                recommendations: recommendations
+                    .into_iter()
+                    .map(|rec| LspRecommendationDTO {
+                        plugin_id: rec.plugin_id,
+                        plugin_name: rec.plugin_name,
+                        description: Some(rec.description),
+                        languages: rec.languages,
+                        confidence: rec.confidence,
+                        is_installed: rec.is_already_installed,
+                        is_dismissed: false,
+                    })
+                    .collect(),
             });
         }
     }
 
     true // continue loop
+}
+
+fn compute_headless_completions(input: &str, cursor_pos: usize) -> Vec<CompletionItemDTO> {
+    let mut completer = CombinedCompleter::new();
+    completer.add_provider(Box::new(CommandCompletionProvider::new()));
+    completer.add_provider(Box::new(PathCompletionProvider::new()));
+    completer.add_provider(Box::new(ShellHistoryCompletionProvider::new()));
+    completer.add_provider(Box::new(SlackChannelCompletionProvider::new()));
+    let ctx = CompletionContext::new(input, cursor_pos.min(input.len()), &[]);
+    completer
+        .compute(&ctx)
+        .into_iter()
+        .map(completion_item_to_dto)
+        .collect()
+}
+
+fn completion_item_to_dto(item: CompletionItem) -> CompletionItemDTO {
+    CompletionItemDTO {
+        label: item.label,
+        insert_text: item.insert_text,
+        kind: match item.kind {
+            CompletionKind::Command => "command",
+            CompletionKind::Path => "path",
+            CompletionKind::ShellHistory => "shell_history",
+            CompletionKind::SlackChannel => "slack_channel",
+            CompletionKind::Skill => "skill",
+            CompletionKind::Argument => "arg",
+        }
+        .to_string(),
+        detail: item.detail,
+    }
+}
+
+#[cfg(feature = "telemetry")]
+fn telemetry_bridge_active() -> bool {
+    cc_engine::telemetry_bridge::is_active()
+}
+
+#[cfg(not(feature = "telemetry"))]
+fn telemetry_bridge_active() -> bool {
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -437,16 +536,18 @@ async fn handle_slash_command(
         return;
     }
 
-    let Some((cmd_idx, args)) = cc_commands::parse_command_input(trimmed) else {
+    let dispatcher = cc_commands::DefaultCommandDispatcher::for_full_registry();
+    let Some(parsed) = dispatcher.parse_command_input(trimmed) else {
         let _ = sink.send(&BackendMessage::Error {
             message: format!("unknown command: {}", trimmed),
             recoverable: true,
         });
         return;
     };
+    let command_name = dispatcher
+        .command_name(parsed.index)
+        .unwrap_or_else(|| trimmed.trim_start_matches('/').to_string());
 
-    let all_commands = cc_commands::get_all_commands();
-    let cmd = &all_commands[cmd_idx];
     let original_messages = engine.messages();
     let original_app_state = engine.app_state();
     let original_plan = original_app_state.plan_workflow.clone();
@@ -459,7 +560,10 @@ async fn handle_slash_command(
         session_id: engine.current_session_id(),
     };
 
-    let cmd_result = cmd.handler.execute(&args, &mut ctx).await;
+    let command_executor = engine.command_executor();
+    let cmd_result = command_executor
+        .execute(parsed, command_name.clone(), &mut ctx)
+        .await;
 
     // Sync any state mutations (e.g. /add-dir, /team) back to the engine.
     // Commands operate on a cloned snapshot; without this sync their edits
@@ -482,7 +586,7 @@ async fn handle_slash_command(
         // If this was a /team command (or any command that mutated team_context),
         // push a fresh StatusSnapshot so the Team Dashboard reflects the change
         // without the frontend having to poll.
-        if cmd.name == "team" {
+        if command_name == "team" {
             if let Some(tc) = ctx.app_state.team_context.as_ref() {
                 if !tc.team_name.is_empty() {
                     let events = cc_ipc::agent_handlers::build_team_status_events(&tc.team_name);

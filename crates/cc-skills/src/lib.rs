@@ -423,7 +423,7 @@ pub static SKILL_USAGE: LazyLock<Mutex<usage::SkillUsageTracker>> =
 
 /// Record a skill invocation in the global usage tracker.
 ///
-/// Debounced: repeated calls within 30 seconds for the same skill are ignored.
+/// Debounced: repeated calls within 60 seconds for the same skill are ignored.
 pub fn record_skill_usage(name: &str) {
     let mut guard = SKILL_USAGE.lock();
     guard.record_invocation(name);

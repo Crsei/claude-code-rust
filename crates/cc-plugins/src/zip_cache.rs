@@ -6,9 +6,11 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use flate2::read::GzDecoder;
 use lru::LruCache;
 use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
+use std::io::Read;
 use std::num::NonZeroUsize;
 use std::sync::LazyLock;
 
@@ -85,11 +87,14 @@ pub fn cache_key(url: &str, checksum: Option<&str>) -> String {
 /// that would escape the destination directory.
 pub fn extract_zip_to(zip_data: &[u8], dest_dir: &Path) -> Result<()> {
     let cursor = std::io::Cursor::new(zip_data);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .context("Failed to open ZIP archive")?;
+    let mut archive = zip::ZipArchive::new(cursor).context("Failed to open ZIP archive")?;
 
-    std::fs::create_dir_all(dest_dir)
-        .with_context(|| format!("Failed to create destination directory: {}", dest_dir.display()))?;
+    std::fs::create_dir_all(dest_dir).with_context(|| {
+        format!(
+            "Failed to create destination directory: {}",
+            dest_dir.display()
+        )
+    })?;
 
     for i in 0..archive.len() {
         let mut entry = archive
@@ -114,8 +119,9 @@ pub fn extract_zip_to(zip_data: &[u8], dest_dir: &Path) -> Result<()> {
                 .with_context(|| format!("Failed to create directory: {}", entry_path.display()))?;
         } else {
             if let Some(parent) = entry_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("Failed to create parent directory: {}", parent.display()))?;
+                std::fs::create_dir_all(parent).with_context(|| {
+                    format!("Failed to create parent directory: {}", parent.display())
+                })?;
             }
 
             let mut output_file = std::fs::File::create(&entry_path)
@@ -127,6 +133,128 @@ pub fn extract_zip_to(zip_data: &[u8], dest_dir: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Safe extraction of a gzip-compressed tar archive to a destination directory.
+///
+/// This intentionally implements only the regular-file/directory subset used
+/// by npm plugin packages and rejects absolute paths, `..`, symlinks, hard
+/// links, and special entries.
+pub fn extract_tgz_to(tgz_data: &[u8], dest_dir: &Path) -> Result<()> {
+    let mut decoder = GzDecoder::new(tgz_data);
+    let mut tar_data = Vec::new();
+    decoder
+        .read_to_end(&mut tar_data)
+        .context("Failed to decompress gzip archive")?;
+
+    std::fs::create_dir_all(dest_dir).with_context(|| {
+        format!(
+            "Failed to create destination directory: {}",
+            dest_dir.display()
+        )
+    })?;
+
+    let mut offset = 0usize;
+    while offset + 512 <= tar_data.len() {
+        let header = &tar_data[offset..offset + 512];
+        offset += 512;
+
+        if header.iter().all(|b| *b == 0) {
+            break;
+        }
+
+        let path = tar_header_path(header)?;
+        let size = tar_octal(&header[124..136])?;
+        let typeflag = header[156];
+        let padded = ((size + 511) / 512) * 512;
+        if offset + padded > tar_data.len() {
+            anyhow::bail!("Invalid tar archive: entry '{}' exceeds archive size", path);
+        }
+        let payload = &tar_data[offset..offset + size];
+        offset += padded;
+
+        let relative = safe_tar_path(&path)?;
+        let target = dest_dir.join(relative);
+        match typeflag {
+            b'0' | 0 => {
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create parent directory: {}", parent.display())
+                    })?;
+                }
+                std::fs::write(&target, payload)
+                    .with_context(|| format!("Failed to write tar entry: {}", target.display()))?;
+            }
+            b'5' => {
+                std::fs::create_dir_all(&target)
+                    .with_context(|| format!("Failed to create directory: {}", target.display()))?;
+            }
+            b'1' | b'2' => {
+                anyhow::bail!("Refusing to extract link entry from tar archive: {}", path);
+            }
+            _ => {
+                if size != 0 {
+                    anyhow::bail!(
+                        "Unsupported tar entry type '{}' for {}",
+                        typeflag as char,
+                        path
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn tar_header_path(header: &[u8]) -> Result<String> {
+    let name = tar_string(&header[0..100]);
+    let prefix = tar_string(&header[345..500]);
+    let path = if prefix.is_empty() {
+        name
+    } else {
+        format!("{prefix}/{name}")
+    };
+    if path.trim().is_empty() {
+        anyhow::bail!("Invalid tar archive: empty entry path");
+    }
+    Ok(path)
+}
+
+fn tar_string(bytes: &[u8]) -> String {
+    let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+    String::from_utf8_lossy(&bytes[..end]).trim().to_string()
+}
+
+fn tar_octal(bytes: &[u8]) -> Result<usize> {
+    let raw = tar_string(bytes);
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(0);
+    }
+    usize::from_str_radix(trimmed, 8).with_context(|| format!("Invalid tar octal field: {trimmed}"))
+}
+
+fn safe_tar_path(path: &str) -> Result<PathBuf> {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        anyhow::bail!(
+            "Path traversal detected: absolute tar path {}",
+            path.display()
+        );
+    }
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(part) => out.push(part),
+            std::path::Component::CurDir => {}
+            _ => anyhow::bail!("Path traversal detected in tar path {}", path.display()),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        anyhow::bail!("Invalid tar path {}", path.display());
+    }
+    Ok(out)
 }
 
 /// Compute SHA-256 hash of a file.
@@ -187,9 +315,7 @@ mod tests {
             zip_writer
                 .start_file("../evil.sh", options)
                 .expect("start file");
-            zip_writer
-                .write(b"malicious content")
-                .expect("write");
+            zip_writer.write(b"malicious content").expect("write");
             zip_writer.finish().expect("finish");
         }
 
@@ -206,7 +332,7 @@ mod tests {
     fn test_extract_zip_to_empty_archive() {
         let mut zip_buf = Vec::new();
         {
-            let mut zip_writer = zip::ZipWriter::new(std::io::Cursor::new(&mut zip_buf));
+            let zip_writer = zip::ZipWriter::new(std::io::Cursor::new(&mut zip_buf));
             zip_writer.finish().expect("finish");
         }
 

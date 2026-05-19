@@ -15,7 +15,10 @@ pub enum ResolveSource {
     /// GitHub repository (owner/repo format).
     GitHub { repo: String, tag: Option<String> },
     /// npm package.
-    Npm { package: String, version: Option<String> },
+    Npm {
+        package: String,
+        version: Option<String>,
+    },
     /// Local file path.
     File(PathBuf),
 }
@@ -37,8 +40,12 @@ pub struct ResolvedPlugin {
 pub async fn resolve_source(source: &ResolveSource, dest_dir: &Path) -> Result<ResolvedPlugin> {
     match source {
         ResolveSource::Url(url) => resolve_url_source(url, dest_dir).await,
-        ResolveSource::GitHub { repo, tag } => resolve_github_source(repo, tag.as_deref(), dest_dir).await,
-        ResolveSource::Npm { package, version } => resolve_npm_source(package, version.as_deref(), dest_dir).await,
+        ResolveSource::GitHub { repo, tag } => {
+            resolve_github_source(repo, tag.as_deref(), dest_dir).await
+        }
+        ResolveSource::Npm { package, version } => {
+            resolve_npm_source(package, version.as_deref(), dest_dir).await
+        }
         ResolveSource::File(path) => resolve_file_source(path, dest_dir),
     }
 }
@@ -79,7 +86,11 @@ async fn resolve_url_source(url: &str, dest_dir: &Path) -> Result<ResolvedPlugin
 }
 
 /// Resolve a GitHub release source.
-async fn resolve_github_source(repo: &str, tag: Option<&str>, dest_dir: &Path) -> Result<ResolvedPlugin> {
+async fn resolve_github_source(
+    repo: &str,
+    tag: Option<&str>,
+    dest_dir: &Path,
+) -> Result<ResolvedPlugin> {
     let release_tag = tag.unwrap_or("latest");
     // GitHub release archive URL
     let url = format!(
@@ -167,7 +178,11 @@ async fn resolve_github_source(repo: &str, tag: Option<&str>, dest_dir: &Path) -
 }
 
 /// Resolve an npm package source.
-async fn resolve_npm_source(package: &str, version: Option<&str>, dest_dir: &Path) -> Result<ResolvedPlugin> {
+async fn resolve_npm_source(
+    package: &str,
+    version: Option<&str>,
+    dest_dir: &Path,
+) -> Result<ResolvedPlugin> {
     let version_str = version.unwrap_or("latest");
     let encoded_pkg = url::form_urlencoded::byte_serialize(package.as_bytes()).collect::<String>();
     let url = format!(
@@ -181,13 +196,37 @@ async fn resolve_npm_source(package: &str, version: Option<&str>, dest_dir: &Pat
         .with_context(|| format!("Failed to fetch npm package: {}", url))?;
 
     if !response.status().is_success() {
-        anyhow::bail!("npm registry returned HTTP {} for {}", response.status(), url);
+        anyhow::bail!(
+            "npm registry returned HTTP {} for {}",
+            response.status(),
+            url
+        );
     }
 
-    let bytes = response
+    let metadata_bytes = response
         .bytes()
         .await
         .context("Failed to read npm response body")?;
+
+    let tarball_url = npm_tarball_url_from_metadata(&metadata_bytes)
+        .context("Failed to resolve npm package tarball URL from registry metadata")?;
+
+    let tarball_response = reqwest::get(&tarball_url)
+        .await
+        .with_context(|| format!("Failed to fetch npm tarball: {}", tarball_url))?;
+
+    if !tarball_response.status().is_success() {
+        anyhow::bail!(
+            "npm tarball returned HTTP {} for {}",
+            tarball_response.status(),
+            tarball_url
+        );
+    }
+
+    let bytes = tarball_response
+        .bytes()
+        .await
+        .context("Failed to read npm tarball body")?;
 
     let checksum = hash_bytes(&bytes);
     let dest_path = dest_dir.join("package.tgz");
@@ -202,15 +241,49 @@ async fn resolve_npm_source(package: &str, version: Option<&str>, dest_dir: &Pat
     Ok(ResolvedPlugin {
         path: dest_path,
         checksum,
-        source_url: url,
+        source_url: tarball_url,
         extension: "tgz".to_string(),
     })
 }
 
-/// Resolve a local file source by copying the file.
+#[derive(serde::Deserialize)]
+struct NpmVersionMetadata {
+    dist: NpmDistMetadata,
+}
+
+#[derive(serde::Deserialize)]
+struct NpmDistMetadata {
+    tarball: String,
+}
+
+fn npm_tarball_url_from_metadata(bytes: &[u8]) -> Result<String> {
+    let metadata: NpmVersionMetadata =
+        serde_json::from_slice(bytes).context("Failed to parse npm version metadata")?;
+    if metadata.dist.tarball.trim().is_empty() {
+        anyhow::bail!("npm metadata dist.tarball is empty");
+    }
+    Ok(metadata.dist.tarball)
+}
+
+/// Resolve a local file or directory source.
 pub fn resolve_file_source(path: &Path, dest_dir: &Path) -> Result<ResolvedPlugin> {
     if !path.exists() {
         anyhow::bail!("Local plugin path does not exist: {}", path.display());
+    }
+
+    if path.is_dir() {
+        let dest_path = dest_dir.join("extracted");
+        if dest_path.exists() {
+            std::fs::remove_dir_all(&dest_path)
+                .with_context(|| format!("Failed to clear {}", dest_path.display()))?;
+        }
+        copy_dir_all(path, &dest_path)?;
+        return Ok(ResolvedPlugin {
+            path: dest_path,
+            checksum: hash_directory(path)?,
+            source_url: path.to_string_lossy().to_string(),
+            extension: "dir".to_string(),
+        });
     }
 
     let bytes = std::fs::read(path)
@@ -227,8 +300,13 @@ pub fn resolve_file_source(path: &Path, dest_dir: &Path) -> Result<ResolvedPlugi
 
     std::fs::create_dir_all(dest_dir)
         .with_context(|| format!("Failed to create directory: {}", dest_dir.display()))?;
-    std::fs::copy(path, &dest_path)
-        .with_context(|| format!("Failed to copy {} to {}", path.display(), dest_path.display()))?;
+    std::fs::copy(path, &dest_path).with_context(|| {
+        format!(
+            "Failed to copy {} to {}",
+            path.display(),
+            dest_path.display()
+        )
+    })?;
 
     Ok(ResolvedPlugin {
         path: dest_path,
@@ -236,6 +314,68 @@ pub fn resolve_file_source(path: &Path, dest_dir: &Path) -> Result<ResolvedPlugi
         source_url: path.to_string_lossy().to_string(),
         extension,
     })
+}
+
+fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
+    std::fs::create_dir_all(dst)
+        .with_context(|| format!("Failed to create directory: {}", dst.display()))?;
+    for entry in std::fs::read_dir(src)
+        .with_context(|| format!("Failed to read directory: {}", src.display()))?
+    {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let target = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_all(&entry.path(), &target)?;
+        } else if ty.is_file() {
+            std::fs::copy(entry.path(), &target).with_context(|| {
+                format!(
+                    "Failed to copy {} to {}",
+                    entry.path().display(),
+                    target.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn hash_directory(path: &Path) -> Result<String> {
+    let mut entries = Vec::new();
+    collect_dir_hash_entries(path, path, &mut entries)?;
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut hasher = Sha256::new();
+    for (relative, bytes) in entries {
+        hasher.update(relative.as_bytes());
+        hasher.update(&bytes);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn collect_dir_hash_entries(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<(String, Vec<u8>)>,
+) -> Result<()> {
+    for entry in std::fs::read_dir(dir)
+        .with_context(|| format!("Failed to read directory: {}", dir.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_dir_hash_entries(root, &path, out)?;
+        } else if path.is_file() {
+            let relative = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let bytes = std::fs::read(&path)
+                .with_context(|| format!("Failed to read {}", path.display()))?;
+            out.push((relative, bytes));
+        }
+    }
+    Ok(())
 }
 
 /// Compute SHA-256 hash of bytes.
@@ -275,15 +415,25 @@ mod tests {
 
     #[test]
     fn test_infer_extension() {
-        assert_eq!(infer_extension("https://example.com/plugin.zip", b""), "zip");
-        assert_eq!(infer_extension("https://example.com/plugin.mcpb", b""), "mcpb");
-        assert_eq!(infer_extension("https://example.com/plugin.tar.gz", b""), "tgz");
+        assert_eq!(
+            infer_extension("https://example.com/plugin.zip", b""),
+            "zip"
+        );
+        assert_eq!(
+            infer_extension("https://example.com/plugin.mcpb", b""),
+            "mcpb"
+        );
+        assert_eq!(
+            infer_extension("https://example.com/plugin.tar.gz", b""),
+            "tgz"
+        );
         assert_eq!(infer_extension("https://example.com/plugin", b""), "zip");
     }
 
     #[test]
     fn test_resolve_file_source_missing() {
-        let result = resolve_file_source(Path::new("/nonexistent/path/plugin.zip"), Path::new("/tmp"));
+        let result =
+            resolve_file_source(Path::new("/nonexistent/path/plugin.zip"), Path::new("/tmp"));
         assert!(result.is_err());
     }
 
@@ -300,5 +450,37 @@ mod tests {
         assert!(result.path.exists());
         let checksum = hash_bytes(b"fake zip content");
         assert_eq!(result.checksum, checksum);
+    }
+
+    #[test]
+    fn test_resolve_local_directory_source_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("plugin-dir");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("plugin.json"),
+            r#"{"name":"local-plugin","version":"1.0.0"}"#,
+        )
+        .unwrap();
+
+        let dest = dir.path().join("dest");
+        let result = resolve_file_source(&src, &dest).unwrap();
+
+        assert_eq!(result.extension, "dir");
+        assert!(result.path.join("plugin.json").exists());
+    }
+
+    #[test]
+    fn npm_metadata_uses_dist_tarball() {
+        let metadata = br#"{
+            "name": "pkg",
+            "version": "1.0.0",
+            "dist": {
+                "tarball": "https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz"
+            }
+        }"#;
+
+        let url = npm_tarball_url_from_metadata(metadata).unwrap();
+        assert_eq!(url, "https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz");
     }
 }

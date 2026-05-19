@@ -48,34 +48,33 @@ impl SkillUsageTracker {
 
     /// Record a skill invocation with debounce.
     ///
-    /// Repeated invocations within 30 seconds of the last one are silently
+    /// Repeated invocations within 60 seconds of the last one are silently
     /// ignored to prevent accidental double-counts.
     pub fn record_invocation(&mut self, skill_name: &str) {
-        // Debounce: skip if called within 30 seconds
+        // Debounce: skip if called within 60 seconds
         if let Some(last) = self.last_invocation.get(skill_name) {
-            if last.elapsed() < Duration::from_secs(30) {
+            if last.elapsed() < Duration::from_secs(60) {
                 return;
             }
         }
 
         let now = Utc::now();
-        let data =
-            self.inner
-                .entry(skill_name.to_string())
-                .or_insert(SkillUsageData {
-                    name: skill_name.to_string(),
-                    invocation_count: 0,
-                    last_invoked_at: None,
-                    rolling_score: 0.0,
-                });
+        let data = self
+            .inner
+            .entry(skill_name.to_string())
+            .or_insert(SkillUsageData {
+                name: skill_name.to_string(),
+                invocation_count: 0,
+                last_invoked_at: None,
+                rolling_score: 0.0,
+            });
 
         // Apply decay from last invocation then blend with weight = 1.0
         match data.last_invoked_at {
             Some(last_time) => {
                 let hours_since = (now - last_time).num_hours() as f64;
                 let decay_factor = 0.5_f64.powf(hours_since / 168.0); // 7-day half-life
-                data.rolling_score =
-                    data.rolling_score * decay_factor + (1.0 - decay_factor) * 1.0;
+                data.rolling_score = data.rolling_score * decay_factor + (1.0 - decay_factor) * 1.0;
             }
             None => {
                 // First invocation: start at 0.5
@@ -214,14 +213,14 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
 
         // Force second invocation by clearing debounce for test purposes
-        // In practice this may still be within 30s debounce period in same test
+        // In practice this may still be within the debounce period in same test
         // Let's use different skill names to avoid debounce
         let tracker_ref = &mut tracker;
         tracker_ref.record_invocation("test-2");
         tracker_ref.record_invocation("test-2");
         thread::sleep(Duration::from_millis(100));
 
-        // test was recorded once (first call creates entry, second falls within 30ms debounce)
+        // test was recorded once (first call creates entry, second falls within debounce)
         let entry = tracker_ref.inner.get("test").unwrap();
         assert_eq!(entry.invocation_count, 1);
     }
@@ -231,8 +230,8 @@ mod tests {
         let mut tracker = SkillUsageTracker::new();
 
         tracker.record_invocation("skill-a");
-        tracker.record_invocation("skill-a"); // within 30s → should be ignored
-        tracker.record_invocation("skill-a"); // within 30s → should be ignored
+        tracker.record_invocation("skill-a"); // within 60s -> should be ignored
+        tracker.record_invocation("skill-a"); // within 60s -> should be ignored
 
         let entry = tracker.inner.get("skill-a").unwrap();
         assert_eq!(entry.invocation_count, 1);

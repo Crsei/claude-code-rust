@@ -19,6 +19,7 @@ tracing = { workspace = true }
 reqwest = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+flate2 = "1"
 lru = { workspace = true }
 semver = { workspace = true }
 url = { workspace = true }

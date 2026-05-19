@@ -86,7 +86,11 @@ impl PathCompletionProvider {
     /// - `base_dir` is the directory to scan (resolved)
     /// - `prefix` is the partial file/directory name to filter by
     /// - `full_range` is the byte range in the input to replace
-    fn parse_partial_path(&self, input: &str, cursor_pos: usize) -> Option<(PathBuf, String, Range<usize>)> {
+    fn parse_partial_path(
+        &self,
+        input: &str,
+        cursor_pos: usize,
+    ) -> Option<(PathBuf, String, Range<usize>)> {
         let byte_pos = cursor_pos.min(input.len());
         let prefix = &input[..byte_pos];
 
@@ -99,7 +103,9 @@ impl PathCompletionProvider {
         let token = &input[start..byte_pos];
 
         // Skip empty or single-character tokens that don't look like paths
-        if token.is_empty() || (!token.contains('/') && !token.starts_with('.') && !token.starts_with('~')) {
+        if token.is_empty()
+            || (!token.contains('/') && !token.starts_with('.') && !token.starts_with('~'))
+        {
             return None;
         }
 
@@ -174,11 +180,7 @@ impl PathCompletionProvider {
                     .collect();
 
                 // Sort: directories first, then files, both alphabetical
-                entries.sort_by(|a, b| {
-                    b.is_dir
-                        .cmp(&a.is_dir)
-                        .then_with(|| a.name.cmp(&b.name))
-                });
+                entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
 
                 entries
             }
@@ -227,12 +229,7 @@ impl CompletionProvider for PathCompletionProvider {
                 name.clone()
             };
 
-            let mut item = CompletionItem::new(
-                CompletionKind::Path,
-                label,
-                insert,
-                range.clone(),
-            );
+            let mut item = CompletionItem::new(CompletionKind::Path, label, insert, range.clone());
             if entry.is_dir {
                 item.detail = Some("directory".to_string());
             }
@@ -282,7 +279,7 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
-    fn make_ctx(input: &str, cursor_pos: usize) -> CompletionContext {
+    fn make_ctx(input: &str, cursor_pos: usize) -> CompletionContext<'_> {
         CompletionContext::new(input, cursor_pos, &[])
     }
 
@@ -322,8 +319,14 @@ mod tests {
         let mut provider = PathCompletionProvider::new();
         // Reset to fresh cache
         let entries = provider.get_or_scan_dir(dir.path());
-        assert!(!entries.iter().any(|e| e.name == ".hidden"), "hidden files should be excluded by default");
-        assert!(entries.iter().any(|e| e.name == "visible"), "visible files should be included");
+        assert!(
+            !entries.iter().any(|e| e.name == ".hidden"),
+            "hidden files should be excluded by default"
+        );
+        assert!(
+            entries.iter().any(|e| e.name == "visible"),
+            "visible files should be included"
+        );
     }
 
     #[test]
@@ -335,8 +338,14 @@ mod tests {
         let mut provider = PathCompletionProvider::new();
         provider.set_include_hidden(true);
         let entries = provider.get_or_scan_dir(dir.path());
-        assert!(entries.iter().any(|e| e.name == ".hidden"), "hidden files should be included when option set");
-        assert!(entries.iter().any(|e| e.name == "visible"), "visible files should be included");
+        assert!(
+            entries.iter().any(|e| e.name == ".hidden"),
+            "hidden files should be included when option set"
+        );
+        assert!(
+            entries.iter().any(|e| e.name == "visible"),
+            "visible files should be included"
+        );
     }
 
     #[test]
@@ -405,6 +414,9 @@ mod tests {
         let mut provider = PathCompletionProvider::new();
         let entries = provider.get_or_scan_dir(dir.path());
         assert_eq!(entries[0].name, "a_dir", "directories should come first");
-        assert_eq!(entries[1].name, "a_file.txt", "files should come after directories");
+        assert_eq!(
+            entries[1].name, "a_file.txt",
+            "files should come after directories"
+        );
     }
 }
