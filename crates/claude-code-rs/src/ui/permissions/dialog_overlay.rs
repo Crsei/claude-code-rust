@@ -7,6 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 use crate::ui::approval_overlay::ApprovalKind;
+use crate::ui::permissions::permission_request_router::PermissionRequestRouter;
 use crate::ui::theme::Theme;
 
 /// The user's response to a permission prompt.
@@ -40,13 +41,19 @@ pub struct PermissionDialog {
 
 impl PermissionDialog {
     pub fn new(tool_name: &str, input: &str, message: &str) -> Self {
+        let routed = PermissionRequestRouter::route(tool_name, input, message, 0);
         let kind = approval_kind(tool_name, input, message);
+        let options = if routed.options.is_empty() {
+            default_options()
+        } else {
+            routed.options
+        };
         Self {
             tool_name: tool_name.to_string(),
             tool_input: input.to_string(),
             message: message.to_string(),
             kind,
-            options: default_options(),
+            options,
             selected: 0,
         }
     }
@@ -151,22 +158,8 @@ impl PermissionDialog {
         let request_inner = request_block.inner(chunks[1]);
         request_block.render_ref(chunks[1], buf);
         if request_inner.height > 0 && request_inner.width > 0 {
-            let body_label = body_label_for_kind(&self.kind);
-            let body_text = self.body_text();
-            let mut body_lines = vec![Line::from(vec![
-                Span::styled(format!("{body_label}: "), theme.dim),
-                Span::styled(
-                    truncate_str(&body_text, request_inner.width as usize),
-                    theme.warning,
-                ),
-            ])];
-
-            if !self.message.trim().is_empty() && self.message.trim() != body_text.trim() {
-                body_lines.push(Line::from(vec![Span::styled(
-                    truncate_str(&self.message, request_inner.width as usize),
-                    theme.dim,
-                )]));
-            }
+            let body_lines =
+                self.body_lines(request_inner.width as usize, request_inner.height, theme);
 
             Paragraph::new(body_lines)
                 .wrap(Wrap { trim: true })
@@ -221,6 +214,44 @@ impl PermissionDialog {
         }
     }
 
+    fn body_lines(&self, max_width: usize, max_height: u16, theme: &Theme) -> Vec<Line<'static>> {
+        let routed = PermissionRequestRouter::route(
+            &self.tool_name,
+            &self.tool_input,
+            &self.message,
+            self.selected,
+        );
+        let routed_lines = routed_detail_lines(&routed.rendered)
+            .into_iter()
+            .take(max_height.saturating_sub(1) as usize)
+            .map(|line| {
+                Line::from(vec![Span::styled(
+                    truncate_str(&line, max_width),
+                    theme_style_for_routed_line(&line, theme),
+                )])
+            })
+            .collect::<Vec<_>>();
+
+        if !routed_lines.is_empty() {
+            return routed_lines;
+        }
+
+        let body_label = body_label_for_kind(&self.kind);
+        let body_text = self.body_text();
+        let mut body_lines = vec![Line::from(vec![
+            Span::styled(format!("{body_label}: "), theme.dim),
+            Span::styled(truncate_str(&body_text, max_width), theme.warning),
+        ])];
+
+        if !self.message.trim().is_empty() && self.message.trim() != body_text.trim() {
+            body_lines.push(Line::from(vec![Span::styled(
+                truncate_str(&self.message, max_width),
+                theme.dim,
+            )]));
+        }
+        body_lines
+    }
+
     fn normalized_options(&self) -> Vec<String> {
         if self.options.is_empty() {
             default_options()
@@ -235,6 +266,190 @@ impl PermissionDialog {
             .get(self.selected.min(labels.len().saturating_sub(1)))
             .map(|label| choice_for_label(label).unwrap_or(PermissionChoice::Allow))
             .unwrap_or(PermissionChoice::Allow)
+    }
+}
+
+fn theme_style_for_routed_line(line: &str, theme: &Theme) -> Style {
+    if line.contains("risk:") || line.contains("network access") || line.contains("unknown tool") {
+        theme.warning.add_modifier(Modifier::BOLD)
+    } else {
+        theme.warning
+    }
+}
+
+fn routed_detail_lines(rendered: &str) -> Vec<String> {
+    rendered
+        .lines()
+        .map(panel_line_to_text)
+        .filter(|line| !line.is_empty())
+        .filter(|line| !is_router_chrome_line(line))
+        .take(8)
+        .collect()
+}
+
+fn panel_line_to_text(line: &str) -> String {
+    let trimmed = line.trim();
+    if trimmed.starts_with('+') || trimmed.starts_with("|---") {
+        return String::new();
+    }
+    if trimmed.starts_with('|') {
+        let inner = trimmed.trim_start_matches('|').trim_end_matches('|');
+        let chars = inner.chars().collect::<Vec<_>>();
+        let nav_start = 1;
+        let nav_end = nav_start + 22;
+        let right_column_start = nav_end + 1;
+        if chars.len() > right_column_start {
+            let left = chars[nav_start..nav_end.min(chars.len())]
+                .iter()
+                .collect::<String>();
+            if !is_panel_nav_cell(&left) {
+                return String::new();
+            }
+            return chars[right_column_start..]
+                .iter()
+                .collect::<String>()
+                .trim()
+                .to_string();
+        }
+        return String::new();
+    }
+    trimmed.to_string()
+}
+
+fn is_panel_nav_cell(cell: &str) -> bool {
+    let label = cell.trim().trim_start_matches('>').trim();
+    label.is_empty() || matches!(label, "Request" | "Context" | "Decisions")
+}
+
+fn is_router_chrome_line(line: &str) -> bool {
+    line.eq_ignore_ascii_case("Request")
+        || line.eq_ignore_ascii_case("Context")
+        || line.eq_ignore_ascii_case("Decision")
+        || line.eq_ignore_ascii_case("Decisions")
+        || line.contains("Request") && line.contains("Decision")
+        || line.starts_with("tool=")
+        || line.starts_with("Up/Down decision")
+        || line.contains("scope=")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{routed_detail_lines, PermissionChoice, PermissionDialog};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+
+    use crate::ui::permissions::web_fetch_permission_request::web_fetch_permission_request::render_web_fetch_permission_request;
+    use crate::ui::theme::Theme;
+
+    #[test]
+    fn routed_detail_lines_keep_detail_column_without_panel_chrome() {
+        let rendered = render_web_fetch_permission_request("https://example.com/docs", "GET", 0);
+        let lines = routed_detail_lines(&rendered);
+
+        assert!(lines.iter().any(|line| line.contains("https://example.com/docs")));
+        assert!(lines.iter().any(|line| line.contains("method: GET")));
+        assert!(!lines.iter().any(|line| line.contains("Web fetch permission")));
+        assert!(!lines.iter().any(|line| line.contains("Request") && line.contains("Decision")));
+        assert!(!lines.iter().any(|line| line == "Decision"));
+        assert!(!lines.iter().any(|line| line == "work access"));
+        assert!(!lines.iter().any(|line| line.starts_with("tool=")));
+        assert!(!lines.iter().any(|line| line.starts_with("risk=")));
+        assert!(!lines.iter().any(|line| line.contains("scope=")));
+        assert!(!lines.iter().any(|line| line.contains("Up/Down")));
+    }
+
+    #[test]
+    fn rendered_dialog_omits_routed_panel_chrome() {
+        let dialog = PermissionDialog::new("WebFetch", r#"{"url":"https://example.com/docs"}"#, "");
+        let rendered = render_dialog_text(&dialog);
+
+        assert!(rendered.contains("Permission Required"));
+        assert!(rendered.contains("https://example.com/docs"));
+        assert!(rendered.contains("method: GET"));
+        assert!(!rendered.contains("Web fetch permission"));
+        assert!(!rendered.contains("tool=web_fetch"));
+        assert!(!rendered.contains("risk=network access"));
+        assert!(!rendered.contains("scope="));
+        assert!(!rendered.contains("Up/Down decision"));
+        assert!(!rendered.lines().any(|line| line.trim() == "Decision"));
+        assert!(!rendered.lines().any(|line| line.trim() == "work access"));
+    }
+
+    #[test]
+    fn rendered_dialog_extracts_structured_bash_json() {
+        let dialog = PermissionDialog::new("Bash", r#"{"command":"cargo test"}"#, "");
+        let rendered = render_dialog_text(&dialog);
+
+        assert!(rendered.contains("command: cargo test"));
+        assert!(!rendered.contains(r#"{"command":"#));
+    }
+
+    #[test]
+    fn rendered_dialog_extracts_structured_file_json() {
+        let dialog = PermissionDialog::new("Edit", r#"{"file_path":"src/lib.rs"}"#, "");
+        let rendered = render_dialog_text(&dialog);
+
+        assert!(rendered.contains("src/lib.rs"));
+        assert!(!rendered.contains(r#"{"file_path":"#));
+    }
+
+    #[test]
+    fn file_permission_labels_navigate_to_choices() {
+        let mut dialog = PermissionDialog::new("Edit", r#"{"file_path":"src/lib.rs"}"#, "");
+        let rendered = render_dialog_text(&dialog);
+
+        assert!(rendered.contains("Allow edit"));
+        assert!(rendered.contains("Deny edit"));
+        assert!(rendered.contains("Always allow path"));
+
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(PermissionChoice::Allow)
+        );
+
+        let mut dialog = PermissionDialog::new("Edit", r#"{"file_path":"src/lib.rs"}"#, "");
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(PermissionChoice::Deny)
+        );
+
+        let mut dialog = PermissionDialog::new("Edit", r#"{"file_path":"src/lib.rs"}"#, "");
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(PermissionChoice::AlwaysAllow)
+        );
+    }
+
+    fn render_dialog_text(dialog: &PermissionDialog) -> String {
+        let area = Rect::new(0, 0, 120, 24);
+        let mut buffer = Buffer::empty(area);
+        dialog.render(area, &mut buffer, &Theme::default());
+        buffer_text(&buffer, area)
+    }
+
+    fn buffer_text(buffer: &Buffer, area: Rect) -> String {
+        let mut lines = Vec::new();
+        for y in area.y..area.y + area.height {
+            let mut line = String::new();
+            for x in area.x..area.x + area.width {
+                line.push_str(buffer[(x, y)].symbol());
+            }
+            lines.push(line.trim_end().to_string());
+        }
+        lines.join("\n")
     }
 }
 

@@ -612,14 +612,13 @@ fn web_fetch_permission_dialog_uses_dedicated_renderer() {
         "",
         "WebFetch: Allow tool? https://example.com/docs",
     );
-    let dialog = app
-        .permission_dialog
-        .as_ref()
-        .expect("permission dialog should open");
+    let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+    terminal.draw(|frame| app.render(frame)).expect("draw");
 
-    assert_eq!(dialog.tool_input, "https://example.com/docs");
-    assert!(dialog.message.contains("Web fetch permission"));
-    assert!(dialog.message.contains("method: GET"));
+    let content = buffer_to_lines(terminal.backend().buffer(), 100, 24).join("\n");
+    assert!(content.contains("Permission Required"));
+    assert!(content.contains("method: GET"));
+    assert!(content.contains("example.com/docs"));
 }
 
 #[test]

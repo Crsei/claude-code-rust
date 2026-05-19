@@ -2,7 +2,6 @@
 // Rust-side permission modules mirrored from upstream React components.
 #[allow(dead_code)]
 pub mod ask_user_question_permission_request;
-#[allow(dead_code)]
 pub mod bash_permission_request;
 #[allow(dead_code)]
 pub mod computer_use_approval;
@@ -10,13 +9,10 @@ pub mod computer_use_approval;
 pub mod enter_plan_mode_permission_request;
 #[allow(dead_code)]
 pub mod exit_plan_mode_permission_request;
-#[allow(dead_code)]
 pub mod fallback_permission_request;
-#[allow(dead_code)]
 pub mod file_edit_permission_request;
 #[allow(dead_code)]
 pub mod file_permission_dialog;
-#[allow(dead_code)]
 pub mod file_write_permission_request;
 #[allow(dead_code)]
 pub mod filesystem_permission_request;
@@ -36,11 +32,11 @@ pub mod permission_explanation;
 pub mod permission_prompt;
 #[allow(dead_code)]
 pub mod permission_request;
+pub mod permission_request_router;
 #[allow(dead_code)]
 pub mod permission_request_title;
 #[allow(dead_code)]
 pub mod permission_rule_explanation;
-#[allow(dead_code)]
 pub mod power_shell_permission_request;
 #[allow(dead_code)]
 pub mod review_artifact_permission_request;
@@ -58,7 +54,6 @@ pub mod skill_permission_request;
 pub mod use_shell_permission_feedback;
 #[allow(dead_code)]
 pub mod utils;
-#[allow(dead_code)]
 pub mod web_fetch_permission_request;
 #[allow(dead_code)]
 pub mod worker_badge;
