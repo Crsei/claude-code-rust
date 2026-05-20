@@ -1,33 +1,47 @@
 //! Read-only hook detail view.
 
-use super::select_event_mode::HookEvent;
-use super::select_hook_mode::HookCommand;
-use super::select_matcher_mode::HookMatcher;
+use cc_types::hooks::HookEvent;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HookView {
     pub event: HookEvent,
-    pub matcher: HookMatcher,
-    pub commands: Vec<HookCommand>,
+    pub matcher: Option<String>,
+    pub event_supports_matcher: bool,
+    pub hook_type: String,
+    pub source: String,
+    pub plugin_name: Option<String>,
+    pub content_label: String,
+    pub content_value: String,
+    pub status_message: Option<String>,
 }
 
 pub fn render_view_hook_mode(view: &HookView) -> String {
-    let mut lines = vec![
-        format!("Event: {}", view.event.label()),
-        format!("Matcher: {}", view.matcher.label()),
-        "Commands:".to_string(),
-    ];
-    if view.commands.is_empty() {
-        lines.push("  <none>".to_string());
-    } else {
-        for command in &view.commands {
-            let enabled = if command.enabled {
-                "enabled"
-            } else {
-                "disabled"
-            };
-            lines.push(format!("  - {} ({enabled})", command.command));
-        }
+    let mut lines = vec!["Hook details".to_string(), format!("Event: {}", view.event)];
+    if view.event_supports_matcher {
+        lines.push(format!(
+            "Matcher: {}",
+            view.matcher
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .unwrap_or("(all)")
+        ));
     }
+    lines.extend([
+        format!("Type: {}", view.hook_type),
+        format!("Source: {}", view.source),
+    ]);
+    if let Some(plugin_name) = &view.plugin_name {
+        lines.push(format!("Plugin: {plugin_name}"));
+    }
+    lines.push(String::new());
+    lines.push(format!("{}:", view.content_label));
+    lines.push(format!("  {}", view.content_value));
+    if let Some(status_message) = &view.status_message {
+        lines.push(format!("Status message: {status_message}"));
+    }
+    lines.push(String::new());
+    lines.push(
+        "To modify or remove this hook, edit .cc-rust/settings.json or ask Claude.".to_string(),
+    );
     lines.join("\n")
 }

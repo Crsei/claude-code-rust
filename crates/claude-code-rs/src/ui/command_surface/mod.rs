@@ -131,6 +131,9 @@ impl CommandSurface {
             if let Self::LspRecommendation(surface) = self {
                 return surface.cancel();
             }
+            if let Self::Hooks(surface) = self {
+                return surface.handle_key(key);
+            }
             return CommandSurfaceOutcome::Close;
         }
 

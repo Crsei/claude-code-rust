@@ -1,63 +1,59 @@
 //! Hook event selection.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HookEvent {
-    PreToolUse,
-    PostToolUse,
-    Notification,
-    Stop,
-    SubagentStop,
-    WorktreeCreate,
-    WorktreeRemove,
-}
-
-impl HookEvent {
-    pub fn label(self) -> &'static str {
-        match self {
-            HookEvent::PreToolUse => "PreToolUse",
-            HookEvent::PostToolUse => "PostToolUse",
-            HookEvent::Notification => "Notification",
-            HookEvent::Stop => "Stop",
-            HookEvent::SubagentStop => "SubagentStop",
-            HookEvent::WorktreeCreate => "WorktreeCreate",
-            HookEvent::WorktreeRemove => "WorktreeRemove",
-        }
-    }
-
-    #[cfg(test)]
-    pub fn description(self) -> &'static str {
-        match self {
-            HookEvent::PreToolUse => "Before a tool executes",
-            HookEvent::PostToolUse => "After a tool returns",
-            HookEvent::Notification => "When a notification is emitted",
-            HookEvent::Stop => "When the main agent stops",
-            HookEvent::SubagentStop => "When a subagent stops",
-            HookEvent::WorktreeCreate => "When a worktree is created",
-            HookEvent::WorktreeRemove => "When a worktree is removed",
-        }
-    }
-}
-
-pub const HOOK_EVENTS: &[HookEvent] = &[
-    HookEvent::PreToolUse,
-    HookEvent::PostToolUse,
-    HookEvent::Notification,
-    HookEvent::Stop,
-    HookEvent::SubagentStop,
-    HookEvent::WorktreeCreate,
-    HookEvent::WorktreeRemove,
-];
-
+pub use cc_types::hooks::HookEvent;
 #[cfg(test)]
-pub fn render_select_event_mode(selected: HookEvent) -> String {
-    let mut lines = vec!["Select hook event".to_string()];
-    for event in HOOK_EVENTS {
-        let marker = if *event == selected { ">" } else { " " };
+pub use cc_types::hooks::HOOK_EVENTS;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HookEventRow {
+    pub event: HookEvent,
+    pub summary: String,
+    pub hook_count: usize,
+}
+
+impl HookEventRow {
+    pub fn new(event: HookEvent, summary: impl Into<String>, hook_count: usize) -> Self {
+        Self {
+            event,
+            summary: summary.into(),
+            hook_count,
+        }
+    }
+}
+
+pub fn render_select_event_mode(
+    rows: &[HookEventRow],
+    selected_index: usize,
+    total_hooks_count: usize,
+    restricted_by_policy: bool,
+) -> String {
+    let mut lines = vec![
+        "Select hook event".to_string(),
+        format!("{total_hooks_count} hooks configured"),
+    ];
+    if restricted_by_policy {
+        lines.push(
+            "Hooks are restricted by policy; user/project/local hooks are blocked.".to_string(),
+        );
+    }
+    lines.push(
+        "Read-only. Edit .cc-rust/settings.json or .cc-rust/settings.local.json.".to_string(),
+    );
+    lines.push("Use /hooks open user or /hooks open project to edit a settings layer.".to_string());
+    lines.push(String::new());
+
+    for (idx, row) in rows.iter().enumerate() {
+        let marker = if idx == selected_index { ">" } else { " " };
+        let count = if row.hook_count > 0 {
+            format!(" ({})", row.hook_count)
+        } else {
+            String::new()
+        };
         lines.push(format!(
-            "{marker} {:<14} {}",
-            event.label(),
-            event.description()
+            "{marker} {:<18} {:<5} {}",
+            row.event, count, row.summary
         ));
     }
+
     lines.join("\n")
 }

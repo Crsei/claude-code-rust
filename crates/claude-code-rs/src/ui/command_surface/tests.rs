@@ -67,23 +67,109 @@ fn agents_surface_switches_between_list_and_detail() {
 }
 
 #[test]
-fn hooks_surface_navigates_to_event_command() {
+fn hooks_surface_browses_read_only_config() {
     let mut hooks = HashMap::new();
     hooks.insert(
-        "PostToolUse".to_string(),
-        serde_json::json!([{ "matcher": "*", "hooks": [{ "command": "cargo test" }] }]),
+        "PreToolUse".to_string(),
+        serde_json::json!([
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "cargo test",
+                        "statusMessage": "Run tests"
+                    },
+                    { "type": "prompt", "prompt": "Review the tool input" },
+                    { "type": "agent", "prompt": "Inspect the repository" },
+                    { "type": "http", "url": "https://hooks.example/run" }
+                ]
+            }
+        ]),
     );
     let mut surface = CommandSurface::Hooks(HooksSurface::new(&hooks));
-    surface.handle_key(key(KeyCode::Down));
+
+    let event_list = surface.render();
+    assert!(event_list.contains("Read-only"));
+    assert!(event_list.contains("PostToolUseFailure"));
+    assert!(event_list.contains("PermissionRequest"));
+    assert!(event_list.contains("InstructionsLoaded"));
+    assert!(event_list.contains("CwdChanged"));
+    assert!(event_list.contains("FileChanged"));
+
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Char('l'))),
+        CommandSurfaceOutcome::Submit("/hooks list PreToolUse".to_string())
+    );
+
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
-        CommandSurfaceOutcome::Submit("/hooks list PostToolUse".to_string())
+        CommandSurfaceOutcome::None
     );
+    let matcher_list = surface.render();
+    assert!(matcher_list.contains("PreToolUse - Matchers"));
+    assert!(matcher_list.contains("Bash"));
+
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::None
+    );
+    let hook_list = surface.render();
+    assert!(hook_list.contains("[command] Run tests"));
+    assert!(hook_list.contains("[prompt ] Review the tool input"));
+    assert!(hook_list.contains("[agent  ] Inspect the repository"));
+    assert!(hook_list.contains("[http   ] https://hooks.example/run"));
+
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::None
+    );
+    let detail = surface.render();
+    assert!(detail.contains("Hook details"));
+    assert!(detail.contains("Type: command"));
+    assert!(detail.contains("Command:"));
+    assert!(detail.contains("cargo test"));
+    assert!(detail.contains("Status message: Run tests"));
+
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Esc)),
+        CommandSurfaceOutcome::None
+    );
+    assert!(surface.render().contains("PreToolUse - Matcher: Bash"));
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Backspace)),
+        CommandSurfaceOutcome::None
+    );
+    assert!(surface.render().contains("PreToolUse - Matchers"));
+
     surface.handle_key(key(KeyCode::Right));
     assert_eq!(
         surface.handle_key(key(KeyCode::Char('o'))),
         CommandSurfaceOutcome::Submit("/hooks open project".to_string())
     );
+}
+
+#[test]
+fn hooks_surface_non_matcher_events_open_hook_list_directly() {
+    let mut hooks = HashMap::new();
+    hooks.insert(
+        "Stop".to_string(),
+        serde_json::json!([{ "hooks": [{ "type": "prompt", "prompt": "Summarize the turn" }] }]),
+    );
+    let mut surface = CommandSurface::Hooks(HooksSurface::new(&hooks));
+
+    while !surface.render().contains("> Stop") {
+        surface.handle_key(key(KeyCode::Down));
+    }
+
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::None
+    );
+    let hook_list = surface.render();
+    assert!(hook_list.contains("Exit code 0 - stdout/stderr not shown"));
+    assert!(hook_list.contains("[prompt ] Summarize the turn"));
+    assert!(!hook_list.contains("Stop - Matchers"));
 }
 
 #[test]

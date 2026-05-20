@@ -1,42 +1,70 @@
 ---
 source: crates/claude-code-rs/src/ui/hooks/mod.rs
-assertion_line: 64
+assertion_line: 91
 expression: rendered
 ---
 ## config
 Hooks
-> PreToolUse     matchers=2 commands=2
-a add | e edit | d delete
+> PreToolUse matchers=2 hooks=2
+Read-only. Edit .cc-rust/settings.json or .cc-rust/settings.local.json.
 
 ## event
 Select hook event
-  PreToolUse     Before a tool executes
-> PostToolUse    After a tool returns
-  Notification   When a notification is emitted
-  Stop           When the main agent stops
-  SubagentStop   When a subagent stops
-  WorktreeCreate When a worktree is created
-  WorktreeRemove When a worktree is removed
+1 hooks configured
+Read-only. Edit .cc-rust/settings.json or .cc-rust/settings.local.json.
+Use /hooks open user or /hooks open project to edit a settings layer.
+
+  PreToolUse  (1)  PreToolUse summary
+  PostToolUse       PostToolUse summary
+> PostToolUseFailure       PostToolUseFailure summary
+  PermissionDenied       PermissionDenied summary
+  Notification       Notification summary
+  UserPromptSubmit       UserPromptSubmit summary
+  SessionStart       SessionStart summary
+  Stop       Stop summary
+  StopFailure       StopFailure summary
+  SubagentStart       SubagentStart summary
+  SubagentStop       SubagentStop summary
+  PreCompact       PreCompact summary
+  PostCompact       PostCompact summary
+  SessionEnd       SessionEnd summary
+  PermissionRequest       PermissionRequest summary
+  Setup       Setup summary
+  TeammateIdle       TeammateIdle summary
+  TaskCreated       TaskCreated summary
+  TaskCompleted       TaskCompleted summary
+  Elicitation       Elicitation summary
+  ElicitationResult       ElicitationResult summary
+  ConfigChange       ConfigChange summary
+  InstructionsLoaded       InstructionsLoaded summary
+  WorktreeCreate       WorktreeCreate summary
+  WorktreeRemove       WorktreeRemove summary
+  CwdChanged       CwdChanged summary
+  FileChanged       FileChanged summary
 
 ## matcher
-Select matcher
-  All tools
-> Bash
+PreToolUse - Matchers
+Input to command is JSON of tool call arguments.
+
+  [Effective] (all)              1 hook
+> [Effective] Bash               2 hooks
 
 ## hook
-Select hook
-  enabled  cargo fmt --check
-> disabled cargo test -p claude-code-rs timeout=30s
+PreToolUse - Matcher: Bash
+Input to command is JSON of tool call arguments.
 
-## prompt
-Add hook
-Command to run
-> cargo check
-Enter confirm | Esc cancel
+  [command] cargo fmt --check                Effective Settings
+> [http   ] https://hooks.example/run        Effective Settings
 
 ## view
+Hook details
 Event: PreToolUse
 Matcher: Bash
-Commands:
-  - cargo fmt --check (enabled)
-  - cargo test -p claude-code-rs (disabled)
+Type: command
+Source: Effective settings (merged runtime hooks)
+
+Command:
+  cargo fmt --check
+Status message: Format check
+
+To modify or remove this hook, edit .cc-rust/settings.json or ask Claude.
