@@ -275,6 +275,14 @@ mod tests {
     }
 
     #[test]
+    fn command_execution_notification_invalidates_cache() {
+        let mut provider = ShellHistoryCompletionProvider::new();
+        provider.cached_at = Some(std::time::Instant::now());
+        provider.notify_command_executed("git status");
+        assert!(provider.cached_at.is_none());
+    }
+
+    #[test]
     fn bang_must_be_at_word_start() {
         let result = ShellHistoryCompletionProvider::find_bang_prefix("abc!git", 6);
         assert!(result.is_none(), "! in middle of word should not trigger");

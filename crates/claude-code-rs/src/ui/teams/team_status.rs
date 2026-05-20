@@ -46,3 +46,17 @@ pub fn render_team_summary_status(
     }
     Some(status)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_status_includes_active_and_task_counts() {
+        assert_eq!(
+            render_team_summary_status(3, 2, 1, true, true).as_deref(),
+            Some("[3 teammates (2 active, 1 task)] - Enter to view")
+        );
+        assert_eq!(render_team_summary_status(0, 2, 1, false, false), None);
+    }
+}

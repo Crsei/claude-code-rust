@@ -53,3 +53,31 @@ pub struct FrameRequestSnapshot {
     pub request_count: usize,
     pub last_reason: Option<FrameReason>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn coalesces_pending_requests_and_tracks_last_reason() {
+        let mut requester = FrameRequester::new();
+        assert!(!requester.is_pending());
+
+        for reason in [
+            FrameReason::Input,
+            FrameReason::Stream,
+            FrameReason::Resize,
+            FrameReason::Timer,
+            FrameReason::Overlay,
+        ] {
+            requester.request(reason);
+        }
+
+        assert!(requester.is_pending());
+        let snapshot = requester.snapshot();
+        assert_eq!(snapshot.request_count, 5);
+        assert_eq!(snapshot.last_reason, Some(FrameReason::Overlay));
+        assert!(requester.take_pending());
+        assert!(!requester.is_pending());
+    }
+}

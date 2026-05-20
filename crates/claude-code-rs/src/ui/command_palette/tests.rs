@@ -12,7 +12,7 @@ use cc_commands as commands;
 use super::edit_targets::{display_path, file_uri};
 use super::metadata::command_meta;
 use super::render::visible_window_start;
-use super::{CommandPalette, ARG_HELP_BASE_HEIGHT, MAX_EDIT_ROWS, MAX_ROWS};
+use super::{CommandAction, CommandPalette, ARG_HELP_BASE_HEIGHT, MAX_EDIT_ROWS, MAX_ROWS};
 #[test]
 fn slash_opens_filtered_palette() {
     let mut palette = CommandPalette::new();
@@ -33,6 +33,24 @@ fn selected_command_keeps_space_for_arguments() {
     let mut palette = CommandPalette::new();
     palette.sync_from_input("/mcp", Path::new("/repo"));
     assert_eq!(palette.selected_command_input().as_deref(), Some("/mcp "));
+}
+
+#[test]
+fn command_suggestion_action_inserts_or_executes() {
+    let mut palette = CommandPalette::new();
+    palette.sync_from_input("/status", Path::new("/repo"));
+    let item = palette.filtered[palette.selected].clone();
+    match palette.apply_command_suggestion(&item, true).unwrap() {
+        CommandAction::Execute(command) => assert_eq!(command, "/status"),
+        CommandAction::Insert(command) => panic!("expected execute action, got {command}"),
+    }
+
+    palette.sync_from_input("/mcp", Path::new("/repo"));
+    let item = palette.filtered[palette.selected].clone();
+    match palette.apply_command_suggestion(&item, true).unwrap() {
+        CommandAction::Insert(command) => assert_eq!(command, "/mcp "),
+        CommandAction::Execute(command) => panic!("expected insert action, got {command}"),
+    }
 }
 
 #[test]

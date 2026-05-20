@@ -361,4 +361,15 @@ mod tests {
 
         assert_eq!(state.current().map(|n| n.key.as_str()), Some("high"));
     }
+
+    #[test]
+    fn rendered_spans_are_preserved() {
+        let notification = InAppNotification::new("rendered", NotificationPriority::Medium, "")
+            .with_rendered(vec![Span::raw("custom")]);
+
+        assert_eq!(
+            notification.rendered.expect("rendered")[0].content.as_ref(),
+            "custom"
+        );
+    }
 }

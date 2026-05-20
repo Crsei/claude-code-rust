@@ -101,4 +101,28 @@ mod tests {
         assert!(!status.available);
         assert!(status.reason.unwrap().contains("unsupported"));
     }
+
+    #[test]
+    fn device_listing_reports_unavailable_capture_backend() {
+        let input = list_realtime_audio_device_names(RealtimeAudioDeviceKind::Input)
+            .expect_err("null input backend should be unavailable");
+        assert!(input.contains("input devices"));
+
+        let output = list_realtime_audio_devices(RealtimeAudioDeviceKind::Output)
+            .expect_err("null output backend should be unavailable");
+        assert!(output.contains("output devices"));
+
+        assert_eq!(voice_capture_backend_name(), "null");
+    }
+
+    #[test]
+    fn audio_device_info_carries_kind_and_default_flag() {
+        let info = AudioDeviceInfo {
+            name: "Default".to_string(),
+            kind: RealtimeAudioDeviceKind::Input,
+            is_default: true,
+        };
+        assert_eq!(info.kind.noun(), "input");
+        assert!(info.is_default);
+    }
 }

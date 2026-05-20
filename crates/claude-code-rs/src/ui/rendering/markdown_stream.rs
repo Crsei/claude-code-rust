@@ -210,4 +210,18 @@ mod tests {
         collector.replace("你好 **rust**");
         assert_eq!(collector.commit(), "rust**");
     }
+
+    #[test]
+    fn raw_empty_reset_and_simulated_frames_are_exercised() {
+        let mut collector = MarkdownStreamCollector::new();
+        assert!(collector.is_empty());
+        collector.push_str("hello");
+        assert_eq!(collector.raw(), "hello");
+        collector.reset();
+        assert!(collector.is_empty());
+
+        let frames = simulate_stream_markdown_for_tests(&["**he", "llo**"]);
+        assert_eq!(frames.len(), 2);
+        assert!(!frames[1].lines.is_empty());
+    }
 }

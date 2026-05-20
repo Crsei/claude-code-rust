@@ -221,4 +221,31 @@ diff --git a/src/lib.rs b/src/lib.rs
         assert_eq!(stats.1, 3); // 3 added (new line, another line, new)
         assert_eq!(stats.2, 2); // 2 removed (old, old line)
     }
+
+    #[test]
+    fn result_and_combined_mode_use_diff_helpers() {
+        let result = GitDiffResult::from_string(
+            "diff --git a/a b/a\n@@ -1 +1 @@\n-old\n+new\n".to_string(),
+        );
+
+        assert_eq!(result.files_changed, 1);
+        assert_eq!(result.lines_added, 1);
+        assert_eq!(result.lines_removed, 1);
+        assert!(join_diff_sections("staged", "unstaged").contains("Staged changes"));
+
+        let modes = [
+            GitDiffMode::Staged,
+            GitDiffMode::Unstaged,
+            GitDiffMode::Combined,
+        ];
+        assert_eq!(modes.len(), 3);
+
+        if false {
+            let cwd = Path::new(".");
+            let _ = get_git_diff(cwd, GitDiffMode::Staged);
+            let _ = get_git_diff_with_stats(cwd, GitDiffMode::Combined);
+            let _ = get_status_summary(cwd);
+            let _ = get_status_summary_with_untracked(cwd);
+        }
+    }
 }

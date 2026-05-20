@@ -38,3 +38,30 @@ impl AppCommand {
         matches!(self, Self::Quit)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn constructors_preserve_payloads() {
+        assert_eq!(
+            AppCommand::submit("hello"),
+            AppCommand::SubmitPrompt {
+                text: "hello".to_string()
+            }
+        );
+        assert_eq!(
+            AppCommand::slash("/help"),
+            AppCommand::SlashCommand {
+                raw: "/help".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn only_quit_is_terminal_command() {
+        assert!(AppCommand::Quit.is_terminal());
+        assert!(!AppCommand::Abort.is_terminal());
+    }
+}

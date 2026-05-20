@@ -61,3 +61,38 @@ fn write_record<T: Serialize>(dir: &Path, kind: &str, payload: &T) -> std::io::R
 fn now_ts() -> String {
     Utc::now().to_rfc3339()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writes_jsonl_records_when_initialized() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        maybe_init(dir.path()).expect("init session log");
+
+        log_record("custom", &serde_json::json!({ "ok": true }));
+        log_session_end();
+
+        let body = std::fs::read_to_string(dir.path().join("tui-session.jsonl"))
+            .expect("session log body");
+        assert!(body.contains("\"kind\":\"custom\""));
+        assert!(body.contains("\"kind\":\"session_end\""));
+    }
+
+    #[test]
+    fn env_init_reports_absent_env() {
+        let previous = std::env::var_os("CC_RUST_TUI_SESSION_LOG_DIR");
+        unsafe {
+            std::env::remove_var("CC_RUST_TUI_SESSION_LOG_DIR");
+        }
+        let result = maybe_init_from_env().expect("env init");
+        unsafe {
+            match previous {
+                Some(value) => std::env::set_var("CC_RUST_TUI_SESSION_LOG_DIR", value),
+                None => std::env::remove_var("CC_RUST_TUI_SESSION_LOG_DIR"),
+            }
+        }
+        assert!(!result);
+    }
+}

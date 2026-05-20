@@ -104,4 +104,19 @@ mod tests {
         let entries = flatten_json_key_values(&serde_json::json!({"a": {"b": true}}));
         assert_eq!(entries[0], DebugConfigEntry::new("a.b", "true"));
     }
+
+    #[test]
+    fn renders_entries_with_sources() {
+        let entries = vec![DebugConfigEntry::new("mode", "debug").with_source("env")];
+        let output = new_debug_config_output(&entries);
+        assert_eq!(output, "mode = debug (env)");
+
+        let lines = render_debug_config_lines(&entries);
+        let rendered = lines[0]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert_eq!(rendered, "mode = debug (env)");
+    }
 }

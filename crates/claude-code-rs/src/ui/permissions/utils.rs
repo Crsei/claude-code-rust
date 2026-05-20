@@ -330,3 +330,25 @@ pub fn shell_risk_hint(command: &str) -> &'static str {
 pub fn path_action_summary(action: &str, path: &str) -> String {
     format!("{} {}", action.trim(), truncate_middle(path.trim(), 100))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escalate_decision_has_label_and_renders_as_option() {
+        let rows = render_permission_options(
+            &[PermissionOption::new(
+                "Escalate",
+                "ask the sandbox for elevated access",
+                PermissionDecision::Escalate,
+                PermissionScope::Session,
+            )],
+            0,
+        );
+
+        assert_eq!(PermissionDecision::Escalate.label(), "escalate");
+        assert!(rows[0].contains("escalate"));
+        assert!(rows[0].contains("scope=session"));
+    }
+}

@@ -94,4 +94,19 @@ mod tests {
         assert_eq!(diff.len(), 1);
         assert_eq!(diff[0].symbol, "x");
     }
+
+    #[test]
+    fn frame_renders_widget_and_exports_lines() {
+        let area = Rect::new(0, 0, 6, 1);
+        let mut buffer = Buffer::empty(area);
+        let mut frame = Frame::new(area, &mut buffer);
+        assert_eq!(frame.area(), area);
+        frame.render_widget(ratatui::widgets::Paragraph::new("wide"), area);
+        frame
+            .buffer_mut()
+            .set_string(4, 0, "!", ratatui::style::Style::default());
+
+        assert_eq!(display_width("a好"), 3);
+        assert_eq!(buffer_to_lines(&buffer), vec!["wide!"]);
+    }
 }

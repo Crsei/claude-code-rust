@@ -510,4 +510,36 @@ mod tests {
 
         assert!(rendered.starts_with(">"));
     }
+
+    #[test]
+    fn ghost_accessors_and_legacy_render_helpers_are_exercised() {
+        let mut input = PromptInput::new();
+        input.insert_str("/he");
+        input.set_ghost_suffix(Some("lp".to_string()));
+        input.set_show_ghost(true);
+
+        assert_eq!(input.ghost_suffix(), Some("lp"));
+        assert!(input.show_ghost());
+
+        let area = Rect::new(0, 0, 20, 1);
+        let mut buf = Buffer::empty(area);
+        input.render(area, &mut buf, &Theme::default());
+        let rendered: String = (0..area.width).map(|x| buf[(x, 0)].symbol()).collect();
+        assert!(rendered.contains("/he"));
+
+        let mut hint_buf = Buffer::empty(area);
+        input.render_with_hint(area, &mut hint_buf, &Theme::default(), Some("hint"));
+        let hinted: String = (0..area.width).map(|x| hint_buf[(x, 0)].symbol()).collect();
+        assert!(hinted.contains("/he"));
+    }
+
+    #[test]
+    fn large_paste_notice_can_be_taken_for_chrome() {
+        let mut input = PromptInput::new();
+        input.paste_text(&["line"; 12].join("\n"));
+
+        assert!(input.large_paste_notice().is_some());
+        assert!(input.take_large_paste_notice().is_some());
+        assert!(input.large_paste_notice().is_none());
+    }
 }

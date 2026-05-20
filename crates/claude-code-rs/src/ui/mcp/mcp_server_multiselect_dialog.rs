@@ -101,3 +101,22 @@ fn command_for(verb: &str, names: &[String]) -> Option<String> {
     }
     Some(format!("/mcp {verb} {}", names.join(" ")))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_multiselect_state_selects_all_servers() {
+        let state = McpServerMultiselectState::new(vec!["docs".into(), "shell".into()]);
+
+        assert_eq!(state.selected_index, 0);
+        assert_eq!(state.selected_names(), vec!["docs", "shell"]);
+        assert_eq!(state.rejected_names(), Vec::<String>::new());
+        assert_eq!(
+            state.approve_command().as_deref(),
+            Some("/mcp approve docs shell")
+        );
+        assert_eq!(state.reject_command(), None);
+    }
+}

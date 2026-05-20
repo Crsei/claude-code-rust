@@ -348,6 +348,19 @@ mod tests {
     }
 
     #[test]
+    fn files_can_be_excluded_from_path_entries() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("file.txt"), "").unwrap();
+        fs::create_dir(dir.path().join("folder")).unwrap();
+
+        let mut provider = PathCompletionProvider::new();
+        provider.set_include_files(false);
+        let entries = provider.get_or_scan_dir(dir.path());
+        assert!(entries.iter().any(|entry| entry.name == "folder"));
+        assert!(!entries.iter().any(|entry| entry.name == "file.txt"));
+    }
+
+    #[test]
     fn empty_directory_returns_no_completions() {
         let dir = tempdir().unwrap();
         let _provider = PathCompletionProvider::new();

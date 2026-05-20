@@ -12,7 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::style::Style;
 use ratatui::text::Line;
 
-use crate::ui::keyboard_shortcut::{ShortcutHint, render_hints_styled};
+use crate::ui::keyboard_shortcut::{render_hints_styled, ShortcutHint};
 use crate::ui::pane::Pane;
 use crate::ui::theme::ThemeColors;
 
@@ -297,7 +297,7 @@ impl<'a> Default for Dialog<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::theme::{ThemeName, get_theme};
+    use crate::ui::theme::{get_theme, ThemeName};
     use crossterm::event::{KeyEventState, KeyModifiers};
 
     fn dark() -> &'static ThemeColors {
@@ -382,6 +382,23 @@ mod tests {
         let lines = d.render(dark(), 40, vec![], &guard, false);
         // Should have more structure (pane + divider)
         assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn dialog_color_and_hidden_border_use_padded_rendering() {
+        let d = Dialog::new()
+            .title("Test")
+            .color("permission")
+            .hide_border();
+        let guard = ExitGuard::new();
+        let lines = d.render(dark(), 40, vec![Line::from("body")], &guard, false);
+        let joined = lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(joined.contains("Test"));
+        assert!(joined.contains("body"));
     }
 
     #[test]

@@ -152,3 +152,23 @@ fn default_description(option: &MemoryFileOption) -> String {
 fn normalize_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selected_path_tracks_selected_index() {
+        let mut state = MemoryFileSelectorState::new(vec![
+            MemoryFileOption::new("/repo/CLAUDE.md", MemoryFileKind::Project),
+            MemoryFileOption::new("/home/me/.cc-rust/CLAUDE.md", MemoryFileKind::User),
+        ]);
+
+        assert_eq!(state.selected_path(), Some(Path::new("/repo/CLAUDE.md")));
+        state.move_next();
+        assert_eq!(
+            state.selected_path(),
+            Some(Path::new("/home/me/.cc-rust/CLAUDE.md"))
+        );
+    }
+}

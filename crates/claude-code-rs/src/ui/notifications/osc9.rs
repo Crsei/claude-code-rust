@@ -35,3 +35,18 @@ impl Command for PostNotification {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn post_notification_writes_osc9_escape() {
+        let mut out = String::new();
+        PostNotification("hello".to_string())
+            .write_ansi(&mut out)
+            .expect("ansi");
+        assert_eq!(out, "\x1b]9;hello\x07");
+        let _: fn(&mut Osc9Backend, &str) -> io::Result<()> = Osc9Backend::notify;
+    }
+}

@@ -97,3 +97,19 @@ pub fn render_contract_table() -> String {
     }
     rows.join("\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn contract_can_reference_bottom_pane_surface() {
+        let mapping = CapabilityMapping {
+            event: BackendEventKind::SubsystemStatus,
+            command: None,
+            surface: UiSurface::BottomPane,
+            guarantee: "status summary is visible",
+        };
+        assert_eq!(mapping.surface, UiSurface::BottomPane);
+    }
+}

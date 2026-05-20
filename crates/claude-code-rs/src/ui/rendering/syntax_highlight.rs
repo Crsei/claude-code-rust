@@ -336,6 +336,18 @@ mod tests {
     }
 
     #[test]
+    fn preferred_tokens_and_supported_language_list_are_stable() {
+        assert_eq!(preferred_syntect_token("rs").as_deref(), Some("rust"));
+        assert_eq!(
+            preferred_syntect_token(".custom-lang extra").as_deref(),
+            Some("custom-lang")
+        );
+        let languages = supported_languages();
+        assert!(languages.binary_search(&"rust").is_ok());
+        assert!(languages.binary_search(&"python").is_ok());
+    }
+
+    #[test]
     fn unknown_language_uses_plain_code_style() {
         let theme = Theme::default();
         let spans = highlight_code_block("let x = 1;\n", "definitely_not_real_lang", &theme);

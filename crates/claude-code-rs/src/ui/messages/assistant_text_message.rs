@@ -40,12 +40,8 @@ pub enum AssistantApiError<'a> {
 }
 
 /// Error message constants matching TS `services/api/errors.ts`.
-const RATE_LIMIT_MESSAGES: &[&str] = &[
-    "rate_limit",
-    "rate limit",
-    "Rate limit",
-    "rate_limit_error",
-];
+const RATE_LIMIT_MESSAGES: &[&str] =
+    &["rate_limit", "rate limit", "Rate limit", "rate_limit_error"];
 
 const PROMPT_TOO_LONG_MESSAGES: &[&str] = &[
     "prompt too long",
@@ -61,18 +57,10 @@ const CREDIT_BALANCE_MESSAGES: &[&str] = &[
     "billing: credit",
 ];
 
-const API_TIMEOUT_MESSAGES: &[&str] = &[
-    "request timed out",
-    "timeout error",
-    "timed out",
-];
+const API_TIMEOUT_MESSAGES: &[&str] = &["request timed out", "timeout error", "timed out"];
 
 /// Token strings used in TS to identify specific error messages.
-const TOKEN_REVOKED_TOKENS: &[&str] = &[
-    "token revoked",
-    "oauth token",
-    "token has been revoked",
-];
+const TOKEN_REVOKED_TOKENS: &[&str] = &["token revoked", "oauth token", "token has been revoked"];
 
 /// Classify assistant response text into an API error category.
 ///
@@ -124,7 +112,8 @@ pub fn classify_assistant_text(text: &str) -> Option<AssistantApiError<'_>> {
     }
 
     // 8. Invalid API key (external env var)
-    if lower.contains("invalid api key") || (lower.contains("api key") && lower.contains("invalid")) {
+    if lower.contains("invalid api key") || (lower.contains("api key") && lower.contains("invalid"))
+    {
         // Closer inspection: if "token" appears nearby it's revoked, already caught above
         return Some(AssistantApiError::InvalidApiKeyExternal(trimmed));
     }
@@ -221,20 +210,31 @@ mod tests {
 
     #[test]
     fn plain_text_passes_through() {
-        let result = render_assistant_text_message("Hello, I can help with that.", &Theme::default());
+        let result =
+            render_assistant_text_message("Hello, I can help with that.", &Theme::default());
         assert_eq!(result, "Assistant: Hello, I can help with that.");
     }
 
     #[test]
     fn rate_limit_detected() {
-        let result = render_assistant_text_message("rate_limit_error: too many requests", &Theme::default());
-        assert_eq!(result, "Error occurred: rate_limit_error: too many requests");
+        let result =
+            render_assistant_text_message("rate_limit_error: too many requests", &Theme::default());
+        assert_eq!(
+            result,
+            "Error occurred: rate_limit_error: too many requests"
+        );
     }
 
     #[test]
     fn prompt_too_long_detected() {
-        let result = render_assistant_text_message("prompt is too long for context window", &Theme::default());
-        assert_eq!(result, "Error occurred: prompt is too long for context window");
+        let result = render_assistant_text_message(
+            "prompt is too long for context window",
+            &Theme::default(),
+        );
+        assert_eq!(
+            result,
+            "Error occurred: prompt is too long for context window"
+        );
     }
 
     #[test]
@@ -245,7 +245,8 @@ mod tests {
 
     #[test]
     fn invalid_api_key_oauth_detected() {
-        let result = render_assistant_text_message("Not logged in · Please run /login", &Theme::default());
+        let result =
+            render_assistant_text_message("Not logged in · Please run /login", &Theme::default());
         assert_eq!(result, "Error occurred: Not logged in · Please run /login");
     }
 
@@ -269,19 +270,22 @@ mod tests {
 
     #[test]
     fn timeout_detected() {
-        let result = render_assistant_text_message("request timed out after 120s", &Theme::default());
+        let result =
+            render_assistant_text_message("request timed out after 120s", &Theme::default());
         assert_eq!(result, "Error occurred: request timed out after 120s");
     }
 
     #[test]
     fn user_abort_detected() {
-        let result = render_assistant_text_message("[Request interrupted by user]", &Theme::default());
+        let result =
+            render_assistant_text_message("[Request interrupted by user]", &Theme::default());
         assert_eq!(result, "[Request interrupted by user]");
     }
 
     #[test]
     fn api_error_prefix_detected() {
-        let result = render_assistant_text_message("API Error: something went wrong", &Theme::default());
+        let result =
+            render_assistant_text_message("API Error: something went wrong", &Theme::default());
         assert!(result.contains("Error occurred: API Error: something went wrong"));
     }
 
@@ -307,7 +311,10 @@ mod tests {
 
     #[test]
     fn classify_normal_text_returns_none() {
-        assert_eq!(classify_assistant_text("Here is the code you requested"), None);
+        assert_eq!(
+            classify_assistant_text("Here is the code you requested"),
+            None
+        );
     }
 
     #[test]

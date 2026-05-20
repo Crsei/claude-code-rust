@@ -202,4 +202,10 @@ mod tests {
         // dim takes priority
         assert_eq!(span.style.fg, Some(dark().inactive));
     }
+
+    #[test]
+    fn themed_text_strikethrough_sets_modifier() {
+        let span = ThemedText::new("gone").strikethrough().render(dark());
+        assert!(span.style.add_modifier.contains(Modifier::CROSSED_OUT));
+    }
 }

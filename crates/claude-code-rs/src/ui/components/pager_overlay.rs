@@ -119,4 +119,39 @@ mod tests {
         );
         assert_eq!(overlay.scroll(), 3);
     }
+
+    #[test]
+    fn overlay_variants_expose_title_scroll_and_visible_lines() {
+        let static_overlay = Overlay::Static(StaticOverlay::new(
+            "Help",
+            vec![Line::from("one"), Line::from("two")],
+        ));
+        assert_eq!(static_overlay.title(), "Help");
+        assert_eq!(static_overlay.visible_lines(1).len(), 1);
+
+        let transcript =
+            TranscriptOverlay::new((0..5).map(|i| Line::from(format!("line {i}"))).collect());
+        assert_eq!(transcript.scroll(), 0);
+
+        let mut overlay = Overlay::Transcript(transcript);
+        assert_eq!(overlay.title(), "Transcript");
+        assert_eq!(overlay.visible_lines(2).len(), 2);
+        assert!(!overlay.handle_key(
+            KeyEvent::new_with_kind(KeyCode::Down, KeyModifiers::NONE, KeyEventKind::Press),
+            2,
+        ));
+        let Overlay::Transcript(transcript) = overlay else {
+            panic!("expected transcript overlay");
+        };
+        assert_eq!(transcript.scroll(), 1);
+
+        let lines = render_offset_content(
+            &(0..4)
+                .map(|i| Line::from(format!("{i}")))
+                .collect::<Vec<_>>(),
+            1,
+            2,
+        );
+        assert_eq!(lines.len(), 2);
+    }
 }

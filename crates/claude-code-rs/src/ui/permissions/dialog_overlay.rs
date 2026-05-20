@@ -327,10 +327,16 @@ mod tests {
         let rendered = render_web_fetch_permission_request("https://example.com/docs", "GET", 0);
         let lines = routed_detail_lines(&rendered);
 
-        assert!(lines.iter().any(|line| line.contains("https://example.com/docs")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("https://example.com/docs")));
         assert!(lines.iter().any(|line| line.contains("method: GET")));
-        assert!(!lines.iter().any(|line| line.contains("Web fetch permission")));
-        assert!(!lines.iter().any(|line| line.contains("Request") && line.contains("Decision")));
+        assert!(!lines
+            .iter()
+            .any(|line| line.contains("Web fetch permission")));
+        assert!(!lines
+            .iter()
+            .any(|line| line.contains("Request") && line.contains("Decision")));
         assert!(!lines.iter().any(|line| line == "Decision"));
         assert!(!lines.iter().any(|line| line == "work access"));
         assert!(!lines.iter().any(|line| line.starts_with("tool=")));

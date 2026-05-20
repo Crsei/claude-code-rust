@@ -85,6 +85,29 @@ impl Default for CompletionState {
     }
 }
 
+#[cfg(test)]
+mod completion_state_tests {
+    use super::*;
+    use crate::ui::completions::CompletionKind;
+
+    #[test]
+    fn selection_moves_within_bounds() {
+        let mut state = CompletionState::new();
+        state.items = vec![
+            CompletionItem::new(CompletionKind::Command, "one", "one", 0..0),
+            CompletionItem::new(CompletionKind::Command, "two", "two", 0..0),
+        ];
+        state.active = true;
+
+        state.select_next();
+        assert_eq!(state.selected, 1);
+        state.select_next();
+        assert_eq!(state.selected, 1);
+        state.select_prev();
+        assert_eq!(state.selected, 0);
+    }
+}
+
 impl App {
     pub fn handle_key_event(&mut self, key: KeyEvent) -> AppAction {
         if key.kind != KeyEventKind::Press {

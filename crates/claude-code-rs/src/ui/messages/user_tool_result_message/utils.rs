@@ -112,3 +112,21 @@ pub(crate) fn line_to_text(line: &ratatui::text::Line<'_>) -> String {
         .map(|span| span.content.as_ref())
         .collect::<String>()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_resolution_preserves_tool_use_id() {
+        let resolution = ToolResolution {
+            tool: Arc::new(cc_tools::tasks::TodoWriteTool),
+            tool_use_id: "toolu_1".to_string(),
+            input: serde_json::json!({ "file_path": "src/main.rs" }),
+        };
+
+        assert_eq!(resolution.tool_use_id, "toolu_1");
+        assert_eq!(resolution.input["file_path"], "src/main.rs");
+        assert!(!resolution.tool.name().is_empty());
+    }
+}

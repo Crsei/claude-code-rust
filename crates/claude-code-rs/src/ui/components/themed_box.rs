@@ -8,8 +8,8 @@ use ratatui::style::Style;
 use ratatui::text::Line;
 
 use crate::ui::pane::Pane;
-use crate::ui::theme::ThemeColors;
 use crate::ui::theme::color::resolve_color;
+use crate::ui::theme::ThemeColors;
 
 /// A theme-aware box container.
 ///
@@ -127,7 +127,7 @@ impl<'a> Default for ThemedBox<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::theme::{ThemeName, get_theme};
+    use crate::ui::theme::{get_theme, ThemeName};
 
     fn dark() -> &'static ThemeColors {
         get_theme(&ThemeName::Dark)
@@ -181,5 +181,15 @@ mod tests {
         let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text.starts_with("hello"));
         assert_eq!(lines[0].width(), 10);
+    }
+
+    #[test]
+    fn themed_box_accepts_border_color() {
+        let b = ThemedBox::new()
+            .padding_top(0)
+            .padding_x(0)
+            .border_color("warning");
+        let lines = b.render(dark(), 20, vec![Line::from("content")], false);
+        assert!(!lines.is_empty());
     }
 }

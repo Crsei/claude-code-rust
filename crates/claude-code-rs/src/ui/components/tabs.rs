@@ -266,7 +266,22 @@ mod tests {
         let tabs = vec![Tab::new("x", "X"), Tab::new("y", "Y")];
         let mut t = Tabs::new(tabs);
         t.select(1);
+        assert_eq!(t.selected_tab().unwrap().id, "y");
         assert_eq!(t.selected_tab().unwrap().title, "Y");
+    }
+
+    #[test]
+    fn layout_builder_flags_are_preserved() {
+        let tabs = vec![Tab::new("a", "Alpha")];
+        let t = Tabs::new(tabs)
+            .use_full_width()
+            .content_height(12)
+            .header_focus(true);
+
+        assert!(t.use_full_width);
+        assert_eq!(t.content_height, Some(12));
+        assert!(t.header_focused);
+        assert!(t.render_header(dark(), 20).spans.len() >= 2);
     }
 
     #[test]

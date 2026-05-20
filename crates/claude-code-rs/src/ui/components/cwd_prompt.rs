@@ -96,4 +96,23 @@ mod tests {
         );
         assert_eq!(outcome, CwdPromptOutcome::Trusted(PathBuf::from("repo")));
     }
+
+    #[test]
+    fn alternate_actions_and_other_selection_render() {
+        let selection = CwdSelection::Other(PathBuf::from("/tmp/other"));
+        assert_eq!(selection.display_name(), "/tmp/other");
+        assert_eq!(CwdPromptAction::ContinueOnce.label(), "Continue once");
+        assert_eq!(CwdPromptAction::Exit.label(), "Exit");
+        assert_eq!(
+            resolve_cwd_prompt_outcome(selection.clone(), CwdPromptAction::ContinueOnce),
+            CwdPromptOutcome::ContinueOnce(PathBuf::from("/tmp/other"))
+        );
+        assert_eq!(
+            resolve_cwd_prompt_outcome(selection.clone(), CwdPromptAction::Exit),
+            CwdPromptOutcome::Exit
+        );
+        assert!(cwd_prompt_lines(&selection)
+            .join("\n")
+            .contains("Workspace trust required"));
+    }
 }

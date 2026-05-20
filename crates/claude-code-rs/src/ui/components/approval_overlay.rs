@@ -145,3 +145,28 @@ fn fit_line(text: &str, width: usize) -> String {
     out.push('…');
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn edit_request_choice_can_be_selected() {
+        let mut overlay = ApprovalOverlay::new(ApprovalKind::UserInput {
+            prompt: "revise command".to_string(),
+        })
+        .with_choices(vec![
+            ApprovalChoice::AllowOnce,
+            ApprovalChoice::EditRequest,
+            ApprovalChoice::Deny,
+        ]);
+        overlay.select(1);
+
+        assert_eq!(overlay.selected_choice(), ApprovalChoice::EditRequest);
+        assert_eq!(overlay.selected_choice().label(), "edit");
+        assert!(overlay
+            .render_lines(40)
+            .iter()
+            .any(|line| line.contains("edit")));
+    }
+}

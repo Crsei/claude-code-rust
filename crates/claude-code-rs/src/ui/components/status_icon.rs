@@ -163,11 +163,29 @@ mod tests {
     fn legacy_label_matches() {
         assert_eq!(StatusIcon::Success.label(), "ok");
         assert_eq!(StatusIcon::Error.label(), "error");
+        assert_eq!(StatusIcon::Info.label(), "info");
+        assert_eq!(StatusIcon::Loading.label(), "loading");
     }
 
     #[test]
     fn legacy_mapping() {
         let l = LegacyStatus::Ok;
         assert_eq!(StatusIcon::from_legacy(l), StatusIcon::Success);
+        assert_eq!(
+            StatusIcon::from_legacy(LegacyStatus::Warning),
+            StatusIcon::Warning
+        );
+        assert_eq!(
+            StatusIcon::from_legacy(LegacyStatus::Error),
+            StatusIcon::Error
+        );
+        assert_eq!(LegacyStatus::Warning.label(), "warn");
+        assert_eq!(LegacyStatus::Error.label(), "error");
+    }
+
+    #[test]
+    fn status_icons_expose_color_keys() {
+        assert_eq!(StatusIcon::Info.color_key(), Some("icon_info"));
+        assert_eq!(StatusIcon::Loading.color_key(), None);
     }
 }

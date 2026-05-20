@@ -127,7 +127,10 @@ pub fn render_assistant_tool_use_message(
     let input_summary = activity.display_call();
     // The display_call includes the tool name, so strip it for summary-only.
     let summary_only = input_summary
-        .strip_prefix(&format!("{}(", activity.user_facing_name.as_deref().unwrap_or(tool_name)))
+        .strip_prefix(&format!(
+            "{}(",
+            activity.user_facing_name.as_deref().unwrap_or(tool_name)
+        ))
         .and_then(|s| s.strip_suffix(')'))
         .unwrap_or("");
 
@@ -167,7 +170,13 @@ mod tests {
 
     #[test]
     fn queued_state_renders_dot_and_name() {
-        let result = render_assistant_tool_use_message("Read", "", ToolUseState::Queued, false, &Theme::default());
+        let result = render_assistant_tool_use_message(
+            "Read",
+            "",
+            ToolUseState::Queued,
+            false,
+            &Theme::default(),
+        );
         assert_eq!(result, "● Read");
     }
 
@@ -236,7 +245,11 @@ mod tests {
     #[test]
     fn waiting_for_permission_shows_prompt() {
         let result = render_assistant_tool_use_message(
-            "Bash", "", ToolUseState::WaitingForPermission, false, &Theme::default(),
+            "Bash",
+            "",
+            ToolUseState::WaitingForPermission,
+            false,
+            &Theme::default(),
         );
         assert!(result.contains("waiting for permission"));
     }
@@ -244,7 +257,11 @@ mod tests {
     #[test]
     fn classifier_checking_shows_classifier() {
         let result = render_assistant_tool_use_message(
-            "Bash", "", ToolUseState::ClassifierChecking, false, &Theme::default(),
+            "Bash",
+            "",
+            ToolUseState::ClassifierChecking,
+            false,
+            &Theme::default(),
         );
         assert!(result.contains("classifier checking"));
     }

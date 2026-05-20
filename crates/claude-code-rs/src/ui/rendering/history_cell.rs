@@ -129,3 +129,34 @@ pub fn render_styled_history(
         .map(|cell| cell.render_styled(mode, theme))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prompt_and_styled_history_cover_all_cell_kinds() {
+        let cells = vec![
+            HistoryCell::User("hi".into()),
+            HistoryCell::Assistant("hello".into()),
+            HistoryCell::System("boot".into()),
+            HistoryCell::Tool {
+                name: "Read".into(),
+                summary: "src/main.rs".into(),
+            },
+            HistoryCell::Diff {
+                path: "src/main.rs".into(),
+                added: 2,
+                removed: 1,
+            },
+            HistoryCell::Status("done".into()),
+        ];
+
+        assert_eq!(cells[2].role(), "system");
+        assert!(render_history(&cells, HistoryRenderMode::Prompt).contains("sys: boot"));
+        assert_eq!(
+            render_styled_history(&cells, HistoryRenderMode::Transcript, &Theme::default()).len(),
+            cells.len()
+        );
+    }
+}

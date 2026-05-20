@@ -432,4 +432,22 @@ mod tests {
             "Search(path=src/ui, pattern=HistorySearch)"
         );
     }
+
+    #[test]
+    fn compact_line_includes_progress_summary_and_output_count() {
+        let mut activity = ToolActivity::from_tool_use(
+            "bash",
+            r#"{"command":"cargo check"}"#,
+            ToolState::Running,
+        );
+        activity.elapsed_ms = 1_250;
+        activity.progress = Some((2, 4));
+        activity.output_lines = 7;
+
+        let line = activity.compact_line();
+
+        assert!(line.contains("[running]"));
+        assert!(line.contains("2/4"));
+        assert!(line.contains("7 output lines"));
+    }
 }

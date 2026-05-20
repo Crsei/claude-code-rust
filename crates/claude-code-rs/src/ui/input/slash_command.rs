@@ -62,4 +62,16 @@ mod tests {
     fn exposes_help_command() {
         assert!(find_slash_command("/help").is_some());
     }
+
+    #[test]
+    fn filters_and_labels_commands() {
+        let commands = filter_slash_commands("he");
+        let help = commands
+            .iter()
+            .find(|command| command.name == "help")
+            .expect("help command should match he");
+
+        assert_eq!(help.label(), "/help");
+        assert!(help.matches("/he"));
+    }
 }

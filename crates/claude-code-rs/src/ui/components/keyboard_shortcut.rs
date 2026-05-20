@@ -242,6 +242,13 @@ mod tests {
         assert!(span.style.add_modifier.contains(Modifier::BOLD));
     }
 
+    #[test]
+    fn shortcut_hint_color_overrides_default() {
+        let hint = ShortcutHint::new("!", "warn").with_color("warning");
+        let span = hint.render(dark());
+        assert_eq!(span.style.fg, Some(dark().warning));
+    }
+
     // -- render_shortcut_hints (legacy) --
 
     #[test]
@@ -319,5 +326,13 @@ mod tests {
         let spans = b.render(dark());
         assert_eq!(spans.len(), 3);
         assert!(spans[1].content.contains('·'));
+    }
+
+    #[test]
+    fn byline_push_and_len_track_hints() {
+        let b = Byline::new().push(ShortcutHint::new("Tab", "next"));
+        assert_eq!(b.len(), 1);
+        assert!(!b.is_empty());
+        assert_eq!(b.render(dark())[0].content, "Tab next");
     }
 }

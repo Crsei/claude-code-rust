@@ -67,3 +67,27 @@ impl BottomPane {
         lines
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stack_supports_selection_status_and_pop() {
+        let mut pane = BottomPane::new(ChatComposerState::new());
+        pane.push(BottomPaneView::Selection {
+            title: "Sessions".to_string(),
+            count: 3,
+        });
+        assert_eq!(pane.focused_view().name(), "selection");
+        assert!(pane.render_lines(80).join("\n").contains("Sessions"));
+
+        pane.push(BottomPaneView::Status {
+            message: "busy".to_string(),
+        });
+        assert_eq!(pane.focused_view().name(), "status");
+        assert_eq!(pane.pop().unwrap().name(), "status");
+        assert_eq!(pane.pop().unwrap().name(), "selection");
+        assert!(pane.pop().is_none());
+    }
+}

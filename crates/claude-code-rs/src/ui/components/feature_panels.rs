@@ -213,4 +213,26 @@ mod tests {
         );
         assert_eq!(form.handle_key(key(KeyCode::Esc)), TabbedFormEvent::Closed);
     }
+
+    #[test]
+    fn running_and_error_panels_render_in_index_and_form() {
+        let panels = vec![
+            FeaturePanel {
+                kind: FeaturePanelKind::Tasks,
+                state: PanelState::Running,
+                badge: 2,
+            },
+            FeaturePanel {
+                kind: FeaturePanelKind::Plugins,
+                state: PanelState::Error,
+                badge: 0,
+            },
+        ];
+        let index = render_panel_index(&panels);
+        assert!(index.contains("Running"));
+        assert!(index.contains("Error"));
+
+        let form = FeaturePanelFormState::new(panels);
+        assert!(form.render().contains("Feature panels"));
+    }
 }

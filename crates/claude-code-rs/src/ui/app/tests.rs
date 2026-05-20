@@ -6,6 +6,7 @@ use cc_engine::types::app_state::AppState;
 use cc_engine::types::tool::PermissionMode;
 use cc_ipc_protocol::BackendMessage;
 use cc_keybindings::action::Action;
+use cc_services::prompt_suggestion::{PromptSuggestion, SuggestionCategory};
 use cc_types::agent_events::AgentEvent;
 use cc_types::message::{ContentBlock, MessageContent, UserMessage};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
@@ -176,6 +177,29 @@ fn high_priority_notification_preempts_verbose_indicator() {
     let notification = app.current_notification().expect("notification");
     assert_eq!(notification.key, "system-error");
     assert_eq!(notification.text, "Subsystem failed");
+}
+
+#[test]
+fn test_only_app_accessors_drive_state() {
+    let mut app = App::new();
+    assert_eq!(app.view_mode(), ViewMode::Prompt);
+    app.cycle_view_mode();
+    assert_eq!(app.view_mode(), ViewMode::Transcript);
+    assert_eq!(app.transcript_state().scroll_offset, usize::MAX);
+
+    app.set_suggestions(vec![PromptSuggestion {
+        text: "next".to_string(),
+        confidence: 0.8,
+        category: SuggestionCategory::FollowUp,
+    }]);
+    assert_eq!(app.suggestions().expect("suggestions")[0].text, "next");
+    app.clear_suggestions();
+    assert!(app.suggestions().is_none());
+
+    app.show_permission_dialog("bash", "ls", "Run command?");
+    app.dismiss_permission_dialog();
+    assert!(app.permission_dialog.is_none());
+    let _runner = app.status_line_runner();
 }
 
 #[test]

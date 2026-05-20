@@ -89,8 +89,7 @@ fn supports_osc9() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::detect_backend;
-    use super::NotificationMethod;
+    use super::{detect_backend, DesktopNotificationBackend, NotificationMethod};
     use serial_test::serial;
     use std::ffi::OsString;
 
@@ -130,18 +129,16 @@ mod tests {
 
     #[test]
     fn selects_osc9_method() {
-        assert!(matches!(
-            detect_backend(NotificationMethod::Osc9),
-            super::DesktopNotificationBackend::Osc9(_)
-        ));
+        let backend = detect_backend(NotificationMethod::Osc9);
+        assert_eq!(backend.method(), NotificationMethod::Osc9);
+        let _: fn(&mut DesktopNotificationBackend, &str) -> std::io::Result<()> =
+            DesktopNotificationBackend::notify;
     }
 
     #[test]
     fn selects_bel_method() {
-        assert!(matches!(
-            detect_backend(NotificationMethod::Bel),
-            super::DesktopNotificationBackend::Bel(_)
-        ));
+        let backend = detect_backend(NotificationMethod::Bel);
+        assert_eq!(backend.method(), NotificationMethod::Bel);
     }
 
     #[test]

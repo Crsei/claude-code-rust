@@ -486,4 +486,24 @@ mod tests {
         assert!(added.contains("false"));
         assert!(!added.contains("true"));
     }
+
+    #[test]
+    fn structured_hunks_for_path_parses_stored_hunks() {
+        let mut data = DiffData::empty();
+        data.hunks.insert(
+            "src/main.rs".to_string(),
+            vec![
+                "@@ -1,1 +1,2 @@ fn main".to_string(),
+                " fn main() {".to_string(),
+                "+    println!(\"hi\");".to_string(),
+                " }".to_string(),
+            ],
+        );
+
+        let hunks = data.structured_hunks_for_path("src/main.rs");
+
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].new_start, 1);
+        assert_eq!(hunks[0].new_lines, 2);
+    }
 }

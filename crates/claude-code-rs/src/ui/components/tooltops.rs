@@ -34,4 +34,11 @@ mod tests {
             .unwrap()
             .contains("Fast mode"));
     }
+
+    #[test]
+    fn all_tooltips_exposes_default_rotation() {
+        let tips = all_tooltips();
+        assert!(tips.len() >= 4);
+        assert!(tips.iter().any(|tip| tip.contains("/status")));
+    }
 }

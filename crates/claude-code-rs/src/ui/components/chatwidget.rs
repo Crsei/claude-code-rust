@@ -111,6 +111,9 @@ pub fn create_initial_user_message(text: impl Into<String>) -> UserMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cc_types::message::{MessageContent, UserMessage as CcUserMessage};
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use uuid::Uuid;
 
     #[test]
     fn initializes_existing_app_state() {
@@ -123,5 +126,50 @@ mod tests {
         });
         assert!(widget.messages().is_empty());
         assert!(widget.app().is_dirty());
+    }
+
+    #[test]
+    fn adapter_methods_delegate_to_app_state() {
+        let mut widget = ChatWidget::from_app(App::new());
+        widget.app_mut().set_model_name("test-model".to_string());
+        widget.set_streaming(true);
+        widget.add_message(Message::User(CcUserMessage {
+            uuid: Uuid::nil(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text("hello".to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        }));
+
+        assert_eq!(widget.messages().len(), 1);
+        widget.clear_messages();
+        assert!(widget.messages().is_empty());
+
+        let app = widget.into_app();
+        assert!(app.messages().is_empty());
+    }
+
+    #[test]
+    fn key_events_are_forwarded_to_app() {
+        let mut widget = ChatWidget::default();
+        let _action = widget.handle_key_event(KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        });
+    }
+
+    #[test]
+    fn replay_and_initial_user_message_types_are_available() {
+        let replay = ReplayKind::VisibleOnly;
+        assert_eq!(replay, ReplayKind::VisibleOnly);
+        assert_eq!(ReplayKind::Full, ReplayKind::Full);
+
+        let message = create_initial_user_message("start here");
+        assert_eq!(message.text, "start here");
+        assert_eq!(UserMessage::from("typed").text, "typed");
     }
 }

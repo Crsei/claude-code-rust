@@ -95,3 +95,21 @@ pub fn render_mcp_server_approval_dialog(server_name: &str, selected_index: usiz
         .footer("Up/Down decision | Enter submit | Esc reject")
         .render()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn approval_surface_keeps_choice_commands_in_descriptions() {
+        let surface = build_mcp_server_approval_surface("docs");
+
+        assert_eq!(surface.title, "New MCP server found in .mcp.json: docs");
+        assert_eq!(surface.items.len(), 3);
+        assert_eq!(surface.items[0].id, "yes_all");
+        assert!(surface.items[0]
+            .description
+            .contains("/mcp approve docs --all-project"));
+        assert!(surface.items[2].description.contains("/mcp reject docs"));
+    }
+}

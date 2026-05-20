@@ -115,4 +115,18 @@ mod tests {
         insert_history_lines(&mut out, &[Line::from(Span::raw("hello"))], 80).unwrap();
         assert_eq!(String::from_utf8(out).unwrap(), "hello\r\n");
     }
+
+    #[test]
+    fn preserve_ansi_mode_and_scroll_region_commands_emit_ansi() {
+        assert!(InsertHistoryMode::PreserveAnsi.preserves_ansi());
+        assert!(!InsertHistoryMode::PlainText.preserves_ansi());
+
+        let mut set = String::new();
+        SetScrollRegion(1..5).write_ansi(&mut set).unwrap();
+        assert_eq!(set, "\x1b[2;5r");
+
+        let mut reset = String::new();
+        ResetScrollRegion.write_ansi(&mut reset).unwrap();
+        assert_eq!(reset, "\x1b[r");
+    }
 }

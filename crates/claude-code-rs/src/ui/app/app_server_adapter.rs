@@ -73,3 +73,40 @@ pub fn backend_message_kind(message: &BackendMessage) -> &'static str {
         BackendMessage::LspRecommendations { .. } => "lsp_recommendations",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ready() -> BackendMessage {
+        BackendMessage::Ready {
+            session_id: "session".to_string(),
+            model: "model".to_string(),
+            cwd: "/tmp/project".to_string(),
+            permission_mode: "default".to_string(),
+            available_models: Vec::new(),
+            plan_workflow: None,
+            editor_mode: None,
+            view_mode: None,
+            keybindings: None,
+        }
+    }
+
+    #[test]
+    fn extracts_ready_snapshot() {
+        let snapshot = ready_snapshot(&ready()).expect("ready snapshot");
+        assert_eq!(snapshot.session_id, "session");
+        assert_eq!(snapshot.model, "model");
+        assert_eq!(snapshot.cwd, "/tmp/project");
+    }
+
+    #[test]
+    fn names_backend_message_kind_and_wraps_event() {
+        let message = ready();
+        assert_eq!(backend_message_kind(&message), "ready");
+        assert!(matches!(
+            app_event_from_backend(message),
+            AppEvent::Backend { .. }
+        ));
+    }
+}

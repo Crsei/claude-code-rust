@@ -185,4 +185,9 @@ mod tests {
         assert!(rendered.contains("> Status"));
         assert!(rendered.matches("Esc close").count() == 1);
     }
+
+    #[test]
+    fn key_value_row_formats_detail_pairs() {
+        assert_eq!(key_value_row("model", "sonnet"), "model                    sonnet");
+    }
 }

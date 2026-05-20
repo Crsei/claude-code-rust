@@ -183,7 +183,13 @@ mod tests {
             ),
             section(
                 "assistant-tool-use",
-                render_assistant_tool_use_message("read_file", "path=src/main.rs", ToolUseState::Resolved, false, &theme),
+                render_assistant_tool_use_message(
+                    "read_file",
+                    "path=src/main.rs",
+                    ToolUseState::Resolved,
+                    false,
+                    &theme,
+                ),
             ),
             section(
                 "attachment",

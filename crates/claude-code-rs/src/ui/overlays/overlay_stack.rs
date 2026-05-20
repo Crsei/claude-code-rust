@@ -157,6 +157,7 @@ mod tests {
         assert!(stack.is_active());
         assert_eq!(stack.len(), 1);
         assert_eq!(stack.peek().unwrap().label, "test");
+        assert!(matches!(stack.peek().unwrap().kind, OverlayKind::Dialog));
         assert_ne!(id, OverlayId::NONE);
     }
 
@@ -205,5 +206,20 @@ mod tests {
         stack.push(OverlayEntry::new(OverlayKind::Pager, "top"));
         let labels: Vec<&str> = stack.iter_top_down().map(|e| e.label.as_str()).collect();
         assert_eq!(labels, vec!["top", "bottom"]);
+    }
+
+    #[test]
+    fn iter_and_peek_mut_can_update_permission_overlay() {
+        let mut stack = OverlayStack::new();
+        stack.push(OverlayEntry::new(OverlayKind::Permission, "approval"));
+
+        stack.peek_mut().expect("top").label = "approval updated".to_string();
+
+        let labels: Vec<&str> = stack.iter().map(|entry| entry.label.as_str()).collect();
+        assert_eq!(labels, vec!["approval updated"]);
+        assert!(matches!(
+            stack.peek().expect("top").kind,
+            OverlayKind::Permission
+        ));
     }
 }

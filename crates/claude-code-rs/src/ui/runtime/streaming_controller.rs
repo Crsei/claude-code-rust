@@ -55,3 +55,20 @@ impl StreamingController {
         lines
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn final_delta_replaces_assistant_and_marks_complete() {
+        let mut controller = StreamingController::new();
+        controller.apply(StreamingDelta::Assistant("partial".to_string()));
+        controller.apply(StreamingDelta::Final("complete".to_string()));
+
+        assert_eq!(controller.commit_visible(), "complete");
+        let lines = controller.render_lines().join("\n");
+        assert!(lines.contains("stream complete=true"));
+        assert!(lines.contains("assistant: complete"));
+    }
+}

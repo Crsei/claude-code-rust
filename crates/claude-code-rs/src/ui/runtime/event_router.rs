@@ -80,3 +80,57 @@ pub fn render_route_trace(events: &[UiEvent], ctx: RouteContext) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn routes_terminal_variants_to_redraw() {
+        for event in [
+            UiEvent::Terminal(TerminalEvent::Paste("text".to_string())),
+            UiEvent::Terminal(TerminalEvent::Resize {
+                width: 80,
+                height: 24,
+            }),
+            UiEvent::Terminal(TerminalEvent::Tick),
+        ] {
+            assert_eq!(
+                route_event(&event, RouteContext::default()),
+                vec![RouteAction::Redraw]
+            );
+        }
+    }
+
+    #[test]
+    fn routes_engine_and_command_variants() {
+        assert_eq!(
+            route_event(
+                &UiEvent::Engine(EngineEvent::AssistantDelta("hi".to_string())),
+                RouteContext::default(),
+            ),
+            vec![RouteAction::AppendTranscript, RouteAction::Redraw]
+        );
+        assert_eq!(
+            route_event(
+                &UiEvent::Engine(EngineEvent::ToolStarted("bash".to_string())),
+                RouteContext::default(),
+            ),
+            vec![RouteAction::UpdateToolActivity, RouteAction::Redraw]
+        );
+        assert_eq!(
+            route_event(
+                &UiEvent::Engine(EngineEvent::Completed),
+                RouteContext::default(),
+            ),
+            vec![RouteAction::Redraw]
+        );
+        assert_eq!(
+            route_event(
+                &UiEvent::CommandResult("done".to_string()),
+                RouteContext::default(),
+            ),
+            vec![RouteAction::AppendTranscript, RouteAction::Redraw]
+        );
+    }
+}

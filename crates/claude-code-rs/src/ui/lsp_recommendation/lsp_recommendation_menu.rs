@@ -355,10 +355,7 @@ mod tests {
     fn test_prompt_state_mark_failed() {
         let mut state = LspRecommendationPromptState::new("clangd", None, ".cpp");
         state.mark_failed("binary not found".to_string());
-        assert!(matches!(
-            state.install_state,
-            InstallState::Failed { .. }
-        ));
+        assert!(matches!(state.install_state, InstallState::Failed { .. }));
     }
 
     #[test]

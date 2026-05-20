@@ -89,8 +89,10 @@ mod tests {
     use super::render_tool_activity::render_task_tool_activity;
     use super::shell_detail_dialog::render_shell_detail_dialog;
     use super::shell_progress::render_shell_progress;
+    use super::task_status_utils::progress_bar_styled;
     use super::workflow_detail_dialog::render_workflow_detail_dialog;
     use super::{TaskKind, TaskState, TaskStatus};
+    use crate::ui::theme::{get_theme, ThemeName};
 
     #[test]
     fn snapshot_task_surfaces() {
@@ -142,6 +144,23 @@ mod tests {
         .join("\n\n");
 
         insta::assert_snapshot!("task_surfaces", rendered);
+    }
+
+    #[test]
+    fn styled_progress_bar_uses_task_progress() {
+        let mut task = TaskStatus::new("task-1", "cargo test", TaskKind::Shell);
+        task.progress = Some((1, 4));
+        let colors = get_theme(&ThemeName::Dark);
+
+        let line = progress_bar_styled(&task, 4, colors);
+        let plain = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert_eq!(plain.chars().count(), 4);
+        assert!(plain.starts_with("█"));
     }
 
     fn section(name: &str, body: impl AsRef<str>) -> String {

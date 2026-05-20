@@ -133,4 +133,39 @@ mod tests {
         ]);
         assert_eq!(picker.selected().unwrap().session_id, "new");
     }
+
+    #[test]
+    fn session_info_picker_applies_navigation_actions() {
+        let info = SessionInfo {
+            session_id: "s1".to_string(),
+            created_at: 1,
+            last_modified: 10,
+            message_count: 4,
+            cwd: "/repo".to_string(),
+            title: "".to_string(),
+            custom_title: None,
+            workspace_key: "repo".to_string(),
+            workspace_root: "/repo".to_string(),
+            workspace_name: "repo".to_string(),
+        };
+        let mut picker = ResumePicker::from_session_info(vec![info]);
+
+        assert_eq!(picker.sessions().len(), 1);
+        assert_eq!(picker.selected().unwrap().title, "(untitled session)");
+        assert!(SessionPickerAction::Select.is_terminal());
+        assert!(!SessionPickerAction::MoveDown.is_terminal());
+        assert!(picker.apply(SessionPickerAction::MoveUp, 10).is_none());
+        assert!(picker.apply(SessionPickerAction::PageUp, 10).is_none());
+        assert!(picker.apply(SessionPickerAction::PageDown, 10).is_none());
+        assert!(matches!(
+            picker.apply(SessionPickerAction::Select, 10),
+            Some(SessionSelection::Selected(_))
+        ));
+        assert_eq!(
+            picker.apply(SessionPickerAction::Cancel, 10),
+            Some(SessionSelection::Cancelled)
+        );
+
+        let _loader: fn() -> anyhow::Result<Vec<SessionTarget>> = load_resume_targets;
+    }
 }

@@ -445,4 +445,22 @@ mod tests {
         let picker = FuzzyPicker::<String>::new("Pick", "", &[], &render_fn).visible_count(0);
         assert_eq!(picker.visible_count, 2);
     }
+
+    #[test]
+    fn builder_options_flow_into_rendering() {
+        let items = vec!["Alpha".to_string()];
+        let picker = FuzzyPicker::new("Pick", "Al", &items, &render_fn)
+            .placeholder("Find")
+            .empty_message("Nothing")
+            .select_action("open")
+            .cursor_offset(1)
+            .terminal_focused(false);
+
+        assert_eq!(picker.placeholder, "Find");
+        assert_eq!(picker.empty_message, "Nothing");
+        assert_eq!(picker.select_action, "open");
+        assert_eq!(picker.cursor_offset, Some(1));
+        assert!(!picker.is_terminal_focused);
+        assert!(render_text(&picker, dark()).contains("open"));
+    }
 }

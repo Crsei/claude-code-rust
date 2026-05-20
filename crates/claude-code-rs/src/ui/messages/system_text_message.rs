@@ -55,10 +55,7 @@ pub enum SystemTagKind {
         total_duration_ms: u64,
     },
     /// Generic informational message with severity level.
-    Generic {
-        content: String,
-        level: String,
-    },
+    Generic { content: String, level: String },
 }
 
 /// Parse a turn duration message string.
@@ -79,7 +76,10 @@ fn parse_turn_duration(message: &str) -> SystemTagKind {
                 duration_ms: obj.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0),
                 budget_limit: obj.get("budget_limit").and_then(|v| v.as_u64()),
                 budget_tokens: obj.get("budget_tokens").and_then(|v| v.as_u64()),
-                budget_nudges: obj.get("budget_nudges").and_then(|v| v.as_u64()).map(|v| v as u32),
+                budget_nudges: obj
+                    .get("budget_nudges")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32),
             };
         }
     }
@@ -105,7 +105,10 @@ fn parse_memory_saved(message: &str) -> SystemTagKind {
                 .get("verb")
                 .and_then(|v| v.as_str())
                 .map(ToOwned::to_owned);
-            return SystemTagKind::MemorySaved { written_paths: paths, verb };
+            return SystemTagKind::MemorySaved {
+                written_paths: paths,
+                verb,
+            };
         }
     }
 
@@ -327,10 +330,7 @@ pub fn render_system_text_message(tag: &str, message: &str, _theme: &Theme) -> S
         SystemTagKind::AwaySummary(content) => format!("※ {content}"),
         SystemTagKind::AgentsKilled => "● All background agents stopped".to_string(),
         SystemTagKind::Thinking(content) => format!("∗ {content}"),
-        SystemTagKind::BridgeStatus {
-            url,
-            upgrade_nudge,
-        } => {
+        SystemTagKind::BridgeStatus { url, upgrade_nudge } => {
             let mut msg = format!("/remote-control is active. Code in CLI or at {url}");
             if let Some(nudge) = upgrade_nudge {
                 msg.push_str(&format!(" · {nudge}"));
@@ -356,7 +356,10 @@ mod tests {
 
     #[test]
     fn empty_tag_and_message() {
-        assert_eq!(render_system_text_message("", "", &Theme::default()), "System message");
+        assert_eq!(
+            render_system_text_message("", "", &Theme::default()),
+            "System message"
+        );
     }
 
     #[test]
@@ -367,7 +370,8 @@ mod tests {
 
     #[test]
     fn away_summary_renders() {
-        let result = render_system_text_message("away_summary", "Session taken over", &Theme::default());
+        let result =
+            render_system_text_message("away_summary", "Session taken over", &Theme::default());
         assert_eq!(result, "※ Session taken over");
     }
 
@@ -385,28 +389,26 @@ mod tests {
 
     #[test]
     fn bridge_status_renders() {
-        let result = render_system_text_message("bridge_status", "https://claude.ai/code", &Theme::default());
+        let result = render_system_text_message(
+            "bridge_status",
+            "https://claude.ai/code",
+            &Theme::default(),
+        );
         assert!(result.contains("/remote-control is active"));
         assert!(result.contains("https://claude.ai/code"));
     }
 
     #[test]
     fn scheduled_task_fire_renders() {
-        let result = render_system_text_message(
-            "scheduled_task_fire",
-            "Review PR #42",
-            &Theme::default(),
-        );
+        let result =
+            render_system_text_message("scheduled_task_fire", "Review PR #42", &Theme::default());
         assert_eq!(result, "⁭ Review PR #42");
     }
 
     #[test]
     fn permission_retry_renders() {
-        let result = render_system_text_message(
-            "permission_retry",
-            "Bash, Read",
-            &Theme::default(),
-        );
+        let result =
+            render_system_text_message("permission_retry", "Bash, Read", &Theme::default());
         assert_eq!(result, "⁭ Allowed: Bash, Read");
     }
 

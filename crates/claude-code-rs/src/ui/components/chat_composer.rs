@@ -120,3 +120,25 @@ fn fit_line(text: &str, width: usize) -> String {
     out.push('…');
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paste_queue_and_vim_mode_paths_are_stable() {
+        let mut composer = ChatComposerState::new();
+        composer.mode = ComposerMode::VimNormal;
+        composer.paste_text("one\r\ntwo\n");
+        assert_eq!(composer.input, "one\ntwo");
+
+        composer.set_busy(true);
+        assert_eq!(
+            composer.submit_or_queue(),
+            ComposerEffect::Queued("one\ntwo".to_string())
+        );
+        assert_eq!(composer.queued_len(), 1);
+        assert_eq!(composer.pop_queued().as_deref(), Some("one\ntwo"));
+        assert_eq!(composer.queued_len(), 0);
+    }
+}

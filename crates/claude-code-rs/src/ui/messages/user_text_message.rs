@@ -53,7 +53,8 @@ pub fn route_user_text(text: &str) -> UserTextRendered {
     }
 
     // 6. Local command output
-    if trimmed.starts_with("<local-command-stdout") || trimmed.starts_with("<local-command-stderr") {
+    if trimmed.starts_with("<local-command-stdout") || trimmed.starts_with("<local-command-stderr")
+    {
         return UserTextRendered::Delegated("local_command_output", trimmed.to_string());
     }
 
@@ -121,7 +122,10 @@ mod tests {
 
     #[test]
     fn no_content_is_hidden() {
-        assert!(matches!(route_user_text("[NO_CONTENT]"), UserTextRendered::Hidden));
+        assert!(matches!(
+            route_user_text("[NO_CONTENT]"),
+            UserTextRendered::Hidden
+        ));
     }
 
     #[test]

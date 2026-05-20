@@ -1,8 +1,8 @@
 // test infrastructure — image paste not wired to production TUI yet
 #[cfg(any(test, feature = "image"))]
-use std::path::PathBuf;
-#[cfg(any(test, feature = "image"))]
 use std::path::Path;
+#[cfg(any(test, feature = "image"))]
+use std::path::PathBuf;
 
 #[cfg(any(test, feature = "image"))]
 #[derive(Debug, Clone)]
@@ -57,7 +57,11 @@ pub struct PastedImageInfo {
 
 /// Capture an image from the system clipboard, encode it as PNG bytes, and
 /// return the bytes plus dimensions.
-#[cfg(all(any(test, feature = "image"), not(target_os = "android"), feature = "image"))]
+#[cfg(all(
+    any(test, feature = "image"),
+    not(target_os = "android"),
+    feature = "image"
+))]
 pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
     let (path, info) = paste_image_to_temp_png()?;
     let bytes = std::fs::read(&path).map_err(|e| PasteImageError::IoError(e.to_string()))?;
@@ -80,7 +84,11 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
 }
 
 /// Write the clipboard image to a temporary PNG file and return its path.
-#[cfg(all(any(test, feature = "image"), not(target_os = "android"), feature = "image"))]
+#[cfg(all(
+    any(test, feature = "image"),
+    not(target_os = "android"),
+    feature = "image"
+))]
 pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     platform_paste_image_to_temp_png()
 }
@@ -464,6 +472,39 @@ mod pasted_paths_tests {
             pasted_image_format(Path::new("/a/b/c.webp")),
             EncodedImageFormat::Other
         );
+        assert_eq!(EncodedImageFormat::Png.label(), "PNG");
+        assert_eq!(EncodedImageFormat::Jpeg.label(), "JPEG");
+        assert_eq!(EncodedImageFormat::Other.label(), "IMG");
+    }
+
+    #[test]
+    fn pasted_image_info_fields_and_stubbed_clipboard_errors_are_stable() {
+        let info = PastedImageInfo {
+            width: 320,
+            height: 200,
+            encoded_format: EncodedImageFormat::Png,
+        };
+        assert_eq!(info.width, 320);
+        assert_eq!(info.height, 200);
+        assert_eq!(info.encoded_format.label(), "PNG");
+
+        let err = paste_image_as_png().expect_err("test build has no image feature");
+        assert!(err.to_string().contains("clipboard"));
+        let err = paste_image_to_temp_png().expect_err("test build has no image feature");
+        assert!(err.to_string().contains("clipboard"));
+    }
+
+    #[test]
+    fn paste_image_error_variants_have_display_messages() {
+        assert!(PasteImageError::NoImage("empty".to_string())
+            .to_string()
+            .contains("no image"));
+        assert!(PasteImageError::EncodeFailed("bad".to_string())
+            .to_string()
+            .contains("encode"));
+        assert!(PasteImageError::IoError("disk".to_string())
+            .to_string()
+            .contains("io error"));
     }
 
     #[cfg(target_os = "linux")]

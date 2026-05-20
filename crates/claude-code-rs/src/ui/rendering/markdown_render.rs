@@ -195,4 +195,17 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn width_wrappers_reflow_markdown_text() {
+        let text = render_markdown_text_with_width("hello world", Some(6));
+        assert_eq!(text.lines.len(), 2);
+
+        let with_cwd = render_markdown_text_with_width_and_cwd(
+            "hello world",
+            Some(80),
+            Some(Path::new("/repo")),
+        );
+        assert_eq!(with_cwd.lines.len(), 1);
+    }
 }

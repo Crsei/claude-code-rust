@@ -201,6 +201,7 @@ mod tests {
         assert!(cfg.sync_updates);
         assert!(cfg.disable_mouse);
         assert_eq!(cfg.scroll_speed, TerminalEnvConfig::DEFAULT_SCROLL_SPEED);
+        assert!(TerminalEnvConfig::DISABLE_MOUSE_RUNTIME_SUPPORTED);
     }
 
     #[test]

@@ -49,4 +49,28 @@ mod tests {
     fn truncates_after_selected_index() {
         assert_eq!(truncate_after_index(&[1, 2, 3], 1), vec![1, 2]);
     }
+
+    #[test]
+    fn cursor_navigation_clamps_and_clears() {
+        let mut state = AppBacktrackState::new();
+        assert_eq!(state.cursor(), None);
+
+        state.begin_at_end(3);
+        assert_eq!(state.cursor(), Some(2));
+        state.move_previous();
+        assert_eq!(state.cursor(), Some(1));
+        state.move_previous();
+        state.move_previous();
+        assert_eq!(state.cursor(), Some(0));
+
+        state.move_next(3);
+        state.move_next(3);
+        state.move_next(3);
+        assert_eq!(state.cursor(), Some(2));
+
+        state.clear();
+        assert_eq!(state.cursor(), None);
+        state.begin_at_end(0);
+        assert_eq!(state.cursor(), None);
+    }
 }

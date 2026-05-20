@@ -35,3 +35,16 @@ impl Command for PostNotification {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn post_notification_writes_bel_escape() {
+        let mut out = String::new();
+        PostNotification.write_ansi(&mut out).expect("ansi");
+        assert_eq!(out, "\x07");
+        let _: fn(&mut BelBackend, &str) -> io::Result<()> = BelBackend::notify;
+    }
+}

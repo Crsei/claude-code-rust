@@ -274,3 +274,19 @@ fn tron_theme() -> Theme {
     t.progress_empty = Style::default().fg(Color::Rgb(0, 60, 60));
     t
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn named_theme_variants_build_distinct_styles() {
+        let dark = Theme::new();
+        let light = Theme::named(ThemeKind::Light);
+        let tron = ThemeKind::Tron.build();
+
+        assert_ne!(dark.code_bg, light.code_bg);
+        assert_ne!(light.code_bg, tron.code_bg);
+        assert_eq!(ThemeKind::Dark.build().code_bg, dark.code_bg);
+    }
+}

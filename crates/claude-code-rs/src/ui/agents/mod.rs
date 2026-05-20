@@ -27,8 +27,13 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::agent_detail::render_agent_detail;
-    use super::agent_editor::{render_save_change_summary, AgentEditorState, AgentSaveChanges};
-    use super::agent_file_utils::{format_agent_as_markdown, render_agent_file_summary};
+    use super::agent_editor::{
+        render_save_change_summary, AgentEditMode, AgentEditorState, AgentSaveChanges,
+    };
+    use super::agent_file_utils::{
+        format_agent_as_markdown, get_new_agent_file_path, render_agent_file_summary,
+        sanitize_agent_filename,
+    };
     use super::agent_navigation_footer::AgentNavigationFooter;
     use super::agents_list::AgentsListState;
     use super::agents_menu::AgentsMenuState;
@@ -50,8 +55,13 @@ mod tests {
     use super::new_agent_creation::wizard_steps::tools_step::render_tools_step;
     use super::new_agent_creation::wizard_steps::type_step::render_type_step;
     use super::new_agent_creation::{AgentCreationMethod, AgentWizardData};
-    use super::tool_selector::{default_agent_tools, ToolSelectorState};
-    use super::types::{AgentDefinition, AgentMemoryScope, AgentSource, AgentSourceFilter};
+    use super::tool_selector::{
+        default_agent_tools, ToolBucketKind, ToolOption, ToolSelectorState,
+    };
+    use super::types::{
+        AgentDefinition, AgentMemoryScope, AgentModeState, AgentSource, AgentSourceFilter,
+    };
+    use super::utils::{indent_lines, truncate_middle};
     use super::validate_agent::{render_validation_result, validate_agent_definition};
 
     fn sample_agent() -> AgentDefinition {
@@ -205,7 +215,210 @@ mod tests {
         insta::assert_snapshot!("agent_generation_and_wizard", rendered);
     }
 
+    #[test]
+    fn agent_menu_navigation_wraps_and_reports_filter() {
+        let mut menu = AgentsMenuState::default_with_counts(4, 1, 1, 2);
+        assert_eq!(menu.selected_filter(), Some(AgentSourceFilter::All));
+
+        menu.move_prev();
+        assert_eq!(
+            menu.selected_filter(),
+            Some(AgentSourceFilter::Source(AgentSource::Project))
+        );
+
+        menu.move_next();
+        assert_eq!(menu.selected_filter(), Some(AgentSourceFilter::All));
+    }
+
+    #[test]
+    fn agent_editor_modes_are_distinct_states() {
+        let modes = [
+            AgentEditMode::Menu,
+            AgentEditMode::EditTools,
+            AgentEditMode::EditColor,
+            AgentEditMode::EditModel,
+        ];
+        assert_eq!(modes.len(), 4);
+        assert_ne!(modes[1], modes[2]);
+    }
+
+    #[test]
+    fn color_picker_previous_wraps_to_last_color() {
+        let mut picker = ColorPickerState::new("reviewer", None);
+        picker.move_previous();
+        assert_eq!(picker.selected_color(), Some("pink"));
+    }
+
+    #[test]
+    fn tool_selector_toggles_and_renders_other_bucket() {
+        let tools = vec![
+            ToolOption::new("Read", ToolBucketKind::ReadOnly),
+            ToolOption::new("CustomTool", ToolBucketKind::Other),
+        ];
+        let mut selector = ToolSelectorState::new(tools, Some(vec!["Read".to_string()]));
+
+        assert_eq!(selector.selected_output(), Some(vec!["Read".to_string()]));
+        selector.toggle_tool("CustomTool");
+        assert_eq!(selector.selected_output(), None);
+
+        selector.toggle_tool("Read");
+        assert_eq!(
+            selector.selected_output(),
+            Some(vec!["CustomTool".to_string()])
+        );
+        assert!(selector.render().contains("Other tools"));
+    }
+
+    #[test]
+    fn agent_file_path_helpers_sanitize_by_source() {
+        assert_eq!(sanitize_agent_filename("Review Agent!!"), "review-agent");
+
+        let path = get_new_agent_file_path(
+            AgentSource::User,
+            "Review Agent!!",
+            std::path::Path::new("/workspace"),
+            std::path::Path::new("/home/user"),
+            std::path::Path::new("/managed"),
+        );
+
+        assert_eq!(
+            path,
+            std::path::Path::new("/home/user")
+                .join(".cc-rust")
+                .join("agents")
+                .join("review-agent.md")
+        );
+    }
+
+    #[test]
+    fn agent_type_flags_and_mode_state_cover_edit_flow() {
+        let project = sample_agent();
+        let plugin = AgentDefinition::new(
+            "plugin-reviewer",
+            "Use for plugin reviews.",
+            "Review plugin output.",
+            AgentSource::Plugin,
+        );
+
+        assert!(AgentSource::Project.is_editable());
+        assert!(!AgentSource::Plugin.is_editable());
+        assert!(plugin.is_plugin());
+        assert!(!project.is_plugin());
+
+        let state = AgentModeState::EditAgent {
+            agent_type: project.agent_type.clone(),
+            previous: Box::new(AgentModeState::ViewAgent {
+                agent_type: project.agent_type.clone(),
+                previous: Box::new(AgentModeState::ListAgents {
+                    source: AgentSourceFilter::All,
+                }),
+            }),
+        };
+
+        if let AgentModeState::EditAgent { previous, .. } = state {
+            assert!(matches!(*previous, AgentModeState::ViewAgent { .. }));
+        } else {
+            panic!("expected edit state");
+        }
+    }
+
+    #[test]
+    fn agent_mode_state_variants_preserve_navigation_context() {
+        let states = [
+            AgentModeState::MainMenu,
+            AgentModeState::ListAgents {
+                source: AgentSourceFilter::BuiltIn,
+            },
+            AgentModeState::AgentMenu {
+                agent_type: "reviewer".to_string(),
+                previous: Box::new(AgentModeState::MainMenu),
+            },
+            AgentModeState::ViewAgent {
+                agent_type: "reviewer".to_string(),
+                previous: Box::new(AgentModeState::ListAgents {
+                    source: AgentSourceFilter::All,
+                }),
+            },
+            AgentModeState::CreateAgent,
+            AgentModeState::EditAgent {
+                agent_type: "reviewer".to_string(),
+                previous: Box::new(AgentModeState::ViewAgent {
+                    agent_type: "reviewer".to_string(),
+                    previous: Box::new(AgentModeState::MainMenu),
+                }),
+            },
+            AgentModeState::DeleteConfirm {
+                agent_type: "reviewer".to_string(),
+                previous: Box::new(AgentModeState::AgentMenu {
+                    agent_type: "reviewer".to_string(),
+                    previous: Box::new(AgentModeState::MainMenu),
+                }),
+            },
+        ];
+
+        let labels = states
+            .iter()
+            .map(mode_state_label)
+            .collect::<Vec<_>>()
+            .join(",");
+        assert_eq!(
+            labels,
+            "main,list:Built-in agents,menu:reviewer,view:reviewer,create,edit:reviewer,delete:reviewer"
+        );
+    }
+
+    #[test]
+    fn formatting_helpers_truncate_and_indent() {
+        assert_eq!(truncate_middle("abcdefghijkl", 8), "ab...jkl");
+        assert_eq!(truncate_middle("abc", 8), "abc");
+        assert_eq!(
+            indent_lines(["one".to_string(), "two".to_string()], 2),
+            vec!["  one".to_string(), "  two".to_string()]
+        );
+    }
+
     fn section(name: &str, body: impl AsRef<str>) -> String {
         format!("## {name}\n{}", body.as_ref())
+    }
+
+    fn mode_state_label(state: &AgentModeState) -> String {
+        match state {
+            AgentModeState::MainMenu => "main".to_string(),
+            AgentModeState::ListAgents { source } => {
+                format!(
+                    "list:{}",
+                    super::utils::get_agent_source_display_name(*source)
+                )
+            }
+            AgentModeState::AgentMenu {
+                agent_type,
+                previous,
+            } => {
+                let _ = previous.as_ref();
+                format!("menu:{agent_type}")
+            }
+            AgentModeState::ViewAgent {
+                agent_type,
+                previous,
+            } => {
+                let _ = previous.as_ref();
+                format!("view:{agent_type}")
+            }
+            AgentModeState::CreateAgent => "create".to_string(),
+            AgentModeState::EditAgent {
+                agent_type,
+                previous,
+            } => {
+                let _ = previous.as_ref();
+                format!("edit:{agent_type}")
+            }
+            AgentModeState::DeleteConfirm {
+                agent_type,
+                previous,
+            } => {
+                let _ = previous.as_ref();
+                format!("delete:{agent_type}")
+            }
+        }
     }
 }

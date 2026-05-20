@@ -669,11 +669,6 @@ pub fn load_theme_setting() -> Result<ThemeSetting, String> {
     read_theme_setting_from_path(&cc_config::settings::user_settings_path())
 }
 
-#[cfg(test)]
-pub fn save_theme_setting(setting: &ThemeSetting) -> Result<(), String> {
-    write_theme_setting_to_path(&cc_config::settings::user_settings_path(), setting)
-}
-
 fn read_theme_setting_from_path(path: &Path) -> Result<ThemeSetting, String> {
     if !path.exists() {
         return Ok(ThemeSetting::Named(ThemeName::Dark));
@@ -792,6 +787,22 @@ mod tests {
     fn theme_name_is_dark_matches_intent() {
         assert!(ThemeName::Dark.is_dark());
         assert!(!ThemeName::Light.is_dark());
+    }
+
+    #[test]
+    fn theme_names_have_labels_and_provider_lists_all_variants() {
+        assert_eq!(ThemeName::Dark.label(), "Dark");
+        assert_eq!(ThemeName::LightDaltonized.label(), "Light (Daltonized)");
+        assert_eq!(ThemeProvider::all_themes(), ThemeName::ALL);
+    }
+
+    #[test]
+    fn auto_provider_can_refresh_from_terminal_preference() {
+        let mut p = ThemeProvider::from_setting(ThemeSetting::Auto);
+        let before = *p.name();
+        p.refresh_auto();
+        assert_eq!(*p.name(), before);
+        assert_eq!(p.setting(), &ThemeSetting::Auto);
     }
 
     #[test]

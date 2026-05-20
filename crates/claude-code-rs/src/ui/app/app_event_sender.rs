@@ -48,3 +48,37 @@ pub fn channel() -> (AppEventSender, mpsc::UnboundedReceiver<AppEvent>) {
     let (tx, rx) = mpsc::unbounded_channel();
     (AppEventSender::new(tx), rx)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sends_typed_events_in_order() {
+        let (sender, mut rx) = channel();
+
+        sender.notice("notice").expect("send notice");
+        sender
+            .notification("key", "message", "warning", Some(123))
+            .expect("send notification");
+        sender.send(AppEvent::Tick).expect("send tick");
+
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(AppEvent::LocalNotice { message }) if message == "notice"
+        ));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(AppEvent::Notification {
+                key,
+                message,
+                level,
+                timeout_ms
+            }) if key == "key"
+                && message == "message"
+                && level == "warning"
+                && timeout_ms == Some(123)
+        ));
+        assert!(matches!(rx.try_recv(), Ok(AppEvent::Tick)));
+    }
+}

@@ -79,10 +79,26 @@ fn normalize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn empty_query_returns_no_matches() {
         let matches = search_files(".", " ", 10).unwrap();
         assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn manager_searches_with_configured_limit() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("alpha.txt"), "").unwrap();
+        std::fs::write(dir.path().join("alphabet.txt"), "").unwrap();
+
+        let matches = FileSearchManager::new(dir.path())
+            .with_max_results(1)
+            .search("alp")
+            .unwrap();
+
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].display_path.contains("alpha"));
     }
 }

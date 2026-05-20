@@ -94,4 +94,13 @@ mod tests {
         // different start times, but we only check structural validity).
         assert_eq!(spans_a.len(), spans_b.len());
     }
+
+    #[test]
+    fn custom_hue_shimmer_renders_colored_spans() {
+        let anim = ShimmerAnimation::with_hue(0.5);
+        let spans = anim.shimmer_spans("x");
+
+        assert_eq!(spans.len(), 1);
+        assert!(spans[0].style.fg.is_some());
+    }
 }

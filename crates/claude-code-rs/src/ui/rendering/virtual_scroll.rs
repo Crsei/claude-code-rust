@@ -333,6 +333,20 @@ mod tests {
     }
 
     #[test]
+    fn logical_visible_range_uses_unwrapped_offsets() {
+        let theme = Theme::default();
+        let msgs = vec![user("first"), assistant_text("second")];
+        let mut vs = VirtualScroll::new();
+        let context = crate::ui::messages::build_message_render_context(&msgs, None, false);
+        vs.ensure_up_to_date(&msgs, 80, &theme, &context);
+
+        let range = vs.visible_range(0, 1);
+
+        assert_eq!(range.0, 0);
+        assert!(range.1 >= 1);
+    }
+
+    #[test]
     fn invalidate_all_resets_cache_to_empty() {
         let theme = Theme::default();
         let msgs = vec![user("hello")];

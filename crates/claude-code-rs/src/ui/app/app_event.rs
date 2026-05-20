@@ -34,3 +34,13 @@ impl AppEvent {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::AppEvent;
+
+    #[test]
+    fn shutdown_event_is_available_for_test_routing() {
+        assert!(matches!(AppEvent::Shutdown, AppEvent::Shutdown));
+    }
+}

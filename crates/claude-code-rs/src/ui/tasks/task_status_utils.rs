@@ -1,8 +1,8 @@
 //! Shared task status formatting helpers.
 
-use super::{TaskKind, TaskState};
 #[cfg(test)]
 use super::TaskStatus;
+use super::{TaskKind, TaskState};
 #[cfg(test)]
 use crate::ui::progress_bar::{render_progress_bar, ProgressBar};
 #[cfg(test)]

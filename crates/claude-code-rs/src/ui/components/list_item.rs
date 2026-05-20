@@ -144,7 +144,12 @@ impl<'a> ListItem<'a> {
 
         // Label.
         let label_fg = if self.styled {
-            if self.is_focused {
+            if let Some(color) = self
+                .color
+                .and_then(|key| crate::ui::theme::color::resolve_color(key, colors))
+            {
+                color
+            } else if self.is_focused {
                 colors.suggestion
             } else if self.is_selected {
                 colors.success
@@ -240,5 +245,13 @@ mod tests {
         // The label span should have BOLD modifier.
         let label_span = &line.spans[line.spans.len() - 1];
         assert!(label_span.style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn color_overrides_default_label_color() {
+        let item = ListItem::new("warn").color("warning");
+        let line = item.render(dark());
+        let label_span = &line.spans[line.spans.len() - 1];
+        assert_eq!(label_span.style.fg, Some(dark().warning));
     }
 }

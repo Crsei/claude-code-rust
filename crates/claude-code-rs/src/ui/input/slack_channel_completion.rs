@@ -234,6 +234,16 @@ mod tests {
     }
 
     #[test]
+    fn custom_known_channels_replace_defaults() {
+        let mut provider = SlackChannelCompletionProvider::new();
+        provider.set_known_channels(vec!["ops-alerts".to_string()]);
+        let ctx = make_ctx("post to #ops", 12);
+        let items = provider.compute(&ctx);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "#ops-alerts");
+    }
+
+    #[test]
     fn no_channel_without_hash() {
         let provider = SlackChannelCompletionProvider::new();
         let ctx = make_ctx("hello world", 5);

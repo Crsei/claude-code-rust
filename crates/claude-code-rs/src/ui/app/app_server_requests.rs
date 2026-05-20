@@ -87,4 +87,26 @@ mod tests {
         assert!(requests.contains(&id));
         assert_eq!(requests.take(&id), Some("payload"));
     }
+
+    #[test]
+    fn exposes_size_and_request_metadata() {
+        let mut requests = AppServerRequests::default();
+        assert!(requests.is_empty());
+
+        let id = requests.insert("payload");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests.requests[&id].id, id);
+        assert!(requests.requests[&id].age() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn expires_older_requests() {
+        let mut requests = AppServerRequests::default();
+        let id = requests.insert("payload");
+
+        let expired = requests.expire_older_than(Duration::ZERO);
+        assert_eq!(expired.len(), 1);
+        assert_eq!(expired[0].id, id);
+        assert!(requests.is_empty());
+    }
 }

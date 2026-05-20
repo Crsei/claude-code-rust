@@ -51,3 +51,19 @@ fn render_fallback(tool: Option<&dyn Tool>, theme: &Theme) -> Vec<Line<'static>>
     };
     vec![Line::from(Span::styled(label, theme.warning))]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::messages::user_tool_result_message::utils::line_to_text;
+
+    #[test]
+    fn fallback_reject_message_mentions_missing_metadata() {
+        let lines = render_fallback_reject_message(&Theme::default());
+
+        assert_eq!(
+            line_to_text(&lines[0]),
+            "Tool use rejected by user (tool metadata unavailable)"
+        );
+    }
+}

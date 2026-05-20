@@ -7,8 +7,8 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use super::theme::Theme;
-use crate::ui::theme::ThemeColors;
 use crate::ui::theme::color::resolve_color;
+use crate::ui::theme::ThemeColors;
 
 const BLOCKS: [&str; 9] = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"];
 
@@ -163,7 +163,7 @@ pub fn render_styled_progress_bar(ratio: f64, width: usize, theme: &Theme) -> Li
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::theme::{Theme, ThemeName, get_theme};
+    use crate::ui::theme::{get_theme, Theme, ThemeName};
 
     fn dark() -> &'static ThemeColors {
         get_theme(&ThemeName::Dark)
