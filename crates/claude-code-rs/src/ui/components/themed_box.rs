@@ -38,7 +38,6 @@ impl<'a> ThemedBox<'a> {
     }
 
     /// Set the top border colour key.
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn border_color(mut self, key: &'a str) -> Self {
         self.border_color = Some(key);
         self

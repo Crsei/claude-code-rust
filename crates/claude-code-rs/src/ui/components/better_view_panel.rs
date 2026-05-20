@@ -119,7 +119,6 @@ pub fn plain_row(label: impl AsRef<str>, detail: impl AsRef<str>) -> String {
 }
 
 #[cfg(test)]
-#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn key_value_row(key: impl AsRef<str>, value: impl AsRef<str>) -> String {
     format!("{:<24} {}", key.as_ref(), value.as_ref())
 }

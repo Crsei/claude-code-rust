@@ -91,7 +91,6 @@ fn normalize_lang_token(lang: &str) -> Option<String> {
     }
 }
 
-#[allow(dead_code)] // Phase 1: upstream parity surface
 #[cfg(any(test, feature = "syntect"))]
 fn preferred_syntect_token(lang: &str) -> Option<Cow<'static, str>> {
     let normalized = normalize_lang_token(lang)?;
@@ -275,7 +274,6 @@ pub fn supports_language(lang: &str) -> bool {
 }
 
 /// Return the list of all supported language identifiers.
-#[allow(dead_code)] // Phase 1: upstream parity surface
 #[cfg(test)]
 pub fn supported_languages() -> Vec<&'static str> {
     let mut langs: Vec<&str> = LANG_ALIASES

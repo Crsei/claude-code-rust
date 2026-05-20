@@ -2,8 +2,6 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::text::Line;
-
-#[allow(dead_code)] // Phase 1: upstream parity surface
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Overlay {
     Static(StaticOverlay),
@@ -11,23 +9,18 @@ pub enum Overlay {
 }
 
 impl Overlay {
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn title(&self) -> &str {
         match self {
             Self::Static(overlay) => &overlay.title,
             Self::Transcript(overlay) => &overlay.title,
         }
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn handle_key(&mut self, key: KeyEvent, viewport_height: usize) -> bool {
         match self {
             Self::Static(overlay) => overlay.handle_key(key, viewport_height),
             Self::Transcript(overlay) => overlay.inner.handle_key(key, viewport_height),
         }
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn visible_lines(&self, viewport_height: usize) -> Vec<Line<'static>> {
         match self {
             Self::Static(overlay) => overlay.visible_lines(viewport_height),
@@ -75,8 +68,6 @@ impl StaticOverlay {
     pub fn visible_lines(&self, viewport_height: usize) -> Vec<Line<'static>> {
         render_offset_content(&self.lines, self.scroll, viewport_height)
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     fn scroll_down(&mut self, amount: usize, viewport_height: usize) {
         let max_scroll = self.lines.len().saturating_sub(viewport_height);
         self.scroll = self.scroll.saturating_add(amount).min(max_scroll);
@@ -86,8 +77,6 @@ impl StaticOverlay {
         self.scroll = self.lines.len().saturating_sub(viewport_height);
     }
 }
-
-#[allow(dead_code)] // Phase 1: upstream parity surface
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptOverlay {
     pub title: String,
@@ -95,21 +84,16 @@ pub struct TranscriptOverlay {
 }
 
 impl TranscriptOverlay {
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn new(lines: Vec<Line<'static>>) -> Self {
         Self {
             title: "Transcript".to_string(),
             inner: StaticOverlay::new("Transcript", lines),
         }
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn scroll(&self) -> usize {
         self.inner.scroll()
     }
 }
-
-#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn render_offset_content(
     lines: &[Line<'static>],
     offset: usize,

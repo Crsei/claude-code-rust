@@ -1,6 +1,4 @@
 // test infrastructure — not wired to production yet; tracked in IMPLEMENTATION_GAPS.md
-#![allow(dead_code)]
-
 //! Typed sender wrapper for app events.
 
 use tokio::sync::mpsc;

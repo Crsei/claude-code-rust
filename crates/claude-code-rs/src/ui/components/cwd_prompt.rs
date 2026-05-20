@@ -7,14 +7,11 @@ use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CwdPromptAction {
     Trust,
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     ContinueOnce,
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     Exit,
 }
 
 impl CwdPromptAction {
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn label(self) -> &'static str {
         match self {
             Self::Trust => "Trust this workspace",
@@ -27,7 +24,6 @@ impl CwdPromptAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CwdSelection {
     Current(PathBuf),
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     Other(PathBuf),
 }
 
@@ -37,8 +33,6 @@ impl CwdSelection {
             Self::Current(path) | Self::Other(path) => path,
         }
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn display_name(&self) -> String {
         self.path().display().to_string()
     }
@@ -63,8 +57,6 @@ pub fn resolve_cwd_prompt_outcome(
         CwdPromptAction::Exit => CwdPromptOutcome::Exit,
     }
 }
-
-#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn cwd_prompt_lines(selection: &CwdSelection) -> Vec<String> {
     BetterViewPanel::new("Workspace trust required")
         .summary(format!(

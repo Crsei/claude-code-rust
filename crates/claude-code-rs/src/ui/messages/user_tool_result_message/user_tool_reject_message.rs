@@ -40,8 +40,6 @@ pub fn render_user_tool_reject_message(
 
     lines
 }
-
-#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn render_fallback_reject_message(theme: &Theme) -> Vec<Line<'static>> {
     render_fallback(None, theme)
 }

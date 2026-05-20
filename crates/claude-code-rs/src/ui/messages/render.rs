@@ -938,7 +938,6 @@ fn render_attachment_message<'a>(
 
 /// Create an abbreviated string representation of a JSON value, capped at
 /// `max_chars` characters.
-#[allow(dead_code)] // Phase 1: upstream parity surface
 #[cfg(test)]
 fn abbreviate_json(value: &serde_json::Value, max_chars: usize) -> String {
     let full = match serde_json::to_string(value) {
@@ -953,8 +952,6 @@ fn abbreviate_json(value: &serde_json::Value, max_chars: usize) -> String {
         full[..max_chars].to_string()
     }
 }
-
-#[allow(dead_code)] // Phase 1: upstream parity surface
 #[cfg(test)]
 fn tool_input_summary(name: &str, input: &serde_json::Value, max_chars: usize) -> String {
     if let Some(primary) = tool_primary_input(name, input) {

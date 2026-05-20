@@ -40,7 +40,6 @@ impl ThemeName {
         Self::DarkAnsi,
     ];
 
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn label(&self) -> &'static str {
         match self {
@@ -566,7 +565,6 @@ impl ThemeProvider {
         self.setting = setting;
     }
 
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn refresh_auto(&mut self) {
         if matches!(self.setting, ThemeSetting::Auto) {
@@ -575,7 +573,6 @@ impl ThemeProvider {
     }
 
     /// Iterate over all theme names (for selection UIs).
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn all_themes() -> &'static [ThemeName] {
         ThemeName::ALL
@@ -672,7 +669,6 @@ pub fn load_theme_setting() -> Result<ThemeSetting, String> {
     read_theme_setting_from_path(&cc_config::settings::user_settings_path())
 }
 
-#[allow(dead_code)] // Phase 1: upstream parity surface
 #[cfg(test)]
 pub fn save_theme_setting(setting: &ThemeSetting) -> Result<(), String> {
     write_theme_setting_to_path(&cc_config::settings::user_settings_path(), setting)

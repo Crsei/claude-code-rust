@@ -36,7 +36,6 @@ pub struct ListItem<'a> {
     /// Optional description shown below the label.
     description: Option<&'a str>,
     /// Optional extra style key to apply to the label.
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     color: Option<&'a str>,
 }
 
@@ -89,8 +88,6 @@ impl<'a> ListItem<'a> {
         self.description = Some(v);
         self
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn color(mut self, v: &'a str) -> Self {
         self.color = Some(v);
         self

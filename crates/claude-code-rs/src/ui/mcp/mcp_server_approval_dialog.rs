@@ -35,8 +35,6 @@ pub fn mcp_server_approval_choices(server_name: &str) -> Vec<McpServerApprovalCh
         },
     ]
 }
-
-#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn build_mcp_server_approval_surface(server_name: &str) -> SelectionSurface {
     SelectionSurface::new(
         format!("New MCP server found in .mcp.json: {server_name}"),

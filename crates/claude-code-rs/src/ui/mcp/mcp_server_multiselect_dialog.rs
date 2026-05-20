@@ -17,7 +17,6 @@ pub struct McpServerMultiselectState {
 }
 
 impl McpServerMultiselectState {
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn new(names: Vec<String>) -> Self {
         Self {
             servers: names

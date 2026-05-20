@@ -1,6 +1,4 @@
 // test infrastructure — not wired to production yet; tracked in IMPLEMENTATION_GAPS.md
-#![allow(dead_code)]
-
 //! Adapter helpers between IPC backend messages and app events.
 
 use cc_ipc_protocol::BackendMessage;

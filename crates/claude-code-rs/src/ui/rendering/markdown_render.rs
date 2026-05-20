@@ -1,6 +1,4 @@
 // test infrastructure — markdown render helpers for future transcript integration
-#![allow(dead_code)]
-
 //! Markdown-to-ratatui rendering facade.
 
 use std::path::Path;

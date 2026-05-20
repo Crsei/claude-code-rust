@@ -1,6 +1,4 @@
 // test infrastructure — not wired to production yet; tracked in IMPLEMENTATION_GAPS.md
-#![allow(dead_code)]
-
 //! Backtrack/rewind state helpers.
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

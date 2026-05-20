@@ -96,7 +96,6 @@ impl App {
     /// Shared handle to the status-line runner. `/statusline` calls this
     /// to inspect / reset the runner without owning the App.
     #[cfg(test)]
-    #[allow(dead_code)] // Phase 1: test infrastructure — used only in test harness
     pub fn status_line_runner(&self) -> StatusLineRunner {
         self.status_line_runner.clone()
     }

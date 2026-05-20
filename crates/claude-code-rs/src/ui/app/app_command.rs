@@ -1,6 +1,4 @@
 // test infrastructure — not wired to production yet; tracked in IMPLEMENTATION_GAPS.md
-#![allow(dead_code)]
-
 //! App command model used by app-server adapters.
 
 use serde::{Deserialize, Serialize};

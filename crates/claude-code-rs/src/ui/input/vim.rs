@@ -7,8 +7,6 @@
 //!
 //! Corresponds to TypeScript: vim/ (5 files)
 
-#![allow(unused)]
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 // ---------------------------------------------------------------------------
@@ -37,6 +35,7 @@ impl VimMode {
     }
 
     /// Short single-char indicator.
+    #[cfg(test)]
     pub fn short_indicator(&self) -> char {
         match self {
             VimMode::Normal => 'N',
@@ -60,6 +59,7 @@ impl EditorModeSetting {
         }
     }
 
+    #[cfg(test)]
     pub fn as_str(self) -> &'static str {
         match self {
             EditorModeSetting::Normal => "normal",
@@ -156,6 +156,7 @@ impl VimState {
         }
     }
 
+    #[cfg(test)]
     pub fn editor_mode_setting(&self) -> EditorModeSetting {
         if self.enabled {
             EditorModeSetting::Vim
@@ -438,6 +439,12 @@ impl VimState {
             KeyCode::Esc => {
                 self.mode = VimMode::Normal;
                 VimAction::SwitchMode(VimMode::Normal)
+            }
+            KeyCode::Char(c)
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT) =>
+            {
+                VimAction::InsertChar(c)
             }
             // Pass everything else through to normal input handling
             _ => VimAction::Passthrough(key),
@@ -754,8 +761,22 @@ mod tests {
         vim.enable();
         vim.mode = VimMode::Insert;
 
-        let action = vim.handle_key(char_key('a'), "hello", 5);
+        let action = vim.handle_key(
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL),
+            "hello",
+            5,
+        );
         assert!(matches!(action, VimAction::Passthrough(_)));
+    }
+
+    #[test]
+    fn test_insert_mode_char_inserts() {
+        let mut vim = VimState::new();
+        vim.enable();
+        vim.mode = VimMode::Insert;
+
+        let action = vim.handle_key(char_key('a'), "hello", 5);
+        assert_eq!(action, VimAction::InsertChar('a'));
     }
 
     #[test]

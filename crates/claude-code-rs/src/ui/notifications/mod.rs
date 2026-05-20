@@ -44,16 +44,12 @@ impl DesktopNotificationBackend {
             NotificationMethod::Bel => Self::Bel(BelBackend),
         }
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn method(&self) -> NotificationMethod {
         match self {
             DesktopNotificationBackend::Osc9(_) => NotificationMethod::Osc9,
             DesktopNotificationBackend::Bel(_) => NotificationMethod::Bel,
         }
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn notify(&mut self, message: &str) -> io::Result<()> {
         match self {
             DesktopNotificationBackend::Osc9(backend) => backend.notify(message),

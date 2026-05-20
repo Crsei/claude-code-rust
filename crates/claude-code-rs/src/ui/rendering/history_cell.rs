@@ -1,6 +1,4 @@
 // test infrastructure — history cell rendering not wired to production transcript view
-#![allow(dead_code)]
-
 //! Typed chat history cells.
 
 use ratatui::style::Style;

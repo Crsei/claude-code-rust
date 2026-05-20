@@ -117,7 +117,6 @@ pub fn selection_marker(selected: bool) -> &'static str {
 }
 
 #[cfg(test)]
-#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn truncate_middle(value: &str, max_chars: usize) -> String {
     let count = value.chars().count();
     if count <= max_chars {
@@ -170,7 +169,6 @@ pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn indent_lines(lines: impl IntoIterator<Item = String>, spaces: usize) -> Vec<String> {
     let prefix = " ".repeat(spaces);
     lines

@@ -1,6 +1,4 @@
 // test infrastructure — coalescing frame requester not wired to production loop yet
-#![allow(dead_code)]
-
 //! Coalescing frame requester for redraw scheduling.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

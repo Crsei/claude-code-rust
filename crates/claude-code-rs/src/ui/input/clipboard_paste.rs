@@ -1,6 +1,4 @@
 // test infrastructure — image paste not wired to production TUI yet
-#![allow(dead_code)]
-
 #[cfg(any(test, feature = "image"))]
 use std::path::PathBuf;
 #[cfg(any(test, feature = "image"))]

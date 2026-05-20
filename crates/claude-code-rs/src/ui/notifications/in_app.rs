@@ -68,8 +68,6 @@ impl InAppNotification {
         self.tone = tone;
         self
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn with_rendered(mut self, spans: Vec<Span<'static>>) -> Self {
         self.rendered = Some(spans);

@@ -20,8 +20,6 @@ pub(crate) fn get_tooltip(plan: Option<&str>, fast_mode_enabled: bool) -> Option
     }
     DEFAULT_TOOLTIPS.first().map(|tip| (*tip).to_string())
 }
-
-#[allow(dead_code)] // Phase 1: upstream parity surface
 pub(crate) fn all_tooltips() -> Vec<&'static str> {
     DEFAULT_TOOLTIPS.to_vec()
 }

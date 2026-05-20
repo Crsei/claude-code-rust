@@ -5,7 +5,6 @@ use std::collections::VecDeque;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComposerMode {
     Insert,
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     VimNormal,
     Slash,
     Busy,
@@ -52,8 +51,6 @@ impl ChatComposerState {
             ComposerMode::Insert
         };
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn paste_text(&mut self, text: &str) {
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
         if !self.input.is_empty() && !self.input.ends_with('\n') {
@@ -84,13 +81,9 @@ impl ChatComposerState {
             self.mode = ComposerMode::Insert;
         }
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn pop_queued(&mut self) -> Option<String> {
         self.queued.pop_front()
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn queued_len(&self) -> usize {
         self.queued.len()
     }

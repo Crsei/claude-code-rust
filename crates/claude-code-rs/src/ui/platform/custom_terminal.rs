@@ -1,6 +1,4 @@
 // test infrastructure — custom-terminal boundary for off-screen frame rendering; not wired to production TUI
-#![allow(dead_code)]
-
 //! Lightweight terminal primitives used by Codex-shaped UI adapters.
 //!
 //! The runtime TUI still uses `ratatui::Terminal` directly. This module keeps a

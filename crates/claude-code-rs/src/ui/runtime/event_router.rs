@@ -1,6 +1,4 @@
 // test infrastructure — event router not wired to TUI event dispatch yet
-#![allow(dead_code)]
-
 //! Small event router used to separate UI events from app actions.
 
 #[derive(Debug, Clone, PartialEq, Eq)]

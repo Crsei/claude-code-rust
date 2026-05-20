@@ -60,8 +60,6 @@ impl MemoryFileSelectorState {
             selected_index: 0,
         }
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn selected_path(&self) -> Option<&Path> {
         self.options

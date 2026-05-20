@@ -72,7 +72,6 @@ impl PathCompletionProvider {
     }
 
     /// Whether to include regular files (non-directories) in completions.
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn set_include_files(&mut self, v: bool) {
         self.include_files = v;

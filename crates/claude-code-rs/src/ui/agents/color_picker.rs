@@ -36,8 +36,6 @@ impl ColorPickerState {
     pub fn move_next(&mut self) {
         self.selected_index = (self.selected_index + 1) % COLOR_OPTIONS.len();
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn move_previous(&mut self) {
         self.selected_index = if self.selected_index == 0 {
             COLOR_OPTIONS.len() - 1

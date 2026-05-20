@@ -157,7 +157,6 @@ impl ShellHistoryCompletionProvider {
     }
 
     /// Update cache after a shell command execution (called externally).
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn notify_command_executed(&mut self, _command: &str) {
         // Invalidate cache so next access re-reads history files

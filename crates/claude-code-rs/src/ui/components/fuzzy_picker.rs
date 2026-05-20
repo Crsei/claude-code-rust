@@ -94,14 +94,10 @@ impl<'a, T> FuzzyPicker<'a, T> {
     }
 
     // Builder-style setters.
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn placeholder(mut self, v: impl Into<String>) -> Self {
         self.placeholder = v.into();
         self
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn empty_message(mut self, v: impl Into<String>) -> Self {
         self.empty_message = v.into();
         self
@@ -111,8 +107,6 @@ impl<'a, T> FuzzyPicker<'a, T> {
         self.match_label = Some(v.into());
         self
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn select_action(mut self, v: impl Into<String>) -> Self {
         self.select_action = v.into();
         self
@@ -127,14 +121,10 @@ impl<'a, T> FuzzyPicker<'a, T> {
         self.visible_count = v.max(2);
         self
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn cursor_offset(mut self, v: usize) -> Self {
         self.cursor_offset = Some(v);
         self
     }
-
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn terminal_focused(mut self, v: bool) -> Self {
         self.is_terminal_focused = v;
         self

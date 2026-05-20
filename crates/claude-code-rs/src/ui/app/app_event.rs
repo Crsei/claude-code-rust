@@ -11,12 +11,10 @@ pub enum AppEvent {
         message: Box<BackendMessage>,
     },
     #[cfg(test)]
-    #[allow(dead_code)] // Phase 1: upstream parity — not wired to production event loop
     LocalNotice {
         message: String,
     },
     #[cfg(test)]
-    #[allow(dead_code)] // Phase 1: upstream parity — not wired to production event loop
     Notification {
         key: String,
         message: String,
@@ -24,10 +22,8 @@ pub enum AppEvent {
         timeout_ms: Option<u64>,
     },
     #[cfg(test)]
-    #[allow(dead_code)] // Phase 1: upstream parity — not wired to production event loop
     Tick,
     #[cfg(test)]
-    #[allow(dead_code)] // Phase 1: upstream parity — not wired to production event loop
     Shutdown,
 }
 

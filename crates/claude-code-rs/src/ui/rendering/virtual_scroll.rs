@@ -160,7 +160,6 @@ impl VirtualScroll {
 
     /// Compute the visible message index range `[start, end)` for the given
     /// scroll offset and viewport height.
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn visible_range(&self, scroll_offset: usize, viewport_height: usize) -> (usize, usize) {
         visible_range_in_offsets(

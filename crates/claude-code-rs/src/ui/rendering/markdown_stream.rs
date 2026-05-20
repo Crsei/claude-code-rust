@@ -1,6 +1,4 @@
 // test infrastructure — markdown streaming collector methods not called in production tests
-#![allow(dead_code)]
-
 //! Streaming Markdown collector with render caching.
 //!
 //! The collector keeps commit accounting separate from render caching:

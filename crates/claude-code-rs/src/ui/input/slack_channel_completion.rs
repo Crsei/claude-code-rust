@@ -65,7 +65,6 @@ impl SlackChannelCompletionProvider {
     }
 
     /// Set custom known channels (for testing or configuration).
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn set_known_channels(&mut self, channels: Vec<String>) {
         self.known_channels = channels;

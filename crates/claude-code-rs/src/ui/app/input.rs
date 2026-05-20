@@ -65,7 +65,6 @@ impl CompletionState {
 
     /// Move selection down (toward later items).
     #[cfg(test)]
-    #[allow(dead_code)] // Phase 1: test infrastructure — not called in production
     pub fn select_next(&mut self) {
         if self.selected + 1 < self.items.len() {
             self.selected += 1;

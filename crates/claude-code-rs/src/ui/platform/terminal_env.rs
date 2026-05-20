@@ -49,7 +49,6 @@ impl Default for TerminalEnvConfig {
 impl TerminalEnvConfig {
     /// The TUI runner honors the mouse-capture env flags when deciding
     /// whether to enable crossterm mouse capture.
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub const DISABLE_MOUSE_RUNTIME_SUPPORTED: bool = true;
     /// Default scroll speed when no override is set. Exposed publicly

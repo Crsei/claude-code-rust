@@ -8,7 +8,6 @@ pub enum PermissionDecision {
     Deny,
     AlwaysAllow,
     Ask,
-    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     Escalate,
 }
