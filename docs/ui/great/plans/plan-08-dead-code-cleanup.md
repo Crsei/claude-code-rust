@@ -263,5 +263,5 @@ Phase 1 (permissions) ── 由 plan-07 覆盖（依赖关系在那边处理）
 
 1. `cargo test -p claude-code-rs ui:: -- --nocapture` 仍会在测试目标中报告若干 `dead_code` 警告，主要来自仅测试引用或尚未完整接线的 UI 镜像表面；本次清理目标是生产构建零 `dead_code` 宽限，而不是测试目标全 lint 归零。
 2. 部分 API 通过 `#[cfg(test)]`、小型 marker/helper 方法或集中测试引用保留，以避免未完成表面被误删；后续当这些表面进入生产渲染路径时，应移除测试门控并用真实调用替代。
-3. 本计划未覆盖 `unused_imports`、`unused` 或测试 target 下的所有普通 warning；如果后续要做全 workspace/all-targets warning budget，需要单独开计划。
+3. 本计划未覆盖 `unused_imports`、`unused` 或测试 target 下的所有普通 warning；全 workspace/all-targets warning budget 已单独开计划：`docs/plan/workspace-all-targets-warning-budget-plan-2026-05-20.md`。
 4. `mod.rs` 的模块暴露已经收敛到当前生产入口可接受的形态，但 Rust UI 仍保留大量上游 parity 模块；新增模块时应优先接线、删除或显式 `cfg(test)`，不要重新引入无说明的 `#[allow(dead_code)]`。
