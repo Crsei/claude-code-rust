@@ -1,6 +1,5 @@
 //! Shared file-edit diff preview helpers.
 
-#[cfg(test)]
 use similar::TextDiff;
 
 use super::structured_diff::{
@@ -14,7 +13,6 @@ pub struct FileEditDiffStats {
     pub removals: usize,
 }
 
-#[cfg(test)]
 pub fn unified_hunk_lines_from_edit(path: &str, old: &str, new: &str) -> Vec<String> {
     TextDiff::from_lines(old, new)
         .unified_diff()

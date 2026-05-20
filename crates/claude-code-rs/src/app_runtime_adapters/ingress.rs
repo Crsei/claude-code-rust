@@ -113,6 +113,7 @@ pub(crate) async fn dispatch(
         FrontendMessage::PermissionResponse {
             tool_use_id,
             decision,
+            feedback,
             session_id,
             turn_id,
         } => {
@@ -124,7 +125,7 @@ pub(crate) async fn dispatch(
                 session_id.as_deref(),
                 turn_id.as_deref(),
                 &tool_use_id,
-                decision,
+                cc_types::callbacks::PermissionResponsePayload::new(decision, feedback),
             ) {
                 warn!(
                     "headless: no pending permission for tool_use_id={}",

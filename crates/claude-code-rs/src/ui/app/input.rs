@@ -121,6 +121,14 @@ impl App {
             return self.handle_workspace_trust_key(key);
         }
 
+        if let Some(ref mut dialog) = self.bypass_permissions_mode_dialog {
+            if let Some(choice) = dialog.handle_key(key) {
+                self.bypass_permissions_mode_dialog = None;
+                return AppAction::BypassPermissionsModeResponse(choice);
+            }
+            return AppAction::None;
+        }
+
         if let Some(ref mut dialog) = self.question_dialog {
             if let Some(answer) = dialog.handle_key(key) {
                 self.question_dialog = None;

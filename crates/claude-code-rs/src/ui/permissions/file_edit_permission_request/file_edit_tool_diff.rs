@@ -1,9 +1,7 @@
 //! File edit diff rendering for permission prompts.
 
-#[cfg(test)]
 use crate::ui::diff::file_edit_diff::render_file_edit_diff_preview;
 
-#[cfg(test)]
 pub fn render_file_edit_tool_diff(
     path: &str,
     hunk_lines: &[String],

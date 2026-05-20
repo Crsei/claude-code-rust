@@ -327,6 +327,7 @@ impl HeadlessRuntimeHost for RootHeadlessHost {
         ensure_installed();
         callbacks::install_permission_callback(&self.engine, pending_permissions, sink.clone());
         callbacks::install_ask_user_callback(&self.engine, pending_questions, sink.clone());
+        callbacks::install_permission_event_callback(&self.engine, sink.clone());
         callbacks::install_tool_progress_callback(&self.engine, sink);
         self.engine.set_bg_agent_tx(agent_tx);
         install_root_subsystem_event_sinks(subsystem_tx);

@@ -115,11 +115,15 @@ mod tests {
         let msg = BackendMessage::QuestionRequest {
             id: "q-1".into(),
             text: "Continue?".into(),
+            choices: vec!["Yes".into(), "No".into()],
+            allow_free_text: false,
         };
         let json = serde_json::to_value(&msg).unwrap();
         assert_eq!(json["type"], "question_request");
         assert_eq!(json["id"], "q-1");
         assert_eq!(json["text"], "Continue?");
+        assert_eq!(json["choices"][0], "Yes");
+        assert_eq!(json["allow_free_text"], false);
     }
 
     #[test]
@@ -174,8 +178,9 @@ mod tests {
             FrontendMessage::PermissionResponse {
                 tool_use_id,
                 decision,
+                feedback,
                 ..
-            } if tool_use_id == "tool-1" && decision == "allow"
+            } if tool_use_id == "tool-1" && decision == "allow" && feedback.is_none()
         ));
 
         let abort: FrontendMessage = serde_json::from_str(r#"{"type":"abort_query"}"#).unwrap();

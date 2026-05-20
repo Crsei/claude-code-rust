@@ -34,6 +34,15 @@ impl Tool for AskUserQuestionTool {
                 "question": {
                     "type": "string",
                     "description": "The question to ask the user"
+                },
+                "choices": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional structured choices shown to the user"
+                },
+                "allow_free_text": {
+                    "type": "boolean",
+                    "description": "Whether the user may answer with free text in addition to choosing an option"
                 }
             },
             "required": ["question"]
@@ -59,13 +68,32 @@ impl Tool for AskUserQuestionTool {
             .get("question")
             .and_then(|v| v.as_str())
             .unwrap_or("(no question provided)");
+        let choices = input
+            .get("choices")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(ToOwned::to_owned))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let allow_free_text = input
+            .get("allow_free_text")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
 
         if let Some(callback) = &ctx.ask_user_callback {
             debug!(
                 question = question,
                 "AskUser: routing question through callback"
             );
-            let answer = callback(question.to_string()).await;
+            let answer = callback(AskUserRequestPayload {
+                question: question.to_string(),
+                choices,
+                allow_free_text,
+            })
+            .await;
             debug!(
                 question = question,
                 answer_len = answer.len(),
@@ -239,6 +267,7 @@ mod tests {
             query_tracking: None,
             permission_callback: None,
             ask_user_callback: Some(callback),
+            permission_event_callback: None,
             bg_agent_tx: None,
             hook_runner: std::sync::Arc::new(cc_types::hooks::NoopHookRunner::new()),
             command_dispatcher: std::sync::Arc::new(

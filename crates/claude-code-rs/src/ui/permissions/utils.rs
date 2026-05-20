@@ -240,7 +240,6 @@ pub fn render_permission_options(
         .collect()
 }
 
-#[cfg(test)]
 pub fn render_key_values(title: &str, rows: &[(impl AsRef<str>, impl AsRef<str>)]) -> String {
     let mut lines = vec![title.to_string()];
     if rows.is_empty() {
@@ -254,7 +253,6 @@ pub fn render_key_values(title: &str, rows: &[(impl AsRef<str>, impl AsRef<str>)
     lines.join("\n")
 }
 
-#[cfg(test)]
 pub fn render_bullets(title: &str, rows: &[impl AsRef<str>]) -> String {
     let mut lines = vec![title.to_string()];
     if rows.is_empty() {

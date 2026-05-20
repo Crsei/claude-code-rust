@@ -17,6 +17,7 @@ pub mod commands;
 pub mod hooks;
 pub mod mcp;
 pub mod message;
+pub mod permission_events;
 #[cfg(feature = "runtime-types")]
 pub mod permissions;
 pub mod plan_workflow;

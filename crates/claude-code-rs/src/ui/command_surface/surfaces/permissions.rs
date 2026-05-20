@@ -4,7 +4,9 @@ use crate::ui::better_view_panel::{selected_row, BetterViewPanel};
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
 use crate::ui::permissions::rules::permission_rule_list::render_permission_rule_list;
-use crate::ui::permissions::rules::PermissionRule;
+use crate::ui::permissions::rules::recent_denials_tab::render_recent_denials_tab;
+use crate::ui::permissions::rules::workspace_tab::render_workspace_tab;
+use crate::ui::permissions::rules::{PermissionRule, RecentDenial, WorkspaceDirectory};
 use crate::ui::permissions::utils::{PermissionDecision, PermissionScope};
 use cc_engine::types::app_state::AppState;
 use cc_engine::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
@@ -13,6 +15,8 @@ use cc_engine::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissi
 pub struct PermissionsSurface {
     pub(crate) state: TabbedFormState,
     rules: Vec<PermissionRule>,
+    workspace_directories: Vec<WorkspaceDirectory>,
+    recent_denials: Vec<RecentDenial>,
 }
 
 impl PermissionsSurface {
@@ -35,6 +39,15 @@ impl PermissionsSurface {
             &perm.session_allow_rules,
             PermissionDecision::Allow,
         );
+        let mut workspace_directories = perm
+            .additional_working_directories
+            .values()
+            .map(|directory| WorkspaceDirectory {
+                path: directory.path.clone(),
+                trusted: !directory.read_only,
+            })
+            .collect::<Vec<_>>();
+        workspace_directories.sort_by(|a, b| a.path.cmp(&b.path));
 
         Self {
             state: TabbedFormState::new(
@@ -43,10 +56,14 @@ impl PermissionsSurface {
                     status_tab(perm),
                     rules_tab(&rules),
                     modes_tab(perm),
+                    workspace_directories_tab(&workspace_directories),
+                    recent_denials_tab(&[]),
                     mutate_tab(),
                 ],
             ),
             rules,
+            workspace_directories,
+            recent_denials: Vec::new(),
         }
     }
 
@@ -76,6 +93,20 @@ impl PermissionsSurface {
             detail_lines.push(String::new());
             detail_lines.extend(
                 render_permission_rule_list(&self.rules, self.state.selected_index)
+                    .lines()
+                    .map(str::to_string),
+            );
+        } else if self.active_tab_id() == Some("workspace") {
+            detail_lines.push(String::new());
+            detail_lines.extend(
+                render_workspace_tab(&self.workspace_directories, self.state.selected_index)
+                    .lines()
+                    .map(str::to_string),
+            );
+        } else if self.active_tab_id() == Some("denials") {
+            detail_lines.push(String::new());
+            detail_lines.extend(
+                render_recent_denials_tab(&self.recent_denials)
                     .lines()
                     .map(str::to_string),
             );
@@ -169,6 +200,26 @@ fn rules_tab(rules: &[PermissionRule]) -> FormTab {
         "Rules",
         vec![FormOption::new("show", "Review effective rules")
             .with_description(format!("{} rule(s) from settings/session", rules.len()))],
+    )
+}
+
+fn workspace_directories_tab(directories: &[WorkspaceDirectory]) -> FormTab {
+    FormTab::new(
+        "workspace",
+        "Workspace",
+        vec![
+            FormOption::new("workspace-show", "Review workspace directories")
+                .with_description(format!("{} additional directorie(s)", directories.len())),
+        ],
+    )
+}
+
+fn recent_denials_tab(denials: &[RecentDenial]) -> FormTab {
+    FormTab::new(
+        "denials",
+        "Denials",
+        vec![FormOption::new("denials-show", "Review recent denials")
+            .with_description(format!("{} recent denial(s)", denials.len()))],
     )
 }
 

@@ -93,6 +93,8 @@ pub(crate) struct QueryEngineState {
     pub(crate) permission_callback: Option<crate::types::tool::PermissionCallback>,
     /// Async callback for AskUserQuestion prompts (set by headless/TUI).
     pub(crate) ask_user_callback: Option<crate::types::tool::AskUserCallback>,
+    /// Callback for permission-side informational UI events.
+    pub(crate) permission_event_callback: Option<crate::types::tool::PermissionEventCallback>,
     /// Sender for background agent completion channel.
     /// Set by headless/TUI mode; cloned into ToolUseContext.
     pub(crate) bg_agent_tx: Option<cc_types::agent_channel::AgentSender>,
@@ -208,6 +210,7 @@ impl QueryEngine {
                 loaded_nested_memory_paths: HashSet::new(),
                 permission_callback: None,
                 ask_user_callback: None,
+                permission_event_callback: None,
                 bg_agent_tx: None,
                 tool_progress_callback: None,
                 sleep_until: None,
@@ -288,6 +291,10 @@ impl QueryEngine {
     /// Set the async AskUserQuestion callback used by headless/TUI mode.
     pub fn set_ask_user_callback(&self, cb: crate::types::tool::AskUserCallback) {
         self.state.write().ask_user_callback = Some(cb);
+    }
+
+    pub fn set_permission_event_callback(&self, cb: crate::types::tool::PermissionEventCallback) {
+        self.state.write().permission_event_callback = Some(cb);
     }
 
     /// Set the background agent sender (called by headless/TUI at startup).

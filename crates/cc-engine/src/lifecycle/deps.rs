@@ -14,6 +14,9 @@ use anyhow::Result;
 use futures::Stream;
 use uuid::Uuid;
 
+use cc_types::callbacks::PermissionEventPayload;
+use cc_types::permission_events::{HookPermissionDecisionEvent, PermissionDecisionDebugEvent};
+
 use crate::compact::compaction::build_post_compact_messages_with_boundary;
 use crate::permissions::decision::{
     AutoClassifierDecision, AutoClassifierStage, DenialTracker, PermissionDecision,
@@ -24,10 +27,11 @@ use crate::tool_runtime::execution::{
     ToolExecutionResult,
 };
 use crate::types::app_state::AppState;
-use crate::types::message::{Message, StreamEvent};
+use crate::types::message::{Message, MessageContent, StreamEvent, UserMessage};
 use crate::types::state::AutoCompactTracking;
 use crate::types::tool::{
-    PermissionMode, PermissionRequestPayload, ToolProgress, Tools, ValidationResult,
+    PermissionMode, PermissionRequestPayload, PermissionResponsePayload, ToolProgress, Tools,
+    ValidationResult,
 };
 use cc_engine::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
@@ -59,6 +63,8 @@ pub(crate) struct QueryEngineDeps {
     pub(crate) permission_callback: Option<crate::types::tool::PermissionCallback>,
     /// Background agent sender — forwarded into ToolUseContext.
     pub(crate) bg_agent_tx: Option<cc_types::agent_channel::AgentSender>,
+    /// Callback for non-blocking permission-side UI events.
+    pub(crate) permission_event_callback: Option<crate::types::tool::PermissionEventCallback>,
     /// Optional callback that receives every `ToolProgress` emitted by a
     /// tool. The query loop pulls this via `tool_progress_callback()` and
     /// hands it to `execute_tool_calls`. Tests can leave it unset; in
@@ -188,6 +194,95 @@ fn permission_result_from_decision(
     }
 }
 
+fn permission_behavior_label(
+    behavior: &crate::permissions::decision::PermissionBehavior,
+) -> &'static str {
+    match behavior {
+        crate::permissions::decision::PermissionBehavior::Allow => "allow",
+        crate::permissions::decision::PermissionBehavior::Deny => "deny",
+        crate::permissions::decision::PermissionBehavior::Ask => "ask",
+    }
+}
+
+fn permission_reason_summary(
+    reason: &PermissionDecisionReason,
+) -> (String, String, Option<String>) {
+    match reason {
+        PermissionDecisionReason::Rule { source, pattern } => {
+            (pattern.clone(), source.clone(), Some(pattern.clone()))
+        }
+        PermissionDecisionReason::Hook { detail } => {
+            let matcher = detail
+                .split_once(':')
+                .map(|(_, tail)| tail.trim().to_string())
+                .filter(|tail| !tail.is_empty())
+                .unwrap_or_else(|| "*".to_string());
+            (matcher, "hook".to_string(), None)
+        }
+        PermissionDecisionReason::Mode { mode } => (mode.clone(), "mode".to_string(), None),
+        PermissionDecisionReason::PatternMatch { tool, pattern } => {
+            (pattern.clone(), tool.clone(), Some(pattern.clone()))
+        }
+    }
+}
+
+fn emit_permission_decision_debug(
+    ctx: &crate::types::tool::ToolUseContext,
+    tool_name: &str,
+    app_state: &AppState,
+    decision: &PermissionDecision,
+) {
+    if !app_state.verbose {
+        return;
+    }
+    let Some(callback) = ctx.permission_event_callback.as_ref() else {
+        return;
+    };
+    let (matcher, source, matched_rule) = permission_reason_summary(&decision.reason);
+    let reason = match &decision.reason {
+        PermissionDecisionReason::Rule { source, pattern } => {
+            format!("matched {pattern} from {source}")
+        }
+        PermissionDecisionReason::Hook { detail } => detail.clone(),
+        PermissionDecisionReason::Mode { mode } => format!("permission mode {mode}"),
+        PermissionDecisionReason::PatternMatch { tool, pattern } => {
+            format!("{tool} matched {pattern}")
+        }
+    };
+    callback(PermissionEventPayload::DecisionDebug {
+        event: PermissionDecisionDebugEvent {
+            tool_name: tool_name.to_string(),
+            matcher,
+            source,
+            matched_rule,
+            behavior: permission_behavior_label(&decision.behavior).to_string(),
+            reason,
+        },
+    });
+}
+
+fn emit_hook_permission_decision(
+    ctx: &crate::types::tool::ToolUseContext,
+    hook_name: &str,
+    hook_event: &str,
+    matcher: impl Into<String>,
+    decision: &str,
+    notes: Vec<String>,
+) {
+    let Some(callback) = ctx.permission_event_callback.as_ref() else {
+        return;
+    };
+    callback(PermissionEventPayload::HookDecision {
+        event: HookPermissionDecisionEvent {
+            hook_name: hook_name.to_string(),
+            hook_event: hook_event.to_string(),
+            matcher: matcher.into(),
+            decision: decision.to_string(),
+            notes,
+        },
+    });
+}
+
 #[cfg(test)]
 fn central_permission_result_for_tool(
     tool_name: &str,
@@ -217,6 +312,25 @@ fn hook_error_is_critical(
                 None | Some("*") => true,
                 Some(pattern) => tool_name == pattern || tool_name.starts_with(pattern),
             }
+    })
+}
+
+fn permission_denied_message(response: &PermissionResponsePayload) -> String {
+    match response.feedback.as_deref() {
+        Some(feedback) => format!("Permission denied by user.\n\nUser feedback: {feedback}"),
+        None => "Permission denied by user.".to_string(),
+    }
+}
+
+fn permission_feedback_message(feedback: &str) -> Message {
+    Message::User(UserMessage {
+        uuid: Uuid::new_v4(),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+        role: "user".to_string(),
+        content: MessageContent::Text(feedback.to_string()),
+        is_meta: true,
+        tool_use_result: None,
+        source_tool_assistant_uuid: None,
     })
 }
 
@@ -875,6 +989,7 @@ impl QueryDeps for QueryEngineDeps {
                 .map(|ac| ac.query_tracking.clone()),
             permission_callback: self.permission_callback.clone(),
             ask_user_callback: self.state.read().ask_user_callback.clone(),
+            permission_event_callback: self.permission_event_callback.clone(),
             bg_agent_tx: self.bg_agent_tx.clone(),
             hook_runner: self.hook_runner.clone(),
             command_dispatcher: self.command_dispatcher.clone(),
@@ -1013,6 +1128,14 @@ impl QueryDeps for QueryEngineDeps {
                     tool = %request.tool_name,
                     "Permission allow requested by hook override"
                 );
+                emit_hook_permission_decision(
+                    &ctx,
+                    "PreToolUse",
+                    "PreToolUse",
+                    "*",
+                    "allow",
+                    vec![format!("tool: {}", request.tool_name)],
+                );
                 Some(crate::permissions::decision::HookPermissionDecision {
                     allow: true,
                     source: Some("PreToolUse".to_string()),
@@ -1023,6 +1146,14 @@ impl QueryDeps for QueryEngineDeps {
         };
 
         if let Some(PermissionOverride::Deny { reason }) = permission_override.as_ref() {
+            emit_hook_permission_decision(
+                &ctx,
+                "PreToolUse",
+                "PreToolUse",
+                "*",
+                "deny",
+                vec![reason.clone()],
+            );
             // Fire PermissionDenied hook
             let deny_configs = hooks.load_hook_configs(&hooks_map, "PermissionDenied");
             if !deny_configs.is_empty() {
@@ -1049,6 +1180,7 @@ impl QueryDeps for QueryEngineDeps {
             });
         }
 
+        let mut accepted_permission_feedback: Option<String> = None;
         {
             // Normal permission check via tool-local checks and the central rule engine
             let perm_audit_ctx = self.audit_ctx.with_tool_use(&request.tool_use_id);
@@ -1108,6 +1240,7 @@ impl QueryDeps for QueryEngineDeps {
                         }
                     }
 
+                    emit_permission_decision_debug(&ctx, &request.tool_name, &app_state, &decision);
                     permission_result_from_decision(
                         &request.tool_name,
                         &mut effective_input,
@@ -1194,6 +1327,14 @@ impl QueryDeps for QueryEngineDeps {
                         {
                             // If hook provides a permission decision, use it
                             if let Some(ref decision) = output.permission_decision {
+                                emit_hook_permission_decision(
+                                    &ctx,
+                                    "PermissionRequest",
+                                    "PermissionRequest",
+                                    "*",
+                                    decision,
+                                    vec![format!("tool: {}", request.tool_name)],
+                                );
                                 match decision.as_str() {
                                     "allow" => {
                                         // Skip the interactive prompt, proceed to execution
@@ -1249,7 +1390,7 @@ impl QueryDeps for QueryEngineDeps {
                                 "Deny".to_string(),
                                 "Always Allow".to_string(),
                             ];
-                            let decision = callback(PermissionRequestPayload {
+                            let response = callback(PermissionRequestPayload {
                                 tool_use_id: request.tool_use_id.clone(),
                                 tool_name: request.tool_name.clone(),
                                 tool_input: effective_input.clone(),
@@ -1258,8 +1399,10 @@ impl QueryDeps for QueryEngineDeps {
                             })
                             .await;
 
-                            match decision.to_lowercase().as_str() {
+                            let decision = response.normalized_decision();
+                            match decision.as_str() {
                                 "allow" => {
+                                    accepted_permission_feedback = response.feedback.clone();
                                     // Emit permission.resolved(allow) audit event
                                     use crate::observability::{
                                         AuditLevel, EventKind, Outcome, Stage,
@@ -1277,6 +1420,7 @@ impl QueryDeps for QueryEngineDeps {
                                     );
                                 }
                                 "always_allow" => {
+                                    accepted_permission_feedback = response.feedback.clone();
                                     // Record a session-level grant so subsequent
                                     // calls to this tool don't re-prompt.
                                     self.state
@@ -1290,6 +1434,7 @@ impl QueryDeps for QueryEngineDeps {
                                     );
                                 }
                                 _ => {
+                                    let denial_message = permission_denied_message(&response);
                                     // Emit permission.resolved(denied) audit event
                                     {
                                         use crate::observability::{
@@ -1331,7 +1476,7 @@ impl QueryDeps for QueryEngineDeps {
                                         tool_use_id: request.tool_use_id,
                                         tool_name: request.tool_name,
                                         result: crate::types::tool::ToolResult {
-                                            data: serde_json::json!("Permission denied by user."),
+                                            data: serde_json::json!(denial_message),
                                             new_messages: vec![],
                                             ..Default::default()
                                         },
@@ -1504,6 +1649,12 @@ impl QueryDeps for QueryEngineDeps {
                     }
                 }
 
+                if let Some(feedback) = accepted_permission_feedback.as_deref() {
+                    result
+                        .new_messages
+                        .push(permission_feedback_message(feedback));
+                }
+
                 result.data = cc_tools::result::enforce_result_size(
                     result.data,
                     tool.max_result_size_chars(),
@@ -1660,7 +1811,8 @@ mod tests {
     use crate::types::config::QueryEngineConfig;
     use crate::types::message::{AssistantMessage, MessageContent, ToolResultContent, UserMessage};
     use crate::types::tool::{
-        PermissionCallback, PermissionMode, PermissionResult, Tool, ToolResult, ToolUseContext,
+        PermissionCallback, PermissionMode, PermissionResponsePayload, PermissionResult, Tool,
+        ToolResult, ToolUseContext,
     };
     use serde_json::{json, Value};
 
@@ -1824,6 +1976,7 @@ mod tests {
             api_client: None,
             agent_context: None,
             permission_callback: None,
+            permission_event_callback: None,
             bg_agent_tx: None,
             tool_progress_callback: None,
             pending_bg_results: crate::agent_runtime::PendingBackgroundResults::new(),
@@ -2741,7 +2894,8 @@ mod tests {
                 })
             }
         }));
-        let callback: PermissionCallback = Arc::new(|_| Box::pin(async { "allow".to_string() }));
+        let callback: PermissionCallback =
+            Arc::new(|_| Box::pin(async { PermissionResponsePayload::decision("allow") }));
         deps.permission_callback = Some(callback);
 
         for _ in 0..2 {
@@ -2805,6 +2959,18 @@ mod tests {
             vec![Arc::new(cc_tools::fs::file_write::FileWriteTool::new())],
             PermissionMode::Auto,
         );
+        deps.state
+            .write()
+            .app_state
+            .tool_permission_context
+            .additional_working_directories
+            .insert(
+                path_string.clone(),
+                cc_types::permissions::AdditionalWorkingDirectory {
+                    path: temp.path().to_string_lossy().into_owned(),
+                    read_only: false,
+                },
+            );
         deps.auto_classifier_fn = Some(Arc::new({
             let captured = captured.clone();
             move |_, raw_input, classifier_input, _, _| {
@@ -2870,7 +3036,14 @@ mod tests {
             progress_payload: Some(json!({"phase": "running"})),
         });
         let mut deps = make_deps(vec![tool], PermissionMode::Default);
-        let callback: PermissionCallback = Arc::new(|_| Box::pin(async { "allow".to_string() }));
+        let callback: PermissionCallback = Arc::new(|_| {
+            Box::pin(async {
+                PermissionResponsePayload::new(
+                    "allow",
+                    Some("Apply this approval narrowly.".to_string()),
+                )
+            })
+        });
         deps.permission_callback = Some(callback);
         let seen_progress = Arc::new(parking_lot::Mutex::new(None));
         let progress_callback: Arc<dyn Fn(ToolProgress) + Send + Sync> = {
@@ -2891,6 +3064,19 @@ mod tests {
             .unwrap();
 
         assert!(!result.is_error);
+        assert_eq!(result.result.new_messages.len(), 1);
+        match &result.result.new_messages[0] {
+            Message::User(message) => {
+                assert!(message.is_meta);
+                match &message.content {
+                    MessageContent::Text(text) => {
+                        assert_eq!(text, "Apply this approval narrowly.");
+                    }
+                    other => panic!("expected text feedback message, got {other:?}"),
+                }
+            }
+            other => panic!("expected user feedback message, got {other:?}"),
+        }
         let progress = seen_progress
             .lock()
             .clone()

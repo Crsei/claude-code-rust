@@ -144,6 +144,8 @@ pub struct PermissionsSettings {
     pub additional_directories: Vec<String>,
     /// Whether `bypass` mode should be allowed at runtime.
     pub enable_bypass_mode: Option<bool>,
+    /// Skip the confirmation prompt before entering bypass permissions mode.
+    pub skip_dangerous_mode_permission_prompt: Option<bool>,
     /// Whether `auto` mode should be allowed at runtime.
     pub enable_auto_mode: Option<bool>,
     /// Prose policy for Auto mode's classifier.
@@ -161,6 +163,7 @@ impl PermissionsSettings {
             && self.deny.is_empty()
             && self.additional_directories.is_empty()
             && self.enable_bypass_mode.is_none()
+            && self.skip_dangerous_mode_permission_prompt.is_none()
             && self.enable_auto_mode.is_none()
             && self
                 .auto_mode
@@ -514,7 +517,10 @@ impl RawSettings {
             sources.insert("allowedTools".to_string(), source);
         }
 
-        if let Some(perms) = other.permissions {
+        if let Some(mut perms) = other.permissions {
+            if source == SettingsSource::Project {
+                perms.skip_dangerous_mode_permission_prompt = None;
+            }
             if !perms.is_effectively_empty() {
                 self.permissions = Some(merge_permissions(self.permissions.take(), perms));
                 sources.insert("permissions".to_string(), source);
@@ -586,6 +592,10 @@ fn merge_permissions(
     );
     if over.enable_bypass_mode.is_some() {
         out.enable_bypass_mode = over.enable_bypass_mode;
+    }
+    if let Some(skip_prompt) = over.skip_dangerous_mode_permission_prompt {
+        out.skip_dangerous_mode_permission_prompt =
+            Some(out.skip_dangerous_mode_permission_prompt.unwrap_or(false) || skip_prompt);
     }
     if over.enable_auto_mode.is_some() {
         out.enable_auto_mode = over.enable_auto_mode;
@@ -1345,6 +1355,7 @@ pub fn settings_schema() -> Value {
                         "type": "array", "items": { "type": "string" }
                     },
                     "enableBypassMode": { "type": "boolean" },
+                    "skipDangerousModePermissionPrompt": { "type": "boolean" },
                     "enableAutoMode": { "type": "boolean" },
                     "autoMode": {
                         "type": "object",
@@ -1752,6 +1763,105 @@ mod tests {
         );
         assert_eq!(auto.extra.get("baseOnly"), Some(&json!(true)));
         assert_eq!(auto.extra.get("overrideOnly"), Some(&json!("x")));
+    }
+
+    #[test]
+    fn skip_bypass_prompt_uses_trusted_source_or_semantics() {
+        let base = PermissionsSettings {
+            skip_dangerous_mode_permission_prompt: Some(true),
+            ..Default::default()
+        };
+        let over = PermissionsSettings {
+            skip_dangerous_mode_permission_prompt: Some(false),
+            ..Default::default()
+        };
+        let merged = merge_permissions(Some(base), over);
+        assert_eq!(merged.skip_dangerous_mode_permission_prompt, Some(true));
+
+        let base = PermissionsSettings {
+            skip_dangerous_mode_permission_prompt: Some(false),
+            ..Default::default()
+        };
+        let over = PermissionsSettings {
+            skip_dangerous_mode_permission_prompt: Some(false),
+            ..Default::default()
+        };
+        let merged = merge_permissions(Some(base), over);
+        assert_eq!(merged.skip_dangerous_mode_permission_prompt, Some(false));
+    }
+
+    #[test]
+    fn project_settings_cannot_skip_bypass_prompt() {
+        let mut acc = RawSettings::default();
+        let mut sources = SourceMap::new();
+
+        acc.merge_from(
+            RawSettings {
+                permissions: Some(PermissionsSettings {
+                    skip_dangerous_mode_permission_prompt: Some(true),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            SettingsSource::Project,
+            &mut sources,
+        );
+        assert!(acc.permissions.is_none());
+
+        acc.merge_from(
+            RawSettings {
+                permissions: Some(PermissionsSettings {
+                    skip_dangerous_mode_permission_prompt: Some(false),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            SettingsSource::User,
+            &mut sources,
+        );
+        assert_eq!(
+            acc.permissions
+                .as_ref()
+                .and_then(|p| p.skip_dangerous_mode_permission_prompt),
+            Some(false)
+        );
+
+        acc.merge_from(
+            RawSettings {
+                permissions: Some(PermissionsSettings {
+                    skip_dangerous_mode_permission_prompt: Some(true),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            SettingsSource::Local,
+            &mut sources,
+        );
+        assert_eq!(
+            acc.permissions
+                .as_ref()
+                .and_then(|p| p.skip_dangerous_mode_permission_prompt),
+            Some(true)
+        );
+
+        acc.merge_from(
+            RawSettings {
+                permissions: Some(PermissionsSettings {
+                    skip_dangerous_mode_permission_prompt: Some(false),
+                    default_mode: Some("bypass".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            SettingsSource::Project,
+            &mut sources,
+        );
+        let permissions = acc.permissions.expect("trusted skip setting remains");
+        assert_eq!(permissions.default_mode.as_deref(), Some("bypass"));
+        assert_eq!(
+            permissions.skip_dangerous_mode_permission_prompt,
+            Some(true)
+        );
     }
 
     #[test]

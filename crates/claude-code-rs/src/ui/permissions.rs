@@ -2,6 +2,7 @@
 // Rust-side permission modules mirrored from upstream React components.
 pub mod ask_user_question_permission_request;
 pub mod bash_permission_request;
+pub mod bypass_permissions_mode_dialog;
 pub mod computer_use_approval;
 pub mod enter_plan_mode_permission_request;
 pub mod exit_plan_mode_permission_request;
@@ -10,11 +11,9 @@ pub mod file_edit_permission_request;
 pub mod file_permission_dialog;
 pub mod file_write_permission_request;
 pub mod filesystem_permission_request;
-#[cfg(test)]
 pub mod hooks;
 pub mod monitor_permission_request;
 pub mod notebook_edit_permission_request;
-#[cfg(test)]
 pub mod permission_decision_debug_info;
 #[cfg(test)]
 pub mod permission_dialog;
@@ -41,15 +40,16 @@ pub mod skill_permission_request;
 pub mod use_shell_permission_feedback;
 pub mod utils;
 pub mod web_fetch_permission_request;
-#[cfg(test)]
 pub mod worker_badge;
-#[cfg(test)]
 pub mod worker_pending_permission;
 // END generated upstream permissions modules
 
 mod dialog_overlay;
 
-pub use dialog_overlay::{PermissionChoice, PermissionDialog};
+pub use bypass_permissions_mode_dialog::{
+    BypassPermissionsModeChoice, BypassPermissionsModeDialog,
+};
+pub use dialog_overlay::{PermissionChoice, PermissionDecisionChoice, PermissionDialog};
 pub use permission_request_router::PermissionDialogRequest;
 pub use question_dialog::QuestionDialog;
 

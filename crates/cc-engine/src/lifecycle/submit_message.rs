@@ -1092,6 +1092,7 @@ impl QueryEngine {
 
             // Create deps for the inner query loop
             let permission_callback = state_ref.read().permission_callback.clone();
+            let permission_event_callback = state_ref.read().permission_event_callback.clone();
             let bg_agent_tx = state_ref.read().bg_agent_tx.clone();
             let tool_progress_callback = state_ref.read().tool_progress_callback.clone();
             let submit_audit_ctx = state_ref.read().audit_ctx.with_submit();
@@ -1105,6 +1106,7 @@ impl QueryEngine {
                 api_client,
                 agent_context: config.agent_context.clone(),
                 permission_callback,
+                permission_event_callback,
                 bg_agent_tx,
                 tool_progress_callback,
                 pending_bg_results: pending_bg_results.clone(),

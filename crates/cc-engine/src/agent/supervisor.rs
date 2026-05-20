@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -200,6 +201,7 @@ pub(super) async fn spawn_background_agent(
         command_dispatcher: ctx.command_dispatcher.clone(),
         permission_callback: ctx.permission_callback.clone(),
         ask_user_callback: ctx.ask_user_callback.clone(),
+        permission_pending_count: Arc::new(AtomicUsize::new(0)),
     };
 
     let handle = tokio::spawn(async move {
@@ -301,6 +303,7 @@ struct AgentRuntime {
     command_dispatcher: Arc<dyn cc_types::commands::CommandDispatcher>,
     permission_callback: Option<PermissionCallback>,
     ask_user_callback: Option<AskUserCallback>,
+    permission_pending_count: Arc<AtomicUsize>,
 }
 
 impl AgentRuntime {
@@ -317,7 +320,40 @@ impl AgentRuntime {
         child_engine.set_hook_runner(self.hook_runner.clone());
         child_engine.set_command_dispatcher(self.command_dispatcher.clone());
         if let Some(callback) = self.permission_callback.clone() {
-            child_engine.set_permission_callback(callback);
+            let bg_tx = self.bg_tx.clone();
+            let agent_id = self.agent_id.clone();
+            let pending_count = self.permission_pending_count.clone();
+            child_engine.set_permission_callback(Arc::new(move |request| {
+                let callback = callback.clone();
+                let bg_tx = bg_tx.clone();
+                let agent_id = agent_id.clone();
+                let pending_count = pending_count.clone();
+                Box::pin(async move {
+                    let queue_position = pending_count.fetch_add(1, Ordering::SeqCst) + 1;
+                    let _ = bg_tx.send(cc_types::agent_channel::AgentIpcEvent::Agent(
+                        cc_types::agent_events::AgentEvent::PermissionQueued {
+                            agent_id: agent_id.clone(),
+                            tool_use_id: request.tool_use_id.clone(),
+                            tool_name: request.tool_name.clone(),
+                            summary: request.legacy_command(),
+                            queue_position,
+                            pending_count: pending_count.load(Ordering::SeqCst),
+                        },
+                    ));
+                    let decision = callback(request.clone()).await;
+                    let remaining = pending_count.fetch_sub(1, Ordering::SeqCst) - 1;
+                    let _ = bg_tx.send(cc_types::agent_channel::AgentIpcEvent::Agent(
+                        cc_types::agent_events::AgentEvent::PermissionResolved {
+                            agent_id,
+                            tool_use_id: request.tool_use_id,
+                            tool_name: request.tool_name,
+                            decision: decision.decision.clone(),
+                            pending_count: remaining,
+                        },
+                    ));
+                    decision
+                })
+            }));
         }
         if let Some(callback) = self.ask_user_callback.clone() {
             child_engine.set_ask_user_callback(callback);

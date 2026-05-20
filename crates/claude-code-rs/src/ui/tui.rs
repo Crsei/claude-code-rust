@@ -12,6 +12,8 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
+use cc_engine::types::tool::PermissionMode;
+use cc_types::callbacks::PermissionResponsePayload;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
 use crossterm::terminal::{
     self, BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen,
@@ -41,8 +43,9 @@ mod tests;
 use commands::{query_prompt_text, try_execute_command, CmdAction};
 use engine_events::{
     create_user_message, handle_sdk_message, handle_tool_progress, install_tui_ask_user_callback,
-    install_tui_permission_callback, install_tui_tool_progress_callback, now_ts,
-    permission_choice_to_decision, spawn_engine_query, EngineEvent, StreamingState,
+    install_tui_permission_callback, install_tui_permission_event_callback,
+    install_tui_tool_progress_callback, now_ts, permission_choice_to_response, spawn_engine_query,
+    EngineEvent, StreamingState,
 };
 use export::export_to_editor;
 use subsystem_events::{
@@ -58,6 +61,26 @@ use cc_types::agent_events::AgentCommand;
 use cc_types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
 
 use super::app::{app_event::AppEvent, app_event_sender, App, AppAction};
+use super::notifications::in_app::{InAppNotification, NotificationPriority, NotificationTone};
+use super::permissions::hooks::{render_permission_hook_event, PermissionHookEvent};
+use super::permissions::permission_decision_debug_info::render_permission_decision_debug_info;
+use super::permissions::BypassPermissionsModeChoice;
+
+fn permission_event_notification(text: String, tone: NotificationTone) -> InAppNotification {
+    InAppNotification::new("permission-event", NotificationPriority::Low, text)
+        .with_tone(tone)
+        .with_fold(true)
+        .with_timeout_ms(5000)
+}
+
+fn persist_skip_dangerous_mode_prompt() -> anyhow::Result<()> {
+    let mut raw = cc_config::settings::load_global_config()?;
+    let mut permissions = raw.permissions.unwrap_or_default();
+    permissions.skip_dangerous_mode_permission_prompt = Some(true);
+    raw.permissions = Some(permissions);
+    cc_config::settings::write_user_settings(&raw)?;
+    Ok(())
+}
 
 fn lsp_event_to_subsystem(
     event: cc_lsp_service::LspEvent,
@@ -207,6 +230,20 @@ pub async fn run_tui(
     app.set_backend_name(engine.app_state().main_loop_backend.clone());
     app.set_session_id(engine.current_session_id().to_string());
     app.set_cwd(engine.cwd().to_string());
+    let app_state = engine.app_state();
+    if app_state.tool_permission_context.mode == PermissionMode::Bypass {
+        let disabled = !app_state
+            .tool_permission_context
+            .is_bypass_permissions_mode_available;
+        let skip_prompt = app_state
+            .settings
+            .permissions
+            .skip_dangerous_mode_permission_prompt
+            .unwrap_or(false);
+        if disabled || !skip_prompt {
+            app.show_bypass_permissions_mode_dialog(disabled);
+        }
+    }
     let (app_event_sender, mut app_event_rx) = app_event_sender::channel();
     match super::persistent_history::load_persistent_history_for_workspace(std::path::Path::new(
         engine.cwd(),
@@ -272,10 +309,11 @@ pub async fn run_tui(
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
     install_tui_permission_callback(&engine, engine_tx.clone());
     install_tui_ask_user_callback(&engine, engine_tx.clone());
+    install_tui_permission_event_callback(&engine, engine_tx.clone());
     install_tui_tool_progress_callback(&engine, engine_tx.clone());
     let (agent_tx, mut agent_rx) = cc_types::agent_channel::agent_channel();
     engine.set_bg_agent_tx(agent_tx);
-    let mut pending_permission_response: Option<oneshot::Sender<String>> = None;
+    let mut pending_permission_response: Option<oneshot::Sender<PermissionResponsePayload>> = None;
     let mut pending_question_response: Option<oneshot::Sender<String>> = None;
     let mut streaming_state = StreamingState::new();
 
@@ -421,8 +459,25 @@ pub async fn run_tui(
                             }
                             AppAction::PermissionResponse(choice) => {
                                 if let Some(response_tx) = pending_permission_response.take() {
-                                    let _ = response_tx
-                                        .send(permission_choice_to_decision(choice).to_string());
+                                    let _ = response_tx.send(permission_choice_to_response(&choice));
+                                }
+                            }
+                            AppAction::BypassPermissionsModeResponse(choice) => {
+                                match choice {
+                                    BypassPermissionsModeChoice::Accept => {
+                                        if let Err(err) = persist_skip_dangerous_mode_prompt() {
+                                            add_system_error(
+                                                &mut app,
+                                                &format!(
+                                                    "Failed to persist bypass permissions acknowledgement: {err}"
+                                                ),
+                                            );
+                                        }
+                                    }
+                                    BypassPermissionsModeChoice::Decline => {
+                                        debug!("TUI: bypass permissions mode declined");
+                                        break;
+                                    }
                                 }
                             }
                             AppAction::QuestionResponse(answer) => {
@@ -520,21 +575,43 @@ pub async fn run_tui(
                     }
                     EngineEvent::PermissionRequest { request, response_tx } => {
                         if let Some(previous) = pending_permission_response.take() {
-                            let _ = previous.send("deny".to_string());
+                            let _ = previous.send(PermissionResponsePayload::deny());
                         }
                         app.show_permission_request(request.into());
                         pending_permission_response = Some(response_tx);
                     }
                     EngineEvent::QuestionRequest {
                         id,
-                        question,
+                        request,
                         response_tx,
                     } => {
                         if let Some(previous) = pending_question_response.take() {
                             let _ = previous.send(String::new());
                         }
-                        app.show_question_dialog(id, question);
+                        app.show_question_dialog(id, request);
                         pending_question_response = Some(response_tx);
+                    }
+                    EngineEvent::HookPermissionDecision(event) => {
+                        app.add_notification(permission_event_notification(
+                            render_permission_hook_event(&PermissionHookEvent {
+                                hook_name: event.hook_name,
+                                matcher: event.matcher,
+                                decision: event.decision,
+                                notes: event.notes,
+                            }),
+                            NotificationTone::Info,
+                        ));
+                    }
+                    EngineEvent::PermissionDecisionDebug(event) => {
+                        app.add_notification(permission_event_notification(
+                            render_permission_decision_debug_info(
+                                &event.tool_name,
+                                &event.matcher,
+                                &event.source,
+                                event.matched_rule.as_deref(),
+                            ),
+                            NotificationTone::Dim,
+                        ));
                     }
                     EngineEvent::Done => {
                         app.set_streaming(false);

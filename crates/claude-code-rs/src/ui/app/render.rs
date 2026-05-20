@@ -286,6 +286,10 @@ impl App {
         if let Some(ref dialog) = self.question_dialog {
             dialog.render(size, frame.buffer_mut(), &self.theme);
         }
+
+        if let Some(ref dialog) = self.bypass_permissions_mode_dialog {
+            dialog.render(size, frame.buffer_mut(), &self.theme);
+        }
     }
 
     fn render_suggestions(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {

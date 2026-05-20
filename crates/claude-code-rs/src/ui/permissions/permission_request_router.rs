@@ -8,9 +8,15 @@ use super::computer_use_approval::computer_use_approval::render_computer_use_app
 use super::enter_plan_mode_permission_request::enter_plan_mode_permission_request::render_enter_plan_mode_permission_request;
 use super::exit_plan_mode_permission_request::exit_plan_mode_permission_request::render_exit_plan_mode_permission_request;
 use super::fallback_permission_request::render_fallback_permission_request;
-use super::file_edit_permission_request::file_edit_permission_request::render_file_edit_permission_request;
+use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
+
+use super::file_edit_permission_request::file_edit_permission_request::{
+    render_file_edit_permission_request, render_file_edit_permission_request_with_diff,
+};
 use super::file_permission_dialog::permission_options::file_permission_options;
-use super::file_write_permission_request::file_write_permission_request::render_file_write_permission_request;
+use super::file_write_permission_request::file_write_permission_request::{
+    render_file_write_permission_request, render_file_write_permission_request_with_diff,
+};
 use super::filesystem_permission_request::filesystem_permission_request::render_filesystem_permission_request;
 use super::monitor_permission_request::monitor_permission_request::render_monitor_permission_request;
 use super::notebook_edit_permission_request::notebook_edit_permission_request::render_notebook_edit_permission_request;
@@ -43,7 +49,6 @@ impl PermissionDialogRequest {
         }
     }
 
-    #[cfg(test)]
     #[cfg(test)]
     pub fn legacy(tool_name: &str, input: &str, message: &str) -> Self {
         let tool_input =
@@ -211,6 +216,21 @@ fn route_file_write(
     selected_index: usize,
 ) -> Option<RoutedPermissionRequest> {
     let path = path_field(&request.tool_input)?;
+    if let Some(hunk_lines) = diff_hunk_lines(&request.tool_input, &path, DiffInputKind::Write) {
+        return Some(RoutedPermissionRequest {
+            kind: PermissionRouteKind::FileWrite,
+            rendered: render_file_write_permission_request_with_diff(
+                &path,
+                &hunk_lines,
+                selected_index,
+                80,
+            ),
+            options: merge_options(
+                request,
+                option_labels(file_permission_options(&path, false)),
+            ),
+        });
+    }
     let new_lines = string_field(&request.tool_input, &["content"])
         .map(|content| content.lines().count())
         .or_else(|| usize_field(&request.tool_input, &["new_lines", "added_lines"]))
@@ -239,6 +259,22 @@ fn route_file_edit(
     let path = path_field(&request.tool_input)?;
     let operation = string_field(&request.tool_input, &["operation", "action"])
         .unwrap_or_else(|| "edit".to_string());
+    if let Some(hunk_lines) = diff_hunk_lines(&request.tool_input, &path, DiffInputKind::Edit) {
+        return Some(RoutedPermissionRequest {
+            kind: PermissionRouteKind::FileEdit,
+            rendered: render_file_edit_permission_request_with_diff(
+                &path,
+                &operation,
+                &hunk_lines,
+                selected_index,
+                80,
+            ),
+            options: merge_options(
+                request,
+                option_labels(file_permission_options(&path, false)),
+            ),
+        });
+    }
     Some(RoutedPermissionRequest {
         kind: PermissionRouteKind::FileEdit,
         rendered: render_file_edit_permission_request(&path, &operation, selected_index),
@@ -626,6 +662,55 @@ fn bool_field(input: &Value, keys: &[&str]) -> Option<bool> {
     None
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiffInputKind {
+    Edit,
+    Write,
+}
+
+fn diff_hunk_lines(input: &Value, path: &str, kind: DiffInputKind) -> Option<Vec<String>> {
+    let explicit = string_array_field(input, &["hunk_lines", "hunks"]);
+    if !explicit.is_empty() {
+        return Some(explicit);
+    }
+
+    for key in ["patch", "diff", "unified_diff"] {
+        if let Some(diff) = string_field(input, &[key]) {
+            let lines = diff.lines().map(str::to_string).collect::<Vec<_>>();
+            if !lines.is_empty() {
+                return Some(lines);
+            }
+        }
+    }
+
+    let (old, new) = match kind {
+        DiffInputKind::Edit => (
+            raw_string_field(input, &["old_content", "old_string"])?,
+            raw_string_field(input, &["new_content", "new_string"])?,
+        ),
+        DiffInputKind::Write => (
+            raw_string_field(input, &["old_content", "previous_content"]).unwrap_or_default(),
+            raw_string_field(input, &["new_content", "content"])?,
+        ),
+    };
+    let hunk_lines = unified_hunk_lines_from_edit(path, &old, &new);
+    (!hunk_lines.is_empty()).then_some(hunk_lines)
+}
+
+fn raw_string_field(input: &Value, keys: &[&str]) -> Option<String> {
+    let Value::Object(map) = input else {
+        return None;
+    };
+    for key in keys {
+        if let Some(value) = map.get(*key).and_then(Value::as_str) {
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn value_as_string(value: &Value) -> Option<String> {
     match value {
         Value::String(value) => non_empty(value),
@@ -754,6 +839,44 @@ mod tests {
             assert_eq!(routed.kind, kind, "{tool} should route exactly");
             assert!(!routed.rendered.trim().is_empty());
         }
+    }
+
+    #[test]
+    fn routes_file_edit_with_structured_diff_preview() {
+        let routed = PermissionRequestRouter::route(
+            &request(
+                "Edit",
+                json!({
+                    "file_path": "src/lib.rs",
+                    "old_string": "old_call();\n",
+                    "new_string": "new_call();\n",
+                }),
+            ),
+            0,
+        );
+
+        assert_eq!(routed.kind, PermissionRouteKind::FileEdit);
+        assert!(routed.rendered.contains("summary: Added 1 line"));
+        assert!(routed.rendered.contains("- old_call();"));
+        assert!(routed.rendered.contains("+ new_call();"));
+    }
+
+    #[test]
+    fn routes_file_write_content_as_diff_from_empty_file() {
+        let routed = PermissionRequestRouter::route(
+            &request(
+                "Write",
+                json!({
+                    "file_path": "src/new.rs",
+                    "content": "fn main() {}\n",
+                }),
+            ),
+            0,
+        );
+
+        assert_eq!(routed.kind, PermissionRouteKind::FileWrite);
+        assert!(routed.rendered.contains("summary: Added 1 line"));
+        assert!(routed.rendered.contains("+ fn main() {}"));
     }
 
     #[test]

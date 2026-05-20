@@ -258,6 +258,45 @@ Rust 对应：完全缺失。
 1. 权限反馈输入、`PermissionChoice` feedback 全链路、IDE diff 交互、`BypassPermissionsModeDialog` 和权限分析事件尚未完成；这些仍对应原计划 Phase 2-4 与 Phase 6。
 2. 文件权限目前显示结构化摘要和已有 renderer 可表达的信息；外部 IDE diff 入口需等 editor bridge 能力明确后再启用。
 3. Team sandbox 仍是独立事件域，不应塞进普通 tool permission callback；等待 team event handler 具备 request/response UI 入口后再接专用交互。
+
+## 2026-05-20 第二次接线补充
+
+本轮继续把“有真实事件源和真实消费点”的权限模块接入生产路径，并把其余仍缺入口的部分显式保留在 `#[cfg(test)]`：
+
+1. `AskUserQuestion` 已从 text-only callback 升级为结构化 `AskUserRequestPayload { question, choices, allow_free_text }`。headless `BackendMessage::QuestionRequest` 同步新增 `choices` 和 `allow_free_text`，旧客户端继续可以只看 `id/text`。
+2. Rust TUI `QuestionDialog` 已消费结构化问题：有 `choices` 时支持上下选择；允许自由输入时仍可直接录入文本；提交优先返回输入文本，否则返回当前选中项。
+3. `cc-types::agent_events::AgentEvent` 新增 `PermissionQueued` / `PermissionResolved`。后台 worker 的 child engine permission callback 现在由 supervisor 包装，在真正等待用户响应前后发出 agent permission lifecycle event。
+4. Rust TUI `App` 已消费 worker permission lifecycle：收到 `PermissionQueued` 时会把当前 agent 切到对应 worker，并通过 `worker_pending_permission`/`worker_badge` 生成低优先级通知；`PermissionResolved` 会同步当前 agent 焦点。
+5. 新增共享权限事件 payload：
+   - `HookPermissionDecisionEvent`
+   - `PermissionDecisionDebugEvent`
+   - callback 载体 `PermissionEventPayload`
+6. `QueryEngine` / `cc-ipc-client` / Rust TUI 已新增非阻塞 permission event callback。当前事件来源包括：
+   - `PreToolUse` hook 的 allow / deny 覆盖
+   - `PermissionRequest` hook 的 allow / deny 决策
+   - central permission decision 的 verbose/debug trace
+7. headless `BackendMessage` 新增：
+   - `HookPermissionDecision`
+   - `PermissionDecisionDebug`
+   Rust TUI direct path 则通过 `EngineEvent` 同步消费，并在通知区渲染 `permissions::hooks` 与 `permission_decision_debug_info`。
+8. 本轮真正解除 test-only 的模块只有：
+   - `permissions::hooks`
+   - `permissions::permission_decision_debug_info`
+   - `permissions::worker_badge`
+   - `permissions::worker_pending_permission`
+   - `utils::render_key_values`
+   - `utils::render_bullets`
+
+仍保持 `#[cfg(test)]` 的模块与原因：
+
+1. `permission_dialog`、`permission_prompt`、`permission_request`、`permission_request_title`、`permission_explanation`、`permission_rule_explanation`、`use_shell_permission_feedback`
+原因：当前生产 `PermissionDialog` 已接到结构化 router，但这些 helper 仍只有快照消费点；若强行解禁会重新引入未使用 warning。
+2. `file_permission_dialog::{file_permission_dialog, ide_diff_config, use_file_permission_dialog, use_permission_handler}`
+原因：`permission_options` 已在生产 file-tool router 中使用，但完整 file dialog state / IDE diff / decision helper 仍缺真实 TUI 入口。
+3. `rules::{add_permission_rules, add_workspace_directory, permission_rule_input, recent_denials_tab, remove_workspace_directory, workspace_tab}` 及其 `WorkspaceDirectory` / `RecentDenial`
+原因：现有 `/permissions` command surface 仍走表单 tab 和 slash-command 填充，尚未切到这些 renderer；为了保持零 warning，本轮不解除。
+
+因此，本轮完成的是“事件来源补齐并接通实际展示”的那部分；其余未解禁模块已经在文档中明确列为仍缺生产入口，而不是靠 `allow(dead_code)` 假装完成。
 4. 缺少必要结构化字段的已知工具会明确 fallback，这是有意行为；后续若某工具需要专用 UI，应先补齐 payload，而不是恢复 description 硬解析。
 5. 权限对话框底部操作在极窄宽度下会降级为紧凑文案；宽度非常小时的选中态可读性仍需通过后续快照或 viewport 测试继续覆盖。
 

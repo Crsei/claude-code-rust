@@ -60,3 +60,8 @@ pub fn install_ask_user_callback(
 ) {
     cc_ipc_client::callbacks::install_ask_user_callback(engine, pending, sink);
 }
+
+/// Install the non-blocking permission event callback on the engine.
+pub fn install_permission_event_callback(engine: &QueryEngine, sink: FrontendSink) {
+    cc_ipc_client::callbacks::install_permission_event_callback(engine, sink);
+}

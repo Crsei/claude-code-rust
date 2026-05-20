@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use cc_types::agent_events::{AgentCommand, AgentEvent, TeamCommand, TeamEvent};
+use cc_types::permission_events::{HookPermissionDecisionEvent, PermissionDecisionDebugEvent};
 use cc_types::plan_workflow::PlanWorkflowRecord;
 
 use crate::subsystem_events::{
@@ -52,6 +53,9 @@ pub enum FrontendMessage {
         tool_use_id: String,
         /// One of "allow", "deny", "always_allow".
         decision: String,
+        /// Optional feedback/instructions supplied with the decision.
+        #[serde(default)]
+        feedback: Option<String>,
         /// Optional envelope/session-aware correlation. Legacy JSONL clients
         /// omit this and are resolved by `tool_use_id`.
         #[serde(default)]
@@ -180,18 +184,27 @@ pub enum BackendMessage {
         keybindings: Option<serde_json::Value>,
     },
     /// Assistant started streaming a new content block.
-    StreamStart { message_id: String },
+    StreamStart {
+        message_id: String,
+    },
     /// Streaming text delta for an in-progress content block.
-    StreamDelta { message_id: String, text: String },
+    StreamDelta {
+        message_id: String,
+        text: String,
+    },
     /// Streaming thinking delta for an in-progress thinking block.
     ThinkingDelta {
         message_id: String,
         thinking: String,
     },
     /// Streaming for a content block has finished.
-    StreamEnd { message_id: String },
+    StreamEnd {
+        message_id: String,
+    },
     /// A previously streamed partial assistant should be discarded.
-    Tombstone { message_id: String },
+    Tombstone {
+        message_id: String,
+    },
     /// Final assistant message (content is the serialized Vec<ContentBlock>).
     AssistantMessage {
         id: String,
@@ -257,6 +270,18 @@ pub enum BackendMessage {
         id: String,
         /// The question text to display.
         text: String,
+        /// Optional structured choices rendered as a single-select list.
+        #[serde(default)]
+        choices: Vec<String>,
+        /// Whether the UI should also allow free-text entry.
+        #[serde(default = "default_true")]
+        allow_free_text: bool,
+    },
+    HookPermissionDecision {
+        event: HookPermissionDecisionEvent,
+    },
+    PermissionDecisionDebug {
+        event: PermissionDecisionDebugEvent,
     },
     /// Durable plan workflow state changed.
     PlanWorkflowEvent {
@@ -271,7 +296,9 @@ pub enum BackendMessage {
         level: String,
     },
     /// Replace the full visible conversation history in the frontend.
-    ConversationReplaced { messages: Vec<ConversationMessage> },
+    ConversationReplaced {
+        messages: Vec<ConversationMessage>,
+    },
     /// Token usage update.
     UsageUpdate {
         input_tokens: u64,
@@ -299,9 +326,14 @@ pub enum BackendMessage {
         error: Option<String>,
     },
     /// Prompt suggestions for the UI to display.
-    Suggestions { items: Vec<String> },
+    Suggestions {
+        items: Vec<String>,
+    },
     /// An error occurred.
-    Error { message: String, recoverable: bool },
+    Error {
+        message: String,
+        recoverable: bool,
+    },
     /// A background agent has completed execution.
     BackgroundAgentComplete {
         agent_id: String,
@@ -318,31 +350,55 @@ pub enum BackendMessage {
         attachments: Vec<String>,
     },
     /// Autonomous action started (proactive tick).
-    AutonomousStart { source: String, time: String },
+    AutonomousStart {
+        source: String,
+        time: String,
+    },
     /// Push notification sent.
-    NotificationSent { title: String, level: String },
+    NotificationSent {
+        title: String,
+        level: String,
+    },
 
     // ── Subsystem events ─────────────────────────────────────────
     /// LSP subsystem event.
-    LspEvent { event: LspEvent },
+    LspEvent {
+        event: LspEvent,
+    },
     /// MCP subsystem event.
-    McpEvent { event: McpEvent },
+    McpEvent {
+        event: McpEvent,
+    },
     /// Plugin subsystem event.
-    PluginEvent { event: PluginEvent },
+    PluginEvent {
+        event: PluginEvent,
+    },
     /// Skill subsystem event.
-    SkillEvent { event: SkillEvent },
+    SkillEvent {
+        event: SkillEvent,
+    },
     /// IDE-integration subsystem event.
-    IdeEvent { event: IdeEvent },
+    IdeEvent {
+        event: IdeEvent,
+    },
     /// Agent-definition settings event.
-    AgentSettingsEvent { event: AgentSettingsEvent },
+    AgentSettingsEvent {
+        event: AgentSettingsEvent,
+    },
     /// Aggregated subsystem status snapshot.
-    SubsystemStatus { status: SubsystemStatusSnapshot },
+    SubsystemStatus {
+        status: SubsystemStatusSnapshot,
+    },
 
     // ── Agent / Team events ──────────────────────────────────────
     /// Agent lifecycle + streaming events.
-    AgentEvent { event: AgentEvent },
+    AgentEvent {
+        event: AgentEvent,
+    },
     /// Team events.
-    TeamEvent { event: TeamEvent },
+    TeamEvent {
+        event: TeamEvent,
+    },
 
     /// Response to a [`FrontendMessage::SearchFiles`] request.
     ///

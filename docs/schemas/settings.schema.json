@@ -28,6 +28,7 @@
         "deny": { "type": "array", "items": { "type": "string" } },
         "additionalDirectories": { "type": "array", "items": { "type": "string" } },
         "enableBypassMode": { "type": "boolean" },
+        "skipDangerousModePermissionPrompt": { "type": "boolean" },
         "enableAutoMode": { "type": "boolean" },
         "autoMode": {
           "type": "object",

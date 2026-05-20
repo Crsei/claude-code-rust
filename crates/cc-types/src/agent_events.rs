@@ -67,6 +67,21 @@ pub enum AgentEvent {
         output: String,
         is_error: bool,
     },
+    PermissionQueued {
+        agent_id: String,
+        tool_use_id: String,
+        tool_name: String,
+        summary: String,
+        queue_position: usize,
+        pending_count: usize,
+    },
+    PermissionResolved {
+        agent_id: String,
+        tool_use_id: String,
+        tool_name: String,
+        decision: String,
+        pending_count: usize,
+    },
     TreeSnapshot {
         roots: Vec<AgentNode>,
     },

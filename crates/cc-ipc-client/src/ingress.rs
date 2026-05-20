@@ -1,17 +1,18 @@
 //! Client-side ingress helpers shared by headless runtimes.
 
 use crate::callbacks::{PendingPermissions, PendingQuestions};
+use cc_types::callbacks::PermissionResponsePayload;
 
 /// Complete a pending permission response by tool-use id.
 pub fn complete_pending_permission(
     pending_permissions: &PendingPermissions,
     tool_use_id: &str,
-    decision: String,
+    response: PermissionResponsePayload,
 ) -> bool {
     pending_permissions
         .lock()
         .remove(tool_use_id)
-        .map(|tx| tx.send(decision).is_ok())
+        .map(|tx| tx.send(response).is_ok())
         .unwrap_or(false)
 }
 

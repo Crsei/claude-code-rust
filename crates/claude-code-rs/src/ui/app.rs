@@ -18,6 +18,7 @@ use cc_ipc_protocol::BackendMessage;
 use cc_keybindings::KeybindingRegistry;
 use cc_services::prompt_suggestion::PromptSuggestion;
 use cc_types::agent_events::{AgentEvent, TeamEvent};
+use cc_types::callbacks::AskUserRequestPayload;
 use cc_types::message::Message;
 use cc_voice::VoiceController;
 use status::SessionUsageSnapshot;
@@ -29,8 +30,10 @@ use super::history_search_dialog::{HistorySearchDialog, HistorySearchEntry};
 use super::notifications::in_app::{
     InAppNotification, NotificationPriority, NotificationState, NotificationTone,
 };
+use super::permissions::worker_pending_permission::render_worker_pending_permission;
 use super::permissions::{
-    PermissionChoice, PermissionDialog, PermissionDialogRequest, QuestionDialog,
+    BypassPermissionsModeChoice, BypassPermissionsModeDialog, PermissionChoice, PermissionDialog,
+    PermissionDialogRequest, QuestionDialog,
 };
 use super::prompt_input::PromptInput;
 use super::spinner::SpinnerState;
@@ -53,6 +56,7 @@ pub enum AppAction {
     ScrollDown,
     PermissionResponse(PermissionChoice),
     QuestionResponse(String),
+    BypassPermissionsModeResponse(BypassPermissionsModeChoice),
     AgentThreadSelected(String),
     KillAgentThreads(Vec<String>),
     LspRecommendationResponse {
@@ -106,6 +110,32 @@ fn notification_from_backend_message(message: &BackendMessage) -> Option<InAppNo
             "error".to_string(),
             Some(8000),
         )),
+        BackendMessage::HookPermissionDecision { event } => Some(
+            InAppNotification::new(
+                "hook-permission-decision",
+                NotificationPriority::Low,
+                format!(
+                    "hook: {}\nmatcher: {}\ndecision: {}",
+                    event.hook_name, event.matcher, event.decision
+                ),
+            )
+            .with_tone(NotificationTone::Info)
+            .with_fold(true)
+            .with_timeout_ms(5000),
+        ),
+        BackendMessage::PermissionDecisionDebug { event } => Some(
+            InAppNotification::new(
+                "permission-decision-debug",
+                NotificationPriority::Low,
+                format!(
+                    "tool: {}\nmatcher: {}\nsource: {}\nbehavior: {}",
+                    event.tool_name, event.matcher, event.source, event.behavior
+                ),
+            )
+            .with_tone(NotificationTone::Dim)
+            .with_fold(true)
+            .with_timeout_ms(5000),
+        ),
         _ => None,
     }
 }
@@ -119,6 +149,7 @@ pub struct App {
     scroll_offset: usize,
     is_streaming: bool,
     spinner_state: SpinnerState,
+    bypass_permissions_mode_dialog: Option<BypassPermissionsModeDialog>,
     permission_dialog: Option<PermissionDialog>,
     question_dialog: Option<QuestionDialog>,
     should_quit: bool,
@@ -220,6 +251,7 @@ impl App {
             scroll_offset: 0,
             is_streaming: false,
             spinner_state: SpinnerState::new(),
+            bypass_permissions_mode_dialog: None,
             permission_dialog: None,
             question_dialog: None,
             should_quit: false,
@@ -376,13 +408,18 @@ impl App {
         self.dirty = true;
     }
 
-    pub fn show_question_dialog(&mut self, id: impl Into<String>, question: impl Into<String>) {
-        self.question_dialog = Some(QuestionDialog::new(id, question));
+    pub fn show_question_dialog(&mut self, id: impl Into<String>, request: AskUserRequestPayload) {
+        self.question_dialog = Some(QuestionDialog::new(id, request));
         self.dirty = true;
     }
 
     pub fn show_permission_request(&mut self, request: PermissionDialogRequest) {
         self.permission_dialog = Some(PermissionDialog::from_request(request));
+        self.dirty = true;
+    }
+
+    pub fn show_bypass_permissions_mode_dialog(&mut self, disabled: bool) {
+        self.bypass_permissions_mode_dialog = Some(BypassPermissionsModeDialog::new(disabled));
         self.dirty = true;
     }
 
@@ -673,6 +710,40 @@ impl App {
             | AgentEvent::Aborted { agent_id } => {
                 self.agent_nav.mark_closed(agent_id);
                 self.normalize_current_agent_thread();
+            }
+            AgentEvent::PermissionQueued {
+                agent_id,
+                tool_name,
+                summary,
+                queue_position,
+                ..
+            } => {
+                if self.agent_nav.contains_thread(agent_id) {
+                    self.current_agent_thread_id = Some(agent_id.clone());
+                }
+                self.add_notification(
+                    InAppNotification::new(
+                        "worker-permission",
+                        NotificationPriority::Low,
+                        render_worker_pending_permission(
+                            self.agent_nav
+                                .entry(agent_id)
+                                .and_then(|entry| entry.agent_nickname.as_deref())
+                                .unwrap_or(agent_id),
+                            tool_name,
+                            summary,
+                            *queue_position,
+                        ),
+                    )
+                    .with_tone(NotificationTone::Warning)
+                    .with_fold(true)
+                    .with_timeout_ms(5000),
+                );
+            }
+            AgentEvent::PermissionResolved { agent_id, .. } => {
+                if self.agent_nav.contains_thread(agent_id) {
+                    self.current_agent_thread_id = Some(agent_id.clone());
+                }
             }
             AgentEvent::TreeSnapshot { roots } => {
                 let current = self.current_agent_thread_id().to_string();

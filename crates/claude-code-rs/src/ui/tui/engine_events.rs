@@ -4,12 +4,16 @@ use cc_engine::lifecycle::QueryEngine;
 use cc_engine::types::config::QuerySource;
 use cc_engine::types::tool::ToolProgress;
 use cc_services::prompt_suggestion::PromptSuggestionService;
-use cc_types::callbacks::PermissionRequestPayload;
+use cc_types::callbacks::{
+    AskUserRequestPayload, PermissionEventPayload, PermissionRequestPayload,
+    PermissionResponsePayload,
+};
 use cc_types::message::ProgressMessage;
 use cc_types::message::{
     AssistantMessage, ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage,
     SystemSubtype, UserMessage,
 };
+use cc_types::permission_events::{HookPermissionDecisionEvent, PermissionDecisionDebugEvent};
 use cc_types::sdk::SdkMessage;
 use futures::StreamExt;
 use std::sync::Arc;
@@ -66,14 +70,16 @@ pub(super) enum EngineEvent {
     /// A tool permission prompt that must be answered by the UI.
     PermissionRequest {
         request: PermissionRequestPayload,
-        response_tx: oneshot::Sender<String>,
+        response_tx: oneshot::Sender<PermissionResponsePayload>,
     },
     /// An AskUserQuestion prompt that must be answered by the UI.
     QuestionRequest {
         id: String,
-        question: String,
+        request: AskUserRequestPayload,
         response_tx: oneshot::Sender<String>,
     },
+    HookPermissionDecision(HookPermissionDecisionEvent),
+    PermissionDecisionDebug(PermissionDecisionDebugEvent),
     /// The engine query task has completed (stream exhausted).
     Done,
 }
@@ -97,10 +103,12 @@ pub(super) fn install_tui_permission_callback(
                 };
 
                 if tx.send(event).is_err() {
-                    return "deny".to_string();
+                    return PermissionResponsePayload::deny();
                 }
 
-                response_rx.await.unwrap_or_else(|_| "deny".to_string())
+                response_rx
+                    .await
+                    .unwrap_or_else(|_| PermissionResponsePayload::deny())
             })
         });
     engine.set_permission_callback(callback);
@@ -110,25 +118,44 @@ pub(super) fn install_tui_ask_user_callback(
     engine: &Arc<QueryEngine>,
     tx: mpsc::UnboundedSender<EngineEvent>,
 ) {
-    let callback: cc_engine::types::tool::AskUserCallback = Arc::new(move |question: String| {
-        let tx = tx.clone();
-        Box::pin(async move {
-            let (response_tx, response_rx) = oneshot::channel();
-            let id = uuid::Uuid::new_v4().to_string();
-            let event = EngineEvent::QuestionRequest {
-                id,
-                question,
-                response_tx,
-            };
+    let callback: cc_engine::types::tool::AskUserCallback =
+        Arc::new(move |request: AskUserRequestPayload| {
+            let tx = tx.clone();
+            Box::pin(async move {
+                let (response_tx, response_rx) = oneshot::channel();
+                let id = uuid::Uuid::new_v4().to_string();
+                let event = EngineEvent::QuestionRequest {
+                    id,
+                    request,
+                    response_tx,
+                };
 
-            if tx.send(event).is_err() {
-                return String::new();
-            }
+                if tx.send(event).is_err() {
+                    return String::new();
+                }
 
-            response_rx.await.unwrap_or_default()
-        })
-    });
+                response_rx.await.unwrap_or_default()
+            })
+        });
     engine.set_ask_user_callback(callback);
+}
+
+pub(super) fn install_tui_permission_event_callback(
+    engine: &Arc<QueryEngine>,
+    tx: mpsc::UnboundedSender<EngineEvent>,
+) {
+    let callback = Arc::new(move |event: PermissionEventPayload| {
+        let engine_event = match event {
+            PermissionEventPayload::HookDecision { event } => {
+                EngineEvent::HookPermissionDecision(event)
+            }
+            PermissionEventPayload::DecisionDebug { event } => {
+                EngineEvent::PermissionDecisionDebug(event)
+            }
+        };
+        let _ = tx.send(engine_event);
+    });
+    engine.set_permission_event_callback(callback);
 }
 
 pub(super) fn install_tui_tool_progress_callback(
@@ -213,12 +240,15 @@ pub(super) fn handle_tool_progress(app: &mut App, progress: ProgressMessage) {
     }
 }
 
-pub(super) fn permission_choice_to_decision(choice: PermissionChoice) -> &'static str {
-    match choice {
-        PermissionChoice::Allow => "allow",
-        PermissionChoice::Deny => "deny",
-        PermissionChoice::AlwaysAllow => "always_allow",
-    }
+pub(super) fn permission_choice_to_response(
+    choice: &PermissionChoice,
+) -> PermissionResponsePayload {
+    let decision = match choice.decision {
+        crate::ui::permissions::PermissionDecisionChoice::Allow => "allow",
+        crate::ui::permissions::PermissionDecisionChoice::Deny => "deny",
+        crate::ui::permissions::PermissionDecisionChoice::AlwaysAllow => "always_allow",
+    };
+    PermissionResponsePayload::new(decision, Some(choice.feedback.clone()))
 }
 
 // ---------------------------------------------------------------------------

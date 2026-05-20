@@ -6,7 +6,8 @@ use std::sync::Arc;
 use cc_ipc_protocol::BackendMessage;
 pub use cc_types::callbacks::CallbackHost;
 use cc_types::callbacks::{
-    AskUserCallback, PermissionCallback, PermissionRequestPayload, ToolProgress,
+    AskUserCallback, AskUserRequestPayload, PermissionCallback, PermissionEventCallback,
+    PermissionEventPayload, PermissionRequestPayload, PermissionResponsePayload, ToolProgress,
 };
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
@@ -14,7 +15,8 @@ use tokio::sync::oneshot;
 use crate::sink::FrontendSink;
 
 /// Pending permission requests awaiting a response from the frontend.
-pub type PendingPermissions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
+pub type PendingPermissions =
+    Arc<Mutex<HashMap<String, oneshot::Sender<PermissionResponsePayload>>>>;
 /// Pending AskUserQuestion requests awaiting a response from the frontend.
 pub type PendingQuestions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
 
@@ -53,7 +55,7 @@ pub fn install_permission_callback<H>(
                 Ok(decision) => {
                     if tool_name == "ExitPlanMode"
                         && matches!(
-                            decision.to_ascii_lowercase().as_str(),
+                            decision.normalized_decision().as_str(),
                             "deny" | "reject" | "no"
                         )
                     {
@@ -63,7 +65,7 @@ pub fn install_permission_callback<H>(
                     }
                     decision
                 }
-                Err(_) => "deny".to_string(),
+                Err(_) => PermissionResponsePayload::deny(),
             }
         })
     });
@@ -111,14 +113,16 @@ pub fn install_ask_user_callback<H>(host: &H, pending: PendingQuestions, sink: F
 where
     H: CallbackHost + Send + Sync + 'static,
 {
-    let callback: AskUserCallback = Arc::new(move |question: String| {
+    let callback: AskUserCallback = Arc::new(move |request: AskUserRequestPayload| {
         let pending = pending.clone();
         let sink = sink.clone();
         Box::pin(async move {
             let question_id = uuid::Uuid::new_v4().to_string();
             let _ = sink.send(&BackendMessage::QuestionRequest {
                 id: question_id.clone(),
-                text: question,
+                text: request.question,
+                choices: request.choices,
+                allow_free_text: request.allow_free_text,
             });
 
             let (tx, rx) = oneshot::channel();
@@ -128,6 +132,23 @@ where
         })
     });
     host.set_ask_user_callback(callback);
+}
+
+pub fn install_permission_event_callback<H>(host: &H, sink: FrontendSink)
+where
+    H: CallbackHost + Send + Sync + 'static,
+{
+    let callback: PermissionEventCallback = Arc::new(move |event: PermissionEventPayload| {
+        let _ = match event {
+            PermissionEventPayload::HookDecision { event } => {
+                sink.send(&BackendMessage::HookPermissionDecision { event })
+            }
+            PermissionEventPayload::DecisionDebug { event } => {
+                sink.send(&BackendMessage::PermissionDecisionDebug { event })
+            }
+        };
+    });
+    host.set_permission_event_callback(callback);
 }
 
 #[cfg(test)]
@@ -155,6 +176,8 @@ mod tests {
         fn set_ask_user_callback(&self, cb: AskUserCallback) {
             *self.ask_user.lock() = Some(cb);
         }
+
+        fn set_permission_event_callback(&self, _cb: PermissionEventCallback) {}
 
         fn set_tool_progress_callback(&self, cb: Arc<dyn Fn(ToolProgress) + Send + Sync>) {
             *self.tool_progress.lock() = Some(cb);
@@ -200,8 +223,12 @@ mod tests {
         ));
 
         let tx = pending.lock().remove("tool-1").expect("pending sender");
-        tx.send("allow".to_string()).unwrap();
-        assert_eq!(task.await.unwrap(), "allow");
+        tx.send(PermissionResponsePayload::decision("allow"))
+            .unwrap();
+        assert_eq!(
+            task.await.unwrap(),
+            PermissionResponsePayload::decision("allow")
+        );
     }
 
     #[tokio::test]
@@ -235,8 +262,12 @@ mod tests {
         wait_until(|| pending.lock().contains_key("exit-plan")).await;
 
         let tx = pending.lock().remove("exit-plan").expect("pending sender");
-        tx.send("deny".to_string()).unwrap();
-        assert_eq!(task.await.unwrap(), "deny");
+        tx.send(PermissionResponsePayload::decision("deny"))
+            .unwrap();
+        assert_eq!(
+            task.await.unwrap(),
+            PermissionResponsePayload::decision("deny")
+        );
         assert!(rejected.load(Ordering::SeqCst));
     }
 
@@ -253,15 +284,27 @@ mod tests {
             .lock()
             .clone()
             .expect("ask-user callback installed");
-        let task = tokio::spawn(callback("Continue?".to_string()));
+        let task = tokio::spawn(callback(AskUserRequestPayload {
+            question: "Continue?".to_string(),
+            choices: vec![],
+            allow_free_text: true,
+        }));
 
         wait_until(|| !pending.lock().is_empty()).await;
 
         let captured = sink.captured();
-        let BackendMessage::QuestionRequest { id, text } = &captured[0] else {
+        let BackendMessage::QuestionRequest {
+            id,
+            text,
+            choices,
+            allow_free_text,
+        } = &captured[0]
+        else {
             panic!("expected question request");
         };
         assert_eq!(text, "Continue?");
+        assert!(choices.is_empty());
+        assert!(*allow_free_text);
 
         let tx = pending.lock().remove(id).expect("pending sender");
         tx.send("yes".to_string()).unwrap();

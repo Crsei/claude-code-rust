@@ -4,10 +4,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use cc_ipc_protocol::BackendMessage;
+use cc_types::callbacks::PermissionResponsePayload;
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
 
-pub type PendingPermissions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
+pub type PendingPermissions =
+    Arc<Mutex<HashMap<String, oneshot::Sender<PermissionResponsePayload>>>>;
 pub type PendingQuestions = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -31,7 +33,8 @@ impl ScopedInteractionKey {
 pub struct PendingInteractions {
     legacy_permissions: PendingPermissions,
     legacy_questions: PendingQuestions,
-    scoped_permissions: Arc<Mutex<HashMap<ScopedInteractionKey, oneshot::Sender<String>>>>,
+    scoped_permissions:
+        Arc<Mutex<HashMap<ScopedInteractionKey, oneshot::Sender<PermissionResponsePayload>>>>,
     scoped_questions: Arc<Mutex<HashMap<ScopedInteractionKey, oneshot::Sender<String>>>>,
 }
 
@@ -58,7 +61,7 @@ impl PendingInteractions {
         session_id: &str,
         turn_id: &str,
         tool_use_id: &str,
-        sender: oneshot::Sender<String>,
+        sender: oneshot::Sender<PermissionResponsePayload>,
     ) {
         self.scoped_permissions.lock().insert(
             ScopedInteractionKey::new(session_id, turn_id, tool_use_id),
@@ -83,19 +86,19 @@ impl PendingInteractions {
         session_id: Option<&str>,
         turn_id: Option<&str>,
         tool_use_id: &str,
-        decision: String,
+        response: PermissionResponsePayload,
     ) -> bool {
         if let (Some(session_id), Some(turn_id)) = (session_id, turn_id) {
             let key = ScopedInteractionKey::new(session_id, turn_id, tool_use_id);
             if let Some(tx) = self.scoped_permissions.lock().remove(&key) {
-                return tx.send(decision).is_ok();
+                return tx.send(response).is_ok();
             }
         }
 
         self.legacy_permissions
             .lock()
             .remove(tool_use_id)
-            .map(|tx| tx.send(decision).is_ok())
+            .map(|tx| tx.send(response).is_ok())
             .unwrap_or(false)
     }
 
@@ -210,15 +213,18 @@ mod tests {
             Some("session-1"),
             Some("wrong-turn"),
             "tool-1",
-            "deny".to_string(),
+            PermissionResponsePayload::decision("deny"),
         ));
         assert!(pending.complete_permission(
             Some("session-1"),
             Some("turn-1"),
             "tool-1",
-            "allow".to_string(),
+            PermissionResponsePayload::decision("allow"),
         ));
-        assert_eq!(rx.blocking_recv().unwrap(), "allow");
+        assert_eq!(
+            rx.blocking_recv().unwrap(),
+            PermissionResponsePayload::decision("allow")
+        );
     }
 
     #[test]
@@ -230,8 +236,16 @@ mod tests {
             .lock()
             .insert("tool-1".to_string(), tx);
 
-        assert!(pending.complete_permission(None, None, "tool-1", "allow".to_string()));
-        assert_eq!(rx.blocking_recv().unwrap(), "allow");
+        assert!(pending.complete_permission(
+            None,
+            None,
+            "tool-1",
+            PermissionResponsePayload::decision("allow")
+        ));
+        assert_eq!(
+            rx.blocking_recv().unwrap(),
+            PermissionResponsePayload::decision("allow")
+        );
     }
 
     #[test]

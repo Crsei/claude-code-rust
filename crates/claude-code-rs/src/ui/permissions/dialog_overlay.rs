@@ -13,7 +13,7 @@ use crate::ui::theme::Theme;
 
 /// The user's response to a permission prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PermissionChoice {
+pub enum PermissionDecisionChoice {
     /// Allow this single invocation.
     Allow,
     /// Deny this single invocation.
@@ -22,7 +22,35 @@ pub enum PermissionChoice {
     AlwaysAllow,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionChoice {
+    pub decision: PermissionDecisionChoice,
+    pub feedback: String,
+}
+
+impl PermissionChoice {
+    fn from_decision(decision: PermissionDecisionChoice) -> Self {
+        Self {
+            decision,
+            feedback: String::new(),
+        }
+    }
+
+    fn with_feedback(decision: PermissionDecisionChoice, feedback: &str) -> Self {
+        Self {
+            decision,
+            feedback: feedback.trim().to_string(),
+        }
+    }
+}
+
 const DEFAULT_OPTIONS: [&str; 3] = ["Allow", "Deny", "Always Allow"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PermissionDialogMode {
+    Selecting,
+    TypingFeedback { target: PermissionDecisionChoice },
+}
 
 /// An overlay dialog that asks the user whether to permit a tool invocation.
 pub struct PermissionDialog {
@@ -34,6 +62,9 @@ pub struct PermissionDialog {
     options: Vec<String>,
     /// Currently highlighted choice.
     pub selected: usize,
+    mode: PermissionDialogMode,
+    accept_feedback: String,
+    reject_feedback: String,
 }
 
 impl PermissionDialog {
@@ -56,12 +87,19 @@ impl PermissionDialog {
             kind,
             options,
             selected: 0,
+            mode: PermissionDialogMode::Selecting,
+            accept_feedback: String::new(),
+            reject_feedback: String::new(),
         }
     }
 
     /// Handle a key event. Returns `Some(choice)` when the user confirms a
     /// selection with Enter, or makes a direct choice via a keyboard shortcut.
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<PermissionChoice> {
+        if let PermissionDialogMode::TypingFeedback { target } = self.mode {
+            return self.handle_feedback_key(key, target);
+        }
+
         let choice_count = self.normalized_options().len().max(1);
 
         match (key.modifiers, key.code) {
@@ -75,7 +113,11 @@ impl PermissionDialog {
                 }
             }
             (_, KeyCode::Tab) => {
-                self.selected = (self.selected + 1) % choice_count;
+                if let Some(target) = self.feedback_target_for_selected() {
+                    self.mode = PermissionDialogMode::TypingFeedback { target };
+                } else {
+                    self.selected = (self.selected + 1) % choice_count;
+                }
             }
             (KeyModifiers::SHIFT, KeyCode::BackTab) => {
                 self.selected = if self.selected == 0 {
@@ -92,16 +134,24 @@ impl PermissionDialog {
 
             // Quick keys
             (_, KeyCode::Char('y')) | (_, KeyCode::Char('Y')) => {
-                return Some(PermissionChoice::Allow);
+                return Some(PermissionChoice::from_decision(
+                    PermissionDecisionChoice::Allow,
+                ));
             }
             (_, KeyCode::Char('n')) | (_, KeyCode::Char('N')) => {
-                return Some(PermissionChoice::Deny);
+                return Some(PermissionChoice::from_decision(
+                    PermissionDecisionChoice::Deny,
+                ));
             }
             (_, KeyCode::Char('a')) | (_, KeyCode::Char('A')) => {
-                return Some(PermissionChoice::AlwaysAllow);
+                return Some(PermissionChoice::from_decision(
+                    PermissionDecisionChoice::AlwaysAllow,
+                ));
             }
             (_, KeyCode::Esc) => {
-                return Some(PermissionChoice::Deny);
+                return Some(PermissionChoice::from_decision(
+                    PermissionDecisionChoice::Deny,
+                ));
             }
 
             _ => {}
@@ -112,7 +162,8 @@ impl PermissionDialog {
     /// Render the permission dialog as a centered overlay.
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         let dialog_width = (area.width * 68 / 100).max(48).min(area.width);
-        let dialog_height = 13u16.min(area.height).max(8);
+        let preferred_height = if self.is_typing_feedback() { 15 } else { 13 };
+        let dialog_height = preferred_height.min(area.height).max(8);
         let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
         let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
         let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
@@ -132,9 +183,9 @@ impl PermissionDialog {
         }
 
         let chunks = Layout::vertical([
-            Constraint::Length(2), // tool info
-            Constraint::Min(2),    // request body
-            Constraint::Length(2), // buttons + hint
+            Constraint::Length(2),                                             // tool info
+            Constraint::Min(2),                                                // request body
+            Constraint::Length(if self.is_typing_feedback() { 3 } else { 2 }), // buttons + feedback/hint
         ])
         .split(inner);
 
@@ -174,8 +225,33 @@ impl PermissionDialog {
         let button_y = chunks[2].y + (chunks[2].height.saturating_sub(2)) / 2;
         buf.set_line(chunks[2].x + 1, button_y, &button_line, footer_width as u16);
 
+        if self.is_typing_feedback() && chunks[2].height >= 2 {
+            let feedback = self.active_feedback_with_cursor();
+            let input = Line::from(vec![
+                Span::styled("Feedback: ", theme.dim),
+                Span::styled(
+                    truncate_str(&feedback, footer_width.saturating_sub(10)),
+                    theme.info,
+                ),
+            ]);
+            buf.set_line(
+                chunks[2].x + 1,
+                chunks[2].y + 1,
+                &input,
+                footer_width as u16,
+            );
+        }
+
+        let full_hint = "Arrows/hotkeys. Enter confirms. Esc denies. Tab adds feedback.";
+        let hint_text = if self.is_typing_feedback() {
+            "Enter submits with feedback. Esc cancels input. Tab closes input."
+        } else if full_hint.chars().count() <= footer_width {
+            full_hint
+        } else {
+            "Arrows/hotkeys. Enter confirms. Esc denies."
+        };
         let hint = Line::from(vec![Span::styled(
-            truncate_str("Arrows/hotkeys. Enter confirms. Esc denies.", footer_width),
+            truncate_str(hint_text, footer_width),
             theme.dim,
         )]);
         buf.set_line(
@@ -244,8 +320,90 @@ impl PermissionDialog {
         let labels = self.normalized_options();
         labels
             .get(self.selected.min(labels.len().saturating_sub(1)))
-            .map(|label| choice_for_label(label).unwrap_or(PermissionChoice::Allow))
-            .unwrap_or(PermissionChoice::Allow)
+            .map(|label| {
+                PermissionChoice::from_decision(
+                    choice_for_label(label).unwrap_or(PermissionDecisionChoice::Allow),
+                )
+            })
+            .unwrap_or_else(|| PermissionChoice::from_decision(PermissionDecisionChoice::Allow))
+    }
+
+    fn handle_feedback_key(
+        &mut self,
+        key: KeyEvent,
+        target: PermissionDecisionChoice,
+    ) -> Option<PermissionChoice> {
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Enter) => {
+                let feedback = self.feedback_for(target).to_string();
+                return Some(PermissionChoice::with_feedback(target, &feedback));
+            }
+            (_, KeyCode::Esc) | (_, KeyCode::Tab) => {
+                self.mode = PermissionDialogMode::Selecting;
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+                self.feedback_for_mut(target).clear();
+            }
+            (_, KeyCode::Backspace) => {
+                self.feedback_for_mut(target).pop();
+            }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(ch)) => {
+                self.feedback_for_mut(target).push(ch);
+            }
+            _ => {}
+        }
+        None
+    }
+
+    fn feedback_target_for_selected(&self) -> Option<PermissionDecisionChoice> {
+        let labels = self.normalized_options();
+        labels
+            .get(self.selected.min(labels.len().saturating_sub(1)))
+            .and_then(|label| match choice_for_label(label) {
+                Some(PermissionDecisionChoice::Allow) => Some(PermissionDecisionChoice::Allow),
+                Some(PermissionDecisionChoice::Deny) => Some(PermissionDecisionChoice::Deny),
+                _ => None,
+            })
+    }
+
+    fn feedback_for(&self, target: PermissionDecisionChoice) -> &str {
+        match target {
+            PermissionDecisionChoice::Allow => &self.accept_feedback,
+            PermissionDecisionChoice::Deny => &self.reject_feedback,
+            PermissionDecisionChoice::AlwaysAllow => "",
+        }
+    }
+
+    fn feedback_for_mut(&mut self, target: PermissionDecisionChoice) -> &mut String {
+        match target {
+            PermissionDecisionChoice::Allow => &mut self.accept_feedback,
+            PermissionDecisionChoice::Deny => &mut self.reject_feedback,
+            PermissionDecisionChoice::AlwaysAllow => &mut self.accept_feedback,
+        }
+    }
+
+    fn is_typing_feedback(&self) -> bool {
+        matches!(self.mode, PermissionDialogMode::TypingFeedback { .. })
+    }
+
+    fn active_feedback_with_cursor(&self) -> String {
+        match self.mode {
+            PermissionDialogMode::TypingFeedback { target } => {
+                format!("{}|", self.feedback_for(target))
+            }
+            PermissionDialogMode::Selecting => String::new(),
+        }
+    }
+}
+
+fn choice_for_label(label: &str) -> Option<PermissionDecisionChoice> {
+    let normalized = label.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "allow" | "yes" | "allow edit" | "allow write" => Some(PermissionDecisionChoice::Allow),
+        "deny" | "no" | "deny edit" | "deny write" => Some(PermissionDecisionChoice::Deny),
+        "always allow" | "always_allow" | "always" | "always allow path" | "always path"
+        | "always exact" => Some(PermissionDecisionChoice::AlwaysAllow),
+        _ => None,
     }
 }
 
@@ -314,7 +472,9 @@ fn is_router_chrome_line(line: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{routed_detail_lines, PermissionChoice, PermissionDialog};
+    use super::{
+        routed_detail_lines, PermissionChoice, PermissionDecisionChoice, PermissionDialog,
+    };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
@@ -391,7 +551,9 @@ mod tests {
 
         assert_eq!(
             dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            Some(PermissionChoice::Allow)
+            Some(PermissionChoice::from_decision(
+                PermissionDecisionChoice::Allow,
+            ))
         );
 
         let mut dialog = PermissionDialog::new("Edit", r#"{"file_path":"src/lib.rs"}"#, "");
@@ -401,7 +563,9 @@ mod tests {
         );
         assert_eq!(
             dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            Some(PermissionChoice::Deny)
+            Some(PermissionChoice::from_decision(
+                PermissionDecisionChoice::Deny,
+            ))
         );
 
         let mut dialog = PermissionDialog::new("Edit", r#"{"file_path":"src/lib.rs"}"#, "");
@@ -415,7 +579,57 @@ mod tests {
         );
         assert_eq!(
             dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            Some(PermissionChoice::AlwaysAllow)
+            Some(PermissionChoice::from_decision(
+                PermissionDecisionChoice::AlwaysAllow,
+            ))
+        );
+    }
+
+    #[test]
+    fn tab_opens_allow_feedback_and_enter_submits_it() {
+        let mut dialog = PermissionDialog::new("Bash", r#"{"command":"cargo test"}"#, "");
+
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            None
+        );
+        for ch in "run tests first".chars() {
+            assert_eq!(
+                dialog.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE)),
+                None
+            );
+        }
+
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(PermissionChoice::with_feedback(
+                PermissionDecisionChoice::Allow,
+                "run tests first",
+            ))
+        );
+    }
+
+    #[test]
+    fn escape_cancels_feedback_before_denial() {
+        let mut dialog = PermissionDialog::new("Bash", r#"{"command":"cargo test"}"#, "");
+
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            Some(PermissionChoice::from_decision(
+                PermissionDecisionChoice::Deny,
+            ))
         );
     }
 
@@ -489,24 +703,11 @@ fn default_options() -> Vec<String> {
         .collect()
 }
 
-fn choice_for_label(label: &str) -> Option<PermissionChoice> {
-    let lower = label.to_ascii_lowercase();
-    if lower.contains("always") {
-        Some(PermissionChoice::AlwaysAllow)
-    } else if lower.contains("allow") && !lower.contains("always") {
-        Some(PermissionChoice::Allow)
-    } else if lower.contains("deny") || lower.contains("reject") || lower == "no" {
-        Some(PermissionChoice::Deny)
-    } else {
-        None
-    }
-}
-
 fn shortcut_for_label(label: &str) -> Option<&'static str> {
     match choice_for_label(label) {
-        Some(PermissionChoice::Allow) => Some("y"),
-        Some(PermissionChoice::Deny) => Some("n"),
-        Some(PermissionChoice::AlwaysAllow) => Some("a"),
+        Some(PermissionDecisionChoice::Allow) => Some("y"),
+        Some(PermissionDecisionChoice::Deny) => Some("n"),
+        Some(PermissionDecisionChoice::AlwaysAllow) => Some("a"),
         None => None,
     }
 }

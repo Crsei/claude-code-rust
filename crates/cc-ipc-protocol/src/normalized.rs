@@ -8,6 +8,7 @@ use crate::protocol::{
     ToolResultContentInfo,
 };
 use crate::subsystem_types::SubsystemStatusSnapshot;
+use cc_types::permission_events::{HookPermissionDecisionEvent, PermissionDecisionDebugEvent};
 
 /// Backward-compatible alias for the legacy backend wire enum.
 pub type LegacyBackendMessage = BackendMessage;
@@ -101,7 +102,21 @@ pub enum PermissionEvent {
     QuestionRequest {
         id: String,
         text: String,
+        #[serde(default)]
+        choices: Vec<String>,
+        #[serde(default = "default_true")]
+        allow_free_text: bool,
     },
+    HookPermissionDecision {
+        event: HookPermissionDecisionEvent,
+    },
+    PermissionDecisionDebug {
+        event: PermissionDecisionDebugEvent,
+    },
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -190,6 +205,8 @@ pub fn legacy_backend_type(message: &BackendMessage) -> &'static str {
         BackendMessage::Tombstone { .. } => "tombstone",
         BackendMessage::PermissionRequest { .. } => "permission_request",
         BackendMessage::QuestionRequest { .. } => "question_request",
+        BackendMessage::HookPermissionDecision { .. } => "hook_permission_decision",
+        BackendMessage::PermissionDecisionDebug { .. } => "permission_decision_debug",
         BackendMessage::ToolProgress { .. } => "tool_progress",
         BackendMessage::BackgroundAgentComplete { .. } => "background_agent_complete",
         BackendMessage::SystemInfo { .. } => "system_info",
@@ -324,10 +341,25 @@ pub fn legacy_backend_to_payload(message: &BackendMessage) -> LegacyBackendPaylo
             input: input.clone(),
             options: options.clone(),
         }),
-        BackendMessage::QuestionRequest { id, text } => {
-            LegacyBackendPayload::Permission(PermissionEvent::QuestionRequest {
-                id: id.clone(),
-                text: text.clone(),
+        BackendMessage::QuestionRequest {
+            id,
+            text,
+            choices,
+            allow_free_text,
+        } => LegacyBackendPayload::Permission(PermissionEvent::QuestionRequest {
+            id: id.clone(),
+            text: text.clone(),
+            choices: choices.clone(),
+            allow_free_text: *allow_free_text,
+        }),
+        BackendMessage::HookPermissionDecision { event } => {
+            LegacyBackendPayload::Permission(PermissionEvent::HookPermissionDecision {
+                event: event.clone(),
+            })
+        }
+        BackendMessage::PermissionDecisionDebug { event } => {
+            LegacyBackendPayload::Permission(PermissionEvent::PermissionDecisionDebug {
+                event: event.clone(),
             })
         }
         BackendMessage::SystemInfo { text, level } => {

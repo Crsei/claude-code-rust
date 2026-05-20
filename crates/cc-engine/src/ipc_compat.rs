@@ -11,6 +11,10 @@ impl cc_types::callbacks::CallbackHost for QueryEngine {
         QueryEngine::set_ask_user_callback(self, cb);
     }
 
+    fn set_permission_event_callback(&self, cb: crate::types::tool::PermissionEventCallback) {
+        QueryEngine::set_permission_event_callback(self, cb);
+    }
+
     fn set_tool_progress_callback(
         &self,
         cb: Arc<dyn Fn(crate::types::tool::ToolProgress) + Send + Sync>,

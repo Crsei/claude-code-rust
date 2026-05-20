@@ -1,5 +1,6 @@
 //! Direct TUI dialog for AskUserQuestion tool prompts.
 
+use cc_types::callbacks::AskUserRequestPayload;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -14,25 +15,36 @@ use crate::ui::theme::Theme;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuestionDialog {
     pub id: String,
-    pub question: String,
+    pub request: AskUserRequestPayload,
     answer: String,
     cursor: usize,
+    selected_choice: usize,
 }
 
 impl QuestionDialog {
-    pub fn new(id: impl Into<String>, question: impl Into<String>) -> Self {
+    pub fn new(id: impl Into<String>, request: AskUserRequestPayload) -> Self {
         Self {
             id: id.into(),
-            question: question.into(),
+            request,
             answer: String::new(),
             cursor: 0,
+            selected_choice: 0,
         }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<String> {
         match (key.modifiers, key.code) {
-            (_, KeyCode::Enter) => return Some(self.answer.clone()),
+            (_, KeyCode::Enter) => return Some(self.submit_answer()),
             (_, KeyCode::Esc) => return Some(String::new()),
+            (_, KeyCode::Up) | (_, KeyCode::Char('k')) => {
+                self.selected_choice = self.selected_choice.saturating_sub(1);
+            }
+            (_, KeyCode::Down) | (_, KeyCode::Char('j')) => {
+                let choice_count = self.request.choices.len();
+                if choice_count > 0 {
+                    self.selected_choice = (self.selected_choice + 1).min(choice_count - 1);
+                }
+            }
             (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
                 self.answer.clear();
                 self.cursor = 0;
@@ -84,14 +96,14 @@ impl QuestionDialog {
             Line::from(vec![
                 Span::styled("Question: ", theme.dim),
                 Span::styled(
-                    truncate(&self.question, chunks[0].width as usize),
+                    truncate(&self.request.question, chunks[0].width as usize),
                     theme.info,
                 ),
             ]),
             Line::from(vec![
                 Span::styled("Answer: ", theme.dim),
                 Span::styled(
-                    truncate(&self.answer_with_cursor(), chunks[0].width as usize),
+                    truncate(&self.answer_preview(), chunks[0].width as usize),
                     theme.warning,
                 ),
             ]),
@@ -118,21 +130,25 @@ impl QuestionDialog {
 
     fn rendered_body_lines(&self, width: usize) -> Vec<Line<'static>> {
         let answer_preview = if self.answer.trim().is_empty() {
-            "<empty answer>".to_string()
+            self.selected_choice_text()
+                .unwrap_or_else(|| "<empty answer>".to_string())
         } else {
             self.answer.clone()
         };
         let rendered = format!(
             "{}\n\n{}",
-            render_preview_question_view(&self.question, &[answer_preview.as_str()]),
+            render_preview_question_view(&self.request.question, &[answer_preview.as_str()]),
             render_submit_questions_view(usize::from(!self.answer.trim().is_empty()), 1),
         );
-        rendered
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .take(6)
-            .map(|line| Line::from(truncate(line, width)))
-            .collect()
+        let mut lines = self.choice_lines(width);
+        lines.extend(
+            rendered
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .take(6)
+                .map(|line| Line::from(truncate(line, width))),
+        );
+        lines
     }
 
     fn answer_with_cursor(&self) -> String {
@@ -140,6 +156,49 @@ impl QuestionDialog {
         let cursor = self.cursor.min(chars.len());
         chars.insert(cursor, '|');
         chars.into_iter().collect()
+    }
+
+    fn answer_preview(&self) -> String {
+        if self.request.allow_free_text {
+            self.answer_with_cursor()
+        } else {
+            self.selected_choice_text()
+                .unwrap_or_else(|| "<select a choice>".to_string())
+        }
+    }
+
+    fn selected_choice_text(&self) -> Option<String> {
+        self.request
+            .choices
+            .get(
+                self.selected_choice
+                    .min(self.request.choices.len().saturating_sub(1)),
+            )
+            .cloned()
+    }
+
+    fn choice_lines(&self, width: usize) -> Vec<Line<'static>> {
+        self.request
+            .choices
+            .iter()
+            .enumerate()
+            .map(|(idx, choice)| {
+                let marker = if idx == self.selected_choice {
+                    ">"
+                } else {
+                    " "
+                };
+                Line::from(truncate(&format!("{marker} {choice}"), width))
+            })
+            .collect()
+    }
+
+    fn submit_answer(&self) -> String {
+        if !self.answer.trim().is_empty() {
+            self.answer.clone()
+        } else {
+            self.selected_choice_text().unwrap_or_default()
+        }
     }
 
     fn insert(&mut self, ch: char) {
@@ -189,11 +248,19 @@ fn truncate(input: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::QuestionDialog;
+    use cc_types::callbacks::AskUserRequestPayload;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn question_dialog_collects_answer() {
-        let mut dialog = QuestionDialog::new("q-1", "Continue?");
+        let mut dialog = QuestionDialog::new(
+            "q-1",
+            AskUserRequestPayload {
+                question: "Continue?".to_string(),
+                choices: vec![],
+                allow_free_text: true,
+            },
+        );
         assert_eq!(
             dialog.handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)),
             None

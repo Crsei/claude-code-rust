@@ -7,7 +7,8 @@ use parking_lot::RwLock;
 use serde_json::Value;
 
 pub use cc_types::callbacks::{
-    AskUserCallback, PermissionCallback, PermissionRequestPayload, ToolProgress,
+    AskUserCallback, AskUserRequestPayload, PermissionCallback, PermissionEventCallback,
+    PermissionEventPayload, PermissionRequestPayload, PermissionResponsePayload, ToolProgress,
 };
 pub use cc_types::permissions::ToolPermissionRulesBySource;
 pub use cc_types::permissions::{
@@ -167,6 +168,7 @@ pub struct ToolUseContext {
     pub query_tracking: Option<QueryChainTracking>,
     pub permission_callback: Option<PermissionCallback>,
     pub ask_user_callback: Option<AskUserCallback>,
+    pub permission_event_callback: Option<PermissionEventCallback>,
     pub bg_agent_tx: Option<cc_types::agent_channel::AgentSender>,
     pub hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
     pub command_dispatcher: Arc<dyn cc_types::commands::CommandDispatcher>,
