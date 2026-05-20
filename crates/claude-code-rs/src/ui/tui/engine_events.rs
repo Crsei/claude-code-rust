@@ -4,6 +4,7 @@ use cc_engine::lifecycle::QueryEngine;
 use cc_engine::types::config::QuerySource;
 use cc_engine::types::tool::ToolProgress;
 use cc_services::prompt_suggestion::PromptSuggestionService;
+use cc_types::callbacks::PermissionRequestPayload;
 use cc_types::message::ProgressMessage;
 use cc_types::message::{
     AssistantMessage, ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage,
@@ -64,8 +65,13 @@ pub(super) enum EngineEvent {
     ToolProgress(ProgressMessage),
     /// A tool permission prompt that must be answered by the UI.
     PermissionRequest {
-        tool_name: String,
-        description: String,
+        request: PermissionRequestPayload,
+        response_tx: oneshot::Sender<String>,
+    },
+    /// An AskUserQuestion prompt that must be answered by the UI.
+    QuestionRequest {
+        id: String,
+        question: String,
         response_tx: oneshot::Sender<String>,
     },
     /// The engine query task has completed (stream exhausted).
@@ -80,17 +86,13 @@ pub(super) fn install_tui_permission_callback(
     engine: &Arc<QueryEngine>,
     tx: mpsc::UnboundedSender<EngineEvent>,
 ) {
-    let callback: cc_engine::types::tool::PermissionCallback = Arc::new(
-        move |_tool_use_id: String,
-              tool_name: String,
-              description: String,
-              _options: Vec<String>| {
+    let callback: cc_engine::types::tool::PermissionCallback =
+        Arc::new(move |request: PermissionRequestPayload| {
             let tx = tx.clone();
             Box::pin(async move {
                 let (response_tx, response_rx) = oneshot::channel();
                 let event = EngineEvent::PermissionRequest {
-                    tool_name,
-                    description,
+                    request,
                     response_tx,
                 };
 
@@ -100,9 +102,33 @@ pub(super) fn install_tui_permission_callback(
 
                 response_rx.await.unwrap_or_else(|_| "deny".to_string())
             })
-        },
-    );
+        });
     engine.set_permission_callback(callback);
+}
+
+pub(super) fn install_tui_ask_user_callback(
+    engine: &Arc<QueryEngine>,
+    tx: mpsc::UnboundedSender<EngineEvent>,
+) {
+    let callback: cc_engine::types::tool::AskUserCallback = Arc::new(move |question: String| {
+        let tx = tx.clone();
+        Box::pin(async move {
+            let (response_tx, response_rx) = oneshot::channel();
+            let id = uuid::Uuid::new_v4().to_string();
+            let event = EngineEvent::QuestionRequest {
+                id,
+                question,
+                response_tx,
+            };
+
+            if tx.send(event).is_err() {
+                return String::new();
+            }
+
+            response_rx.await.unwrap_or_default()
+        })
+    });
+    engine.set_ask_user_callback(callback);
 }
 
 pub(super) fn install_tui_tool_progress_callback(

@@ -87,8 +87,9 @@ pub fn set_config_provider(provider: Option<LspConfigProvider>) {
 }
 
 /// Global recommendation engine instance.
-static RECOMMENDATION_ENGINE: LazyLock<parking_lot::Mutex<Option<recommendation::RecommendationEngine>>> =
-    LazyLock::new(|| parking_lot::Mutex::new(None));
+static RECOMMENDATION_ENGINE: LazyLock<
+    parking_lot::Mutex<Option<recommendation::RecommendationEngine>>,
+> = LazyLock::new(|| parking_lot::Mutex::new(None));
 
 /// Install or replace the recommendation engine.
 pub fn set_recommendation_engine(engine: recommendation::RecommendationEngine) {

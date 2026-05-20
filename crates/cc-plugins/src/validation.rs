@@ -65,7 +65,9 @@ impl PluginValidator {
                 severity: ValidationSeverity::Error,
                 field: "manifest".to_string(),
                 message: format!("plugin.json not found at {}", manifest_path.display()),
-                suggestion: Some("A plugin.json file is required in the plugin directory.".to_string()),
+                suggestion: Some(
+                    "A plugin.json file is required in the plugin directory.".to_string(),
+                ),
             });
             return errors;
         }
@@ -78,7 +80,10 @@ impl PluginValidator {
                     severity: ValidationSeverity::Error,
                     field: "manifest".to_string(),
                     message: format!("Failed to load plugin manifest: {}", e),
-                    suggestion: Some("Check that plugin.json is valid JSON and all required fields are present.".to_string()),
+                    suggestion: Some(
+                        "Check that plugin.json is valid JSON and all required fields are present."
+                            .to_string(),
+                    ),
                 });
                 return errors;
             }
@@ -105,7 +110,9 @@ impl PluginValidator {
                     severity: ValidationSeverity::Warning,
                     field: format!("skills.{}.path", skill.name),
                     message: format!("Skill file not found: {}", skill_path.display()),
-                    suggestion: Some("Ensure the skill file exists at the specified path.".to_string()),
+                    suggestion: Some(
+                        "Ensure the skill file exists at the specified path.".to_string(),
+                    ),
                 });
             }
         }
@@ -134,7 +141,9 @@ impl PluginValidator {
                         severity: ValidationSeverity::Error,
                         field: format!("tools.{}.runtime.command", tool.name),
                         message: format!("Tool '{}' has an empty runtime command", tool.name),
-                        suggestion: Some("Provide a valid command for the tool runtime.".to_string()),
+                        suggestion: Some(
+                            "Provide a valid command for the tool runtime.".to_string(),
+                        ),
                     });
                 }
             }
@@ -158,7 +167,9 @@ impl PluginValidator {
                 severity: ValidationSeverity::Warning,
                 field: "manifest.name".to_string(),
                 message: format!("Plugin name '{}' contains spaces", manifest.name),
-                suggestion: Some("Use hyphens or underscores instead of spaces in plugin names.".to_string()),
+                suggestion: Some(
+                    "Use hyphens or underscores instead of spaces in plugin names.".to_string(),
+                ),
             });
         }
 
@@ -179,8 +190,8 @@ impl PluginValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use std::collections::HashMap;
+    use std::io::Write;
 
     fn valid_manifest_json() -> serde_json::Value {
         serde_json::json!({
@@ -291,7 +302,11 @@ mod tests {
         let errors = PluginValidator::validate_manifest_ext(&manifest, dir.path());
         assert!(errors.iter().any(|e| e.field == "manifest.name"));
         assert_eq!(
-            errors.iter().find(|e| e.field == "manifest.name").unwrap().severity,
+            errors
+                .iter()
+                .find(|e| e.field == "manifest.name")
+                .unwrap()
+                .severity,
             ValidationSeverity::Warning
         );
     }

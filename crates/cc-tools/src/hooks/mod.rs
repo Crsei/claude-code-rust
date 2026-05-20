@@ -28,7 +28,7 @@ pub use async_registry::{
 };
 pub use hook_events::{
     clear_hook_event_state, emit_hook_response, emit_hook_started, register_hook_event_handler,
-    set_all_hook_events_enabled, HookEventEmitter,
+    set_all_hook_events_enabled,
 };
 pub use hook_helpers::{add_arguments_to_prompt, get_hook_display_text, HookHelpers};
 pub use http_hook::{exec_http_hook, HttpHookResult};

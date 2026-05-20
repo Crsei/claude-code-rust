@@ -10,8 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 use cc_types::hooks::{
-    HookEvent, HookExecutionEvent, HookOutcome, HookProgressEvent, HookResponseEvent,
-    HookStartedEvent,
+    HookEvent, HookExecutionEvent, HookOutcome, HookResponseEvent, HookStartedEvent,
 };
 
 /// Hook events that are always emitted regardless of configuration.
@@ -76,30 +75,6 @@ pub fn emit_hook_started(hook_id: &str, hook_name: &str, hook_event: &HookEvent)
     }));
 }
 
-/// Emit a hook progress event.
-#[allow(unused)]
-pub fn emit_hook_progress(
-    hook_id: &str,
-    hook_name: &str,
-    hook_event: &HookEvent,
-    stdout: &str,
-    stderr: &str,
-    output: &str,
-) {
-    if !should_emit(hook_event) {
-        return;
-    }
-
-    emit(HookExecutionEvent::Progress(HookProgressEvent {
-        hook_id: hook_id.to_string(),
-        hook_name: hook_name.to_string(),
-        hook_event: hook_event.to_string(),
-        stdout: stdout.to_string(),
-        stderr: stderr.to_string(),
-        output: output.to_string(),
-    }));
-}
-
 /// Emit a hook response event.
 pub fn emit_hook_response(
     hook_id: &str,
@@ -133,64 +108,6 @@ pub fn clear_hook_event_state() {
     *EVENT_HANDLER.lock().unwrap() = None;
     PENDING_EVENTS.lock().unwrap().clear();
     ALL_HOOK_EVENTS_ENABLED.store(false, Ordering::Relaxed);
-}
-
-/// Hook event emitter for managing progress intervals.
-pub struct HookEventEmitter;
-
-impl HookEventEmitter {
-    /// Start a periodic progress emission loop for a running hook.
-    /// Returns a stop function to cancel the interval.
-    pub fn start_progress_interval(
-        hook_id: String,
-        hook_name: String,
-        hook_event: HookEvent,
-        get_output: Box<dyn Fn() -> Option<(String, String, String)> + Send + 'static>,
-        interval_ms: u64,
-    ) -> Box<dyn Fn() + Send> {
-        if !should_emit(&hook_event) {
-            return Box::new(|| {});
-        }
-
-        let stop_flag = std::sync::Arc::new(AtomicBool::new(false));
-        let stop_flag_clone = stop_flag.clone();
-
-        let last_output = std::sync::Arc::new(Mutex::new(String::new()));
-        let last_output_clone = last_output.clone();
-
-        std::thread::spawn(move || {
-            let interval = std::time::Duration::from_millis(interval_ms);
-            while !stop_flag_clone.load(Ordering::Relaxed) {
-                std::thread::sleep(interval);
-
-                if stop_flag_clone.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                if let Some((stdout, stderr, output)) = get_output() {
-                    let mut last = last_output_clone.lock().unwrap();
-                    if output == *last {
-                        continue;
-                    }
-                    *last = output.clone();
-
-                    emit_hook_progress(
-                        &hook_id,
-                        &hook_name,
-                        &hook_event,
-                        &stdout,
-                        &stderr,
-                        &output,
-                    );
-                }
-            }
-        });
-
-        let stop_flag2 = stop_flag.clone();
-        Box::new(move || {
-            stop_flag2.store(true, Ordering::Relaxed);
-        })
-    }
 }
 
 #[cfg(test)]

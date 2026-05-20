@@ -109,7 +109,10 @@ fn render_recommendations(show_all: bool) -> String {
         lines.push("Use `/lsp recommend <language>` for focused recommendations.".to_string());
     }
 
-    lines.push("Recommendations are shown when the backend emits a real LSP RecommendationRequest.".to_string());
+    lines.push(
+        "Recommendations are shown when the backend emits a real LSP RecommendationRequest."
+            .to_string(),
+    );
     lines.join("\n")
 }
 
@@ -123,11 +126,7 @@ fn render_project_recommendations(language: Option<&str>) -> String {
     let filtered: Vec<_> = match language {
         Some(lang) => recs
             .into_iter()
-            .filter(|r| {
-                r.languages
-                    .iter()
-                    .any(|l| l.eq_ignore_ascii_case(lang))
-            })
+            .filter(|r| r.languages.iter().any(|l| l.eq_ignore_ascii_case(lang)))
             .collect(),
         None => recs,
     };
@@ -182,7 +181,10 @@ fn render_project_recommendations(language: Option<&str>) -> String {
     if !installed_recs.is_empty() {
         lines.push("Already installed:".to_string());
         for rec in &installed_recs {
-            lines.push(format!("  {:<24} (muted if unwanted via /lsp)", rec.plugin_name));
+            lines.push(format!(
+                "  {:<24} (muted if unwanted via /lsp)",
+                rec.plugin_name
+            ));
         }
         lines.push(String::new());
     }

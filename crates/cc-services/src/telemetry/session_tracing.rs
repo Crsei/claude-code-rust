@@ -11,7 +11,7 @@
 use tracing::Span;
 
 use crate::telemetry::instrumentation::{InteractionSpan, ToolSpan};
-use crate::telemetry::{TelemetryConfig, TelemetryHandle, TelemetryEvent};
+use crate::telemetry::{TelemetryConfig, TelemetryEvent, TelemetryHandle};
 
 // ---------------------------------------------------------------------------
 // TracingContext
@@ -78,7 +78,15 @@ impl TracingContext {
 #[derive(Debug, Clone)]
 pub struct SessionTracer {
     session_id: String,
-    /// Telemetry configuration — stored for future use (e.g. sampling decisions).
+    /// Telemetry configuration.
+    ///
+    /// Intentional: Stored for future use when sampling decisions need to be
+    ///     made per-session (e.g., adjusting sampling rate for long-running
+    ///     sessions, or checking `TelemetryConfig::enabled` before recording
+    ///     events in the tracer). Not currently referenced in method bodies.
+    /// Owner: https://github.com/Crsei/claude-code-rust/issues (telemetry)
+    /// Removal: When a method body references `self.config` for sampling or
+    ///     feature-gating, remove this allow-dead-code.
     #[allow(dead_code)]
     config: TelemetryConfig,
     handle: Option<TelemetryHandle>,

@@ -91,8 +91,7 @@ impl RecommendationEngine {
                     if seen.insert(plugin.plugin_id.clone()) {
                         let mut rec = plugin.clone();
                         rec.confidence = rec.confidence.min(detection.confidence);
-                        rec.is_already_installed =
-                            installed_plugin_ids.contains(&plugin.plugin_id);
+                        rec.is_already_installed = installed_plugin_ids.contains(&plugin.plugin_id);
                         recommendations.push(rec);
                     }
                 }
@@ -122,8 +121,7 @@ impl RecommendationEngine {
                     .iter()
                     .map(|p| {
                         let mut rec = p.clone();
-                        rec.is_already_installed =
-                            installed_plugin_ids.contains(&p.plugin_id);
+                        rec.is_already_installed = installed_plugin_ids.contains(&p.plugin_id);
                         rec
                     })
                     .collect()
@@ -146,7 +144,10 @@ impl RecommendationEngine {
         };
         for entry in dir_entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(true, |e| e != "json" && e != "toml") {
+            if path
+                .extension()
+                .map_or(true, |e| e != "json" && e != "toml")
+            {
                 continue;
             }
             let content = match std::fs::read_to_string(&path) {
@@ -173,11 +174,7 @@ impl RecommendationEngine {
     ) -> Vec<LanguageDetection> {
         let mut detections = Vec::new();
         for lang in languages {
-            let patterns = self
-                .lang_pattern_map
-                .get(lang)
-                .cloned()
-                .unwrap_or_default();
+            let patterns = self.lang_pattern_map.get(lang).cloned().unwrap_or_default();
             if patterns.is_empty() {
                 continue;
             }
@@ -267,7 +264,9 @@ pub fn load_builtin_recommendations() -> Vec<RecommendationRule> {
         RecommendationRule {
             plugin_id: "rust-analyzer".to_string(),
             plugin_name: "rust-analyzer".to_string(),
-            description: "Rust language server providing code completion, navigation, and refactoring".to_string(),
+            description:
+                "Rust language server providing code completion, navigation, and refactoring"
+                    .to_string(),
             languages: vec!["rust".to_string()],
             file_patterns: vec!["**/Cargo.toml".to_string(), "**/*.rs".to_string()],
             min_confidence: 0.7,
@@ -276,7 +275,9 @@ pub fn load_builtin_recommendations() -> Vec<RecommendationRule> {
         RecommendationRule {
             plugin_id: "python-lsp".to_string(),
             plugin_name: "Python LSP Server".to_string(),
-            description: "Python language server (pylsp) providing code intelligence for Python projects".to_string(),
+            description:
+                "Python language server (pylsp) providing code intelligence for Python projects"
+                    .to_string(),
             languages: vec!["python".to_string()],
             file_patterns: vec!["**/*.py".to_string(), "**/requirements.txt".to_string()],
             min_confidence: 0.7,
@@ -285,7 +286,8 @@ pub fn load_builtin_recommendations() -> Vec<RecommendationRule> {
         RecommendationRule {
             plugin_id: "typescript-lsp".to_string(),
             plugin_name: "TypeScript Language Server".to_string(),
-            description: "TypeScript/JavaScript language server using typescript-language-server".to_string(),
+            description: "TypeScript/JavaScript language server using typescript-language-server"
+                .to_string(),
             languages: vec!["typescript".to_string(), "javascript".to_string()],
             file_patterns: vec![
                 "**/*.js".to_string(),
@@ -301,7 +303,8 @@ pub fn load_builtin_recommendations() -> Vec<RecommendationRule> {
         RecommendationRule {
             plugin_id: "gopls".to_string(),
             plugin_name: "gopls".to_string(),
-            description: "Go language server (gopls) providing code intelligence for Go projects".to_string(),
+            description: "Go language server (gopls) providing code intelligence for Go projects"
+                .to_string(),
             languages: vec!["go".to_string()],
             file_patterns: vec!["**/*.go".to_string(), "**/go.mod".to_string()],
             min_confidence: 0.7,
@@ -324,7 +327,9 @@ pub fn load_builtin_recommendations() -> Vec<RecommendationRule> {
         RecommendationRule {
             plugin_id: "java-lsp".to_string(),
             plugin_name: "Java LSP Server".to_string(),
-            description: "Java language server (jdtls) providing code intelligence for Java projects".to_string(),
+            description:
+                "Java language server (jdtls) providing code intelligence for Java projects"
+                    .to_string(),
             languages: vec!["java".to_string()],
             file_patterns: vec!["**/*.java".to_string(), "**/pom.xml".to_string()],
             min_confidence: 0.6,
@@ -388,12 +393,20 @@ fn parse_rule_value(value: &serde_json::Value) -> Option<RecommendationRule> {
         languages: obj
             .get("languages")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default(),
         file_patterns: obj
             .get("file_patterns")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default(),
         min_confidence: obj
             .get("min_confidence")
@@ -423,7 +436,11 @@ fn find_matching_files(dir: &Path, patterns: &[String]) -> Vec<String> {
     matched
 }
 
-fn walk_dir(dir: &Path, patterns: &[String], matched: &mut Vec<String>) -> Result<(), std::io::Error> {
+fn walk_dir(
+    dir: &Path,
+    patterns: &[String],
+    matched: &mut Vec<String>,
+) -> Result<(), std::io::Error> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -538,10 +555,7 @@ impl std::fmt::Display for RecommendationError {
                 write!(f, "Already installed: {id}")
             }
             RecommendationError::NotSupportedByLaneD => {
-                write!(
-                    f,
-                    "Installation API is owned by the host application"
-                )
+                write!(f, "Installation API is owned by the host application")
             }
         }
     }
@@ -669,7 +683,8 @@ pub fn is_dismissed(plugin_id: &str, dismissals: &[RecommendationDismissal]) -> 
         match d.remind_after {
             None => true, // permanent dismiss
             Some(duration) => {
-                let remind_until = d.dismissed_at + chrono::Duration::from_std(duration).unwrap_or_default();
+                let remind_until =
+                    d.dismissed_at + chrono::Duration::from_std(duration).unwrap_or_default();
                 now < remind_until
             }
         }
@@ -748,18 +763,17 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         // Create some Rust files
         std::fs::write(dir.path().join("Cargo.toml"), b"[package]").unwrap();
-        std::fs::write(dir.path().join("src").join("main.rs"), b"fn main() {}")
-            .unwrap_or_else(|_| {
+        std::fs::write(dir.path().join("src").join("main.rs"), b"fn main() {}").unwrap_or_else(
+            |_| {
                 // Might fail if src doesn't exist yet
                 std::fs::create_dir(dir.path().join("src")).unwrap();
                 std::fs::write(dir.path().join("src").join("main.rs"), b"fn main() {}").unwrap()
-            });
+            },
+        );
 
         let engine = RecommendationEngine::from_builtin();
-        let detections = engine.check_project_files(
-            dir.path(),
-            &["rust".to_string(), "python".to_string()],
-        );
+        let detections =
+            engine.check_project_files(dir.path(), &["rust".to_string(), "python".to_string()]);
 
         assert_eq!(detections.len(), 1);
         assert_eq!(detections[0].language, "rust");
@@ -773,10 +787,8 @@ mod tests {
         std::fs::write(dir.path().join("requirements.txt"), b"flask\n").unwrap();
 
         let engine = RecommendationEngine::from_builtin();
-        let detections = engine.check_project_files(
-            dir.path(),
-            &["rust".to_string(), "python".to_string()],
-        );
+        let detections =
+            engine.check_project_files(dir.path(), &["rust".to_string(), "python".to_string()]);
 
         assert_eq!(detections.len(), 1);
         assert_eq!(detections[0].language, "python");
@@ -789,10 +801,8 @@ mod tests {
         std::fs::write(dir.path().join("go.mod"), b"module test").unwrap();
 
         let engine = RecommendationEngine::from_builtin();
-        let detections = engine.check_project_files(
-            dir.path(),
-            &["go".to_string(), "java".to_string()],
-        );
+        let detections =
+            engine.check_project_files(dir.path(), &["go".to_string(), "java".to_string()]);
 
         assert_eq!(detections.len(), 1);
         assert_eq!(detections[0].language, "go");
@@ -804,10 +814,8 @@ mod tests {
         std::fs::write(dir.path().join("readme.md"), b"# Project").unwrap();
 
         let engine = RecommendationEngine::from_builtin();
-        let detections = engine.check_project_files(
-            dir.path(),
-            &["rust".to_string(), "python".to_string()],
-        );
+        let detections =
+            engine.check_project_files(dir.path(), &["rust".to_string(), "python".to_string()]);
 
         assert!(detections.is_empty());
     }
@@ -893,7 +901,10 @@ mod tests {
     #[test]
     fn test_load_builtin_recommendations_rust_has_cargo_toml() {
         let rules = load_builtin_recommendations();
-        let rust = rules.iter().find(|r| r.plugin_id == "rust-analyzer").unwrap();
+        let rust = rules
+            .iter()
+            .find(|r| r.plugin_id == "rust-analyzer")
+            .unwrap();
         assert!(rust.file_patterns.iter().any(|p| p.contains("Cargo.toml")));
         assert!(rust.file_patterns.iter().any(|p| p.contains(".rs")));
     }

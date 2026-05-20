@@ -188,6 +188,9 @@ mod tests {
 
     #[test]
     fn key_value_row_formats_detail_pairs() {
-        assert_eq!(key_value_row("model", "sonnet"), "model                    sonnet");
+        assert_eq!(
+            key_value_row("model", "sonnet"),
+            "model                    sonnet"
+        );
     }
 }

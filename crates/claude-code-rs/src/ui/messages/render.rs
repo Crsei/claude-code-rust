@@ -2,19 +2,33 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ui::markdown::markdown_to_lines;
 use crate::ui::messages::assistant_text_message::{classify_assistant_text, render_api_error};
+use crate::ui::messages::assistant_thinking_message::{
+    render_assistant_thinking_lines, AssistantThinkingView,
+};
 use crate::ui::messages::assistant_tool_use_message::{
     render_assistant_tool_use_message, ToolUseState,
 };
 use crate::ui::messages::attachment_message::render_attachment_message as render_attachment_helper;
+use crate::ui::messages::collapsed_read_search_content::{
+    render_collapsed_read_search_lines, CollapsedReadSearchView,
+};
+use crate::ui::messages::compact_boundary_message::render_compact_boundary_lines;
+use crate::ui::messages::grouped_tool_use_content::{
+    render_grouped_tool_use_lines, GroupedToolUseView,
+};
 use crate::ui::messages::system_text_message::render_system_text_message;
 use crate::ui::messages::user_bash_output_message::{
     render_user_bash_output_message_with_options, ShellOutputRenderOptions,
 };
 use crate::ui::messages::user_text_message::render_user_text_message;
+use crate::ui::messages::user_tool_result_message::user_tool_result_message::render_user_tool_result_message;
+use crate::ui::messages::user_tool_result_message::utils::{
+    ToolResultBlock, ToolUseRecord as UserToolUseRecord, UserToolResultLookups,
+};
 use crate::ui::theme::Theme;
 use crate::ui::virtual_scroll::VirtualScroll;
 use cc_types::message::{
@@ -28,17 +42,85 @@ use super::wrap::wrap_line_to_width;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MessageRenderContext {
-    tool_uses: HashMap<String, ToolUseRenderRecord>,
-    latest_shell_tool_result_id: Option<String>,
+    renderable_messages: Vec<RenderableMessage>,
+    lookups: MessageLookups,
     selected_message: Option<usize>,
     selected_expanded: bool,
+    options: MessageRenderOptions,
     cache_key: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct MessageRenderOptions {
+    pub(crate) verbose: bool,
+    pub(crate) is_transcript_mode: bool,
+    pub(crate) show_all_in_transcript: bool,
+}
+
 #[derive(Debug, Clone)]
-struct ToolUseRenderRecord {
+pub(crate) struct PreparedMessages {
+    pub(crate) renderable: Vec<RenderableMessage>,
+    pub(crate) lookups: MessageLookups,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum RenderableMessage {
+    Message {
+        message: Message,
+        source_index: usize,
+    },
+    GroupedToolUse(GroupedToolUseRenderRecord),
+    CollapsedReadSearch(CollapsedReadSearchRenderRecord),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct GroupedToolUseRenderRecord {
+    uuid: uuid::Uuid,
+    timestamp: i64,
+    source_indices: Vec<usize>,
+    tool_name: String,
+    tool_use_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CollapsedReadSearchRenderRecord {
+    uuid: uuid::Uuid,
+    timestamp: i64,
+    source_indices: Vec<usize>,
+    tool_use_ids: Vec<String>,
+    read_count: usize,
+    search_count: usize,
+    list_count: usize,
+    latest_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct MessageLookups {
+    tool_uses: HashMap<String, ToolUseRenderRecord>,
+    tool_results: HashMap<String, ToolResultRenderRecord>,
+    resolved_tool_use_ids: HashSet<String>,
+    errored_tool_use_ids: HashSet<String>,
+    in_progress_tool_use_ids: HashSet<String>,
+    progress_messages_by_tool_use_id: HashMap<String, Vec<cc_types::message::ProgressMessage>>,
+    latest_shell_tool_result_id: Option<String>,
+    latest_bash_output_uuid: Option<uuid::Uuid>,
+    last_thinking_block_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ToolUseRenderRecord {
     tool_name: String,
     input: serde_json::Value,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ToolResultRenderRecord {
+    tool_use_id: String,
+    content: String,
+    is_error: bool,
+    tool_use_result: Option<String>,
+    message_uuid: uuid::Uuid,
+    source_index: usize,
 }
 
 impl MessageRenderContext {
@@ -46,72 +128,942 @@ impl MessageRenderContext {
         &self.cache_key
     }
 
+    pub(crate) fn renderable_messages(&self) -> &[RenderableMessage] {
+        &self.renderable_messages
+    }
+
     fn tool_use(&self, tool_use_id: &str) -> Option<&ToolUseRenderRecord> {
-        self.tool_uses.get(tool_use_id)
+        self.lookups.tool_uses.get(tool_use_id)
     }
 
     fn shell_expanded(&self, msg_index: usize, tool_use_id: &str) -> bool {
-        self.latest_shell_tool_result_id.as_deref() == Some(tool_use_id)
+        self.lookups.latest_shell_tool_result_id.as_deref() == Some(tool_use_id)
             || (self.selected_message == Some(msg_index) && self.selected_expanded)
     }
 }
 
+#[cfg(test)]
 pub(crate) fn build_message_render_context(
     messages: &[Message],
     selected_message: Option<usize>,
     selected_expanded: bool,
 ) -> MessageRenderContext {
-    let mut ctx = MessageRenderContext {
+    build_message_render_context_with_options(
+        messages,
         selected_message,
         selected_expanded,
+        MessageRenderOptions::default(),
+    )
+}
+
+pub(crate) fn build_message_render_context_with_options(
+    messages: &[Message],
+    selected_message: Option<usize>,
+    selected_expanded: bool,
+    options: MessageRenderOptions,
+) -> MessageRenderContext {
+    let prepared = prepare_renderable_messages(messages, options);
+    let mut ctx = MessageRenderContext {
+        renderable_messages: prepared.renderable,
+        lookups: prepared.lookups,
+        selected_message,
+        selected_expanded,
+        options,
         ..MessageRenderContext::default()
     };
 
-    for message in messages {
-        match message {
-            Message::Assistant(assistant) => {
-                for block in &assistant.content {
-                    match block {
-                        ContentBlock::ToolUse { id, name, input }
-                        | ContentBlock::ServerToolUse { id, name, input } => {
-                            ctx.tool_uses.insert(
-                                id.clone(),
-                                ToolUseRenderRecord {
-                                    tool_name: name.clone(),
-                                    input: input.clone(),
-                                },
-                            );
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            Message::User(user) => {
-                if let MessageContent::Blocks(blocks) = &user.content {
-                    for block in blocks {
-                        if let ContentBlock::ToolResult { tool_use_id, .. } = block {
-                            if ctx
-                                .tool_uses
-                                .get(tool_use_id)
-                                .is_some_and(ToolUseRenderRecord::is_shell)
-                            {
-                                ctx.latest_shell_tool_result_id = Some(tool_use_id.clone());
+    ctx.cache_key = render_context_cache_key(&ctx);
+    ctx
+}
+
+pub(crate) fn prepare_renderable_messages(
+    messages: &[Message],
+    options: MessageRenderOptions,
+) -> PreparedMessages {
+    let normalized = normalize_messages_for_render(messages)
+        .into_iter()
+        .filter(is_not_empty_renderable_message)
+        .collect::<Vec<_>>();
+    let compact_aware = filter_compact_boundary(normalized.clone(), options);
+    let visible = compact_aware
+        .into_iter()
+        .filter(|msg| should_show_renderable_message(msg, options))
+        .collect::<Vec<_>>();
+    let reordered = reorder_messages_in_ui(visible);
+    let brief_filtered = filter_brief_messages(reordered, options);
+    let transcript_limited = truncate_transcript_messages(brief_filtered, options);
+    let grouped = apply_grouping(transcript_limited, options);
+    let collapsed = collapse_read_search_groups(grouped, options);
+    let lookups = build_message_lookups(&normalized, &collapsed);
+
+    PreparedMessages {
+        renderable: collapsed,
+        lookups,
+    }
+}
+
+pub(crate) fn build_message_lookups(
+    normalized: &[RenderableMessage],
+    _renderable: &[RenderableMessage],
+) -> MessageLookups {
+    let mut lookups = MessageLookups {
+        latest_bash_output_uuid: find_latest_bash_output_uuid(normalized),
+        last_thinking_block_id: find_last_thinking_block_id(normalized),
+        ..MessageLookups::default()
+    };
+
+    for render_msg in normalized {
+        for (message, source_index) in render_msg.messages_for_lookup() {
+            match message {
+                Message::Assistant(assistant) => {
+                    for block in &assistant.content {
+                        match block {
+                            ContentBlock::ToolUse { id, name, input }
+                            | ContentBlock::ServerToolUse { id, name, input } => {
+                                lookups.tool_uses.insert(
+                                    id.clone(),
+                                    ToolUseRenderRecord {
+                                        tool_name: name.clone(),
+                                        input: input.clone(),
+                                    },
+                                );
                             }
+                            _ => {}
                         }
                     }
                 }
+                Message::User(user) => {
+                    for block in message_content_blocks(&user.content) {
+                        if let ContentBlock::ToolResult {
+                            tool_use_id,
+                            content,
+                            is_error,
+                        } = block
+                        {
+                            let record = ToolResultRenderRecord {
+                                tool_use_id: tool_use_id.clone(),
+                                content: tool_result_content_text(content),
+                                is_error: *is_error,
+                                tool_use_result: user.tool_use_result.clone(),
+                                message_uuid: user.uuid,
+                                source_index,
+                            };
+                            if *is_error {
+                                lookups.errored_tool_use_ids.insert(tool_use_id.clone());
+                            }
+                            lookups.resolved_tool_use_ids.insert(tool_use_id.clone());
+                            lookups.tool_results.insert(tool_use_id.clone(), record);
+                        }
+                    }
+                }
+                Message::Progress(progress) => {
+                    lookups
+                        .progress_messages_by_tool_use_id
+                        .entry(progress.tool_use_id.clone())
+                        .or_default()
+                        .push(progress.clone());
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
-    ctx.cache_key = format!(
-        "shell={}|selected={:?}|expanded={}",
-        ctx.latest_shell_tool_result_id.as_deref().unwrap_or(""),
-        ctx.selected_message,
-        ctx.selected_expanded
+    for (id, tool_use) in &lookups.tool_uses {
+        if !lookups.resolved_tool_use_ids.contains(id) {
+            lookups.in_progress_tool_use_ids.insert(id.clone());
+        }
+        if tool_use.is_shell() && lookups.resolved_tool_use_ids.contains(id) {
+            lookups.latest_shell_tool_result_id = Some(id.clone());
+        }
+    }
+
+    lookups
+}
+
+fn render_context_cache_key(ctx: &MessageRenderContext) -> String {
+    let mut parts = vec![
+        format!(
+            "mode=v{}t{}",
+            u8::from(ctx.options.verbose),
+            u8::from(ctx.options.is_transcript_mode)
+        ),
+        format!(
+            "shell={}",
+            ctx.lookups
+                .latest_shell_tool_result_id
+                .as_deref()
+                .unwrap_or("")
+        ),
+        format!("selected={:?}", ctx.selected_message),
+        format!("expanded={}", ctx.selected_expanded),
+        format!(
+            "thinking={}",
+            ctx.lookups.last_thinking_block_id.as_deref().unwrap_or("")
+        ),
+    ];
+    parts.extend(ctx.lookups.tool_results.values().map(|result| {
+        format!(
+            "r:{}:{}:{}:{}:{}:{}",
+            result.tool_use_id,
+            result.content.len(),
+            result.is_error,
+            result.tool_use_result.as_deref().unwrap_or("").len(),
+            result.message_uuid,
+            result.source_index
+        )
+    }));
+    parts.extend(
+        ctx.renderable_messages
+            .iter()
+            .map(RenderableMessage::cache_part),
     );
-    ctx
+    parts.join("|")
+}
+
+impl RenderableMessage {
+    fn uuid(&self) -> uuid::Uuid {
+        match self {
+            RenderableMessage::Message { message, .. } => message.uuid(),
+            RenderableMessage::GroupedToolUse(group) => group.uuid,
+            RenderableMessage::CollapsedReadSearch(group) => group.uuid,
+        }
+    }
+
+    fn timestamp(&self) -> i64 {
+        match self {
+            RenderableMessage::Message { message, .. } => message.timestamp(),
+            RenderableMessage::GroupedToolUse(group) => group.timestamp,
+            RenderableMessage::CollapsedReadSearch(group) => group.timestamp,
+        }
+    }
+
+    fn cache_part(&self) -> String {
+        match self {
+            RenderableMessage::Message { message, .. } => {
+                format!("m:{}:{}", message_type_key(message), message.uuid())
+            }
+            RenderableMessage::GroupedToolUse(group) => {
+                format!("g:{}:{}", group.tool_name, group.uuid)
+            }
+            RenderableMessage::CollapsedReadSearch(group) => {
+                format!(
+                    "c:{}:{}:{}:{}",
+                    group.read_count, group.search_count, group.list_count, group.uuid
+                )
+            }
+        }
+    }
+
+    fn is_assistant_message(&self) -> bool {
+        matches!(
+            self,
+            RenderableMessage::Message {
+                message: Message::Assistant(_),
+                ..
+            }
+        )
+    }
+
+    fn has_source_index(&self, selected: Option<usize>) -> bool {
+        let Some(selected) = selected else {
+            return false;
+        };
+        match self {
+            RenderableMessage::Message { source_index, .. } => *source_index == selected,
+            RenderableMessage::GroupedToolUse(group) => group.source_indices.contains(&selected),
+            RenderableMessage::CollapsedReadSearch(group) => {
+                group.source_indices.contains(&selected)
+            }
+        }
+    }
+
+    fn messages_for_lookup(&self) -> Vec<(&Message, usize)> {
+        match self {
+            RenderableMessage::Message {
+                message,
+                source_index,
+            } => vec![(message, *source_index)],
+            RenderableMessage::GroupedToolUse(_) | RenderableMessage::CollapsedReadSearch(_) => {
+                Vec::new()
+            }
+        }
+    }
+}
+
+fn normalize_messages_for_render(messages: &[Message]) -> Vec<RenderableMessage> {
+    let mut normalized = Vec::new();
+    let mut split_seen = false;
+
+    for (source_index, message) in messages.iter().enumerate() {
+        match message {
+            Message::Assistant(assistant) => {
+                split_seen |= assistant.content.len() > 1;
+                for (block_index, block) in assistant.content.iter().cloned().enumerate() {
+                    let mut msg = assistant.clone();
+                    msg.uuid = if split_seen {
+                        derive_child_uuid(assistant.uuid, block_index)
+                    } else {
+                        assistant.uuid
+                    };
+                    msg.content = vec![block];
+                    normalized.push(RenderableMessage::Message {
+                        message: Message::Assistant(msg),
+                        source_index,
+                    });
+                }
+            }
+            Message::User(user) => {
+                let blocks = match &user.content {
+                    MessageContent::Text(text) => vec![ContentBlock::Text { text: text.clone() }],
+                    MessageContent::Blocks(blocks) => blocks.clone(),
+                };
+                split_seen |= blocks.len() > 1;
+                for (block_index, block) in blocks.into_iter().enumerate() {
+                    let mut msg = user.clone();
+                    msg.uuid = if split_seen {
+                        derive_child_uuid(user.uuid, block_index)
+                    } else {
+                        user.uuid
+                    };
+                    msg.content = MessageContent::Blocks(vec![block]);
+                    normalized.push(RenderableMessage::Message {
+                        message: Message::User(msg),
+                        source_index,
+                    });
+                }
+            }
+            Message::System(_) | Message::Progress(_) | Message::Attachment(_) => {
+                normalized.push(RenderableMessage::Message {
+                    message: message.clone(),
+                    source_index,
+                });
+            }
+        }
+    }
+
+    normalized
+}
+
+fn derive_child_uuid(parent: uuid::Uuid, index: usize) -> uuid::Uuid {
+    let parent = parent.to_string();
+    let derived = format!("{}{:012x}", &parent[..24], index);
+    uuid::Uuid::parse_str(&derived)
+        .unwrap_or_else(|_| uuid_from_parent_and_salt(uuid::Uuid::nil(), &derived))
+}
+
+fn is_not_empty_renderable_message(msg: &RenderableMessage) -> bool {
+    let RenderableMessage::Message { message, .. } = msg else {
+        return true;
+    };
+    match message {
+        Message::Progress(_) | Message::Attachment(_) | Message::System(_) => true,
+        Message::Assistant(assistant) => {
+            if assistant.content.is_empty() {
+                return false;
+            }
+            if assistant.content.len() > 1 {
+                return true;
+            }
+            match &assistant.content[0] {
+                ContentBlock::Text { text } => !is_empty_message_text(text),
+                _ => true,
+            }
+        }
+        Message::User(user) => match &user.content {
+            MessageContent::Text(text) => !is_empty_message_text(text),
+            MessageContent::Blocks(blocks) => {
+                if blocks.is_empty() {
+                    return false;
+                }
+                if blocks.len() > 1 {
+                    return true;
+                }
+                match &blocks[0] {
+                    ContentBlock::Text { text } => {
+                        !is_empty_message_text(text)
+                            && text.trim()
+                                != crate::ui::messages::user_tool_result_message::utils::INTERRUPT_MESSAGE_FOR_TOOL_USE
+                    }
+                    _ => true,
+                }
+            }
+        },
+    }
+}
+
+fn is_empty_message_text(text: &str) -> bool {
+    let stripped = strip_prompt_xml_tags(text);
+    stripped.trim().is_empty() || stripped.trim() == "[NO_CONTENT]"
+}
+
+fn strip_prompt_xml_tags(text: &str) -> String {
+    let mut out = text.to_string();
+    for tag in [
+        "commit_analysis",
+        "context",
+        "function_analysis",
+        "pr_analysis",
+    ] {
+        out = strip_simple_tag(&out, tag);
+    }
+    out.trim().to_string()
+}
+
+fn strip_simple_tag(text: &str, tag: &str) -> String {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let mut rest = text;
+    let mut out = String::new();
+    while let Some(start) = rest.find(&open) {
+        out.push_str(&rest[..start]);
+        let after_open = &rest[start + open.len()..];
+        let Some(end) = after_open.find(&close) else {
+            out.push_str(after_open);
+            return out;
+        };
+        rest = &after_open[end + close.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn filter_compact_boundary(
+    messages: Vec<RenderableMessage>,
+    options: MessageRenderOptions,
+) -> Vec<RenderableMessage> {
+    if options.verbose || options.is_transcript_mode {
+        return messages;
+    }
+    let boundary_index = messages.iter().rposition(|msg| {
+        matches!(
+            msg,
+            RenderableMessage::Message {
+                message: Message::System(cc_types::message::SystemMessage {
+                    subtype: SystemSubtype::CompactBoundary { .. },
+                    ..
+                }),
+                ..
+            }
+        )
+    });
+    boundary_index
+        .map(|idx| messages[idx..].to_vec())
+        .unwrap_or(messages)
+}
+
+fn should_show_renderable_message(msg: &RenderableMessage, options: MessageRenderOptions) -> bool {
+    let RenderableMessage::Message { message, .. } = msg else {
+        return true;
+    };
+    match message {
+        Message::Progress(_) => false,
+        Message::Attachment(attachment) => !is_null_rendering_attachment(&attachment.attachment),
+        Message::User(user) => {
+            if user.is_meta && !options.is_transcript_mode && !user_contains_tool_result(user) {
+                return false;
+            }
+            true
+        }
+        Message::Assistant(_) | Message::System(_) => true,
+    }
+}
+
+fn is_null_rendering_attachment(attachment: &Attachment) -> bool {
+    matches!(
+        attachment,
+        Attachment::EditedTextFile { .. }
+            | Attachment::MaxTurnsReached { .. }
+            | Attachment::StructuredOutput { .. }
+    )
+}
+
+fn user_contains_tool_result(user: &cc_types::message::UserMessage) -> bool {
+    message_content_blocks(&user.content)
+        .iter()
+        .any(|block| matches!(block, ContentBlock::ToolResult { .. }))
+}
+
+fn reorder_messages_in_ui(messages: Vec<RenderableMessage>) -> Vec<RenderableMessage> {
+    let mut tool_results = HashMap::<String, RenderableMessage>::new();
+    for msg in &messages {
+        if let Some(tool_use_id) = tool_result_id(msg) {
+            tool_results.insert(tool_use_id.to_string(), msg.clone());
+        }
+    }
+
+    let mut result = Vec::new();
+    let mut consumed_results = HashSet::<String>::new();
+    for msg in messages {
+        if let Some(tool_use_id) = tool_use_id(&msg).map(str::to_string) {
+            result.push(msg);
+            if let Some(result_msg) = tool_results.get(&tool_use_id) {
+                result.push(result_msg.clone());
+                consumed_results.insert(tool_use_id);
+            }
+            continue;
+        }
+        if let Some(tool_use_id) = tool_result_id(&msg) {
+            if consumed_results.contains(tool_use_id) {
+                continue;
+            }
+        }
+        if is_api_error_message(&msg) {
+            if result.last().is_some_and(is_api_error_message) {
+                result.pop();
+            }
+            result.push(msg);
+            continue;
+        }
+        result.push(msg);
+    }
+
+    let last_idx = result.len().saturating_sub(1);
+    result
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, msg)| {
+            if is_api_error_message(&msg) && idx != last_idx {
+                None
+            } else {
+                Some(msg)
+            }
+        })
+        .collect()
+}
+
+fn filter_brief_messages(
+    messages: Vec<RenderableMessage>,
+    _options: MessageRenderOptions,
+) -> Vec<RenderableMessage> {
+    messages
+}
+
+fn truncate_transcript_messages(
+    messages: Vec<RenderableMessage>,
+    options: MessageRenderOptions,
+) -> Vec<RenderableMessage> {
+    const MAX_MESSAGES_TO_SHOW_IN_TRANSCRIPT_MODE: usize = 30;
+    if options.is_transcript_mode
+        && !options.show_all_in_transcript
+        && messages.len() > MAX_MESSAGES_TO_SHOW_IN_TRANSCRIPT_MODE
+    {
+        messages[messages.len() - MAX_MESSAGES_TO_SHOW_IN_TRANSCRIPT_MODE..].to_vec()
+    } else {
+        messages
+    }
+}
+
+fn apply_grouping(
+    messages: Vec<RenderableMessage>,
+    options: MessageRenderOptions,
+) -> Vec<RenderableMessage> {
+    if options.verbose {
+        return messages;
+    }
+
+    let mut groups: HashMap<(usize, String), Vec<RenderableMessage>> = HashMap::new();
+    for msg in &messages {
+        if let Some((source_index, name)) = grouping_tool_use_key(msg) {
+            groups
+                .entry((source_index, name.to_string()))
+                .or_default()
+                .push(msg.clone());
+        }
+    }
+    let valid = groups
+        .into_iter()
+        .filter(|(_, group)| group.len() >= 2)
+        .collect::<HashMap<_, _>>();
+
+    if valid.is_empty() {
+        return messages;
+    }
+
+    let mut emitted = HashSet::<(usize, String)>::new();
+    let mut grouped_tool_ids = HashSet::<String>::new();
+    for group in valid.values() {
+        for msg in group {
+            if let Some(id) = tool_use_id(msg) {
+                grouped_tool_ids.insert(id.to_string());
+            }
+        }
+    }
+
+    let mut result = Vec::new();
+    for msg in messages {
+        if let Some((source_index, name)) = grouping_tool_use_key(&msg) {
+            let key = (source_index, name.to_string());
+            if let Some(group) = valid.get(&key) {
+                if emitted.insert(key.clone()) {
+                    let tool_use_ids = group
+                        .iter()
+                        .filter_map(|msg| tool_use_id(msg).map(str::to_string))
+                        .collect::<Vec<_>>();
+                    result.push(RenderableMessage::GroupedToolUse(
+                        GroupedToolUseRenderRecord {
+                            uuid: derive_group_uuid(group[0].uuid(), "grouped"),
+                            timestamp: group[0].timestamp(),
+                            source_indices: group
+                                .iter()
+                                .filter_map(source_index_of)
+                                .collect::<HashSet<_>>()
+                                .into_iter()
+                                .collect(),
+                            tool_name: name.to_string(),
+                            tool_use_ids,
+                        },
+                    ));
+                }
+                continue;
+            }
+        }
+        if let Some(tool_use_id) = tool_result_id(&msg) {
+            if grouped_tool_ids.contains(tool_use_id) {
+                continue;
+            }
+        }
+        result.push(msg);
+    }
+
+    result
+}
+
+fn collapse_read_search_groups(
+    messages: Vec<RenderableMessage>,
+    options: MessageRenderOptions,
+) -> Vec<RenderableMessage> {
+    if options.verbose {
+        return messages;
+    }
+
+    let mut result = Vec::new();
+    let mut i = 0usize;
+    while i < messages.len() {
+        let Some(first_info) = collapsible_tool_info(&messages[i]) else {
+            result.push(messages[i].clone());
+            i += 1;
+            continue;
+        };
+
+        let mut originals = vec![messages[i].clone()];
+        let mut source_indices = HashSet::new();
+        let mut tool_use_ids = Vec::new();
+        let mut read_count = 0usize;
+        let mut search_count = 0usize;
+        let mut list_count = 0usize;
+        let mut latest_hint = None;
+        add_collapsible_info(
+            first_info,
+            &messages[i],
+            &mut source_indices,
+            &mut tool_use_ids,
+            &mut read_count,
+            &mut search_count,
+            &mut list_count,
+            &mut latest_hint,
+        );
+        i += 1;
+
+        while i < messages.len() {
+            if let Some(result_id) = tool_result_id(&messages[i]) {
+                if tool_use_ids.iter().any(|id| id == result_id) {
+                    originals.push(messages[i].clone());
+                    if let Some(source_index) = source_index_of(&messages[i]) {
+                        source_indices.insert(source_index);
+                    }
+                    i += 1;
+                    continue;
+                }
+            }
+            let Some(info) = collapsible_tool_info(&messages[i]) else {
+                break;
+            };
+            add_collapsible_info(
+                info,
+                &messages[i],
+                &mut source_indices,
+                &mut tool_use_ids,
+                &mut read_count,
+                &mut search_count,
+                &mut list_count,
+                &mut latest_hint,
+            );
+            originals.push(messages[i].clone());
+            i += 1;
+        }
+
+        let tool_count = read_count + search_count + list_count;
+        if tool_count >= 2 {
+            result.push(RenderableMessage::CollapsedReadSearch(
+                CollapsedReadSearchRenderRecord {
+                    uuid: derive_group_uuid(originals[0].uuid(), "collapsed"),
+                    timestamp: originals[0].timestamp(),
+                    source_indices: source_indices.into_iter().collect(),
+                    tool_use_ids,
+                    read_count,
+                    search_count,
+                    list_count,
+                    latest_hint,
+                },
+            ));
+        } else {
+            result.extend(originals);
+        }
+    }
+    result
+}
+
+#[derive(Debug, Clone)]
+struct CollapsibleToolInfo {
+    tool_use_ids: Vec<String>,
+    read_count: usize,
+    search_count: usize,
+    list_count: usize,
+    hint: Option<String>,
+}
+
+fn add_collapsible_info(
+    info: CollapsibleToolInfo,
+    msg: &RenderableMessage,
+    source_indices: &mut HashSet<usize>,
+    tool_use_ids: &mut Vec<String>,
+    read_count: &mut usize,
+    search_count: &mut usize,
+    list_count: &mut usize,
+    latest_hint: &mut Option<String>,
+) {
+    if let Some(source_index) = source_index_of(msg) {
+        source_indices.insert(source_index);
+    }
+    tool_use_ids.extend(info.tool_use_ids);
+    *read_count += info.read_count;
+    *search_count += info.search_count;
+    *list_count += info.list_count;
+    if info.hint.is_some() {
+        *latest_hint = info.hint;
+    }
+}
+
+fn collapsible_tool_info(msg: &RenderableMessage) -> Option<CollapsibleToolInfo> {
+    match msg {
+        RenderableMessage::Message {
+            message: Message::Assistant(assistant),
+            ..
+        } => {
+            let block = assistant.content.first()?;
+            let (ContentBlock::ToolUse { id, name, input }
+            | ContentBlock::ServerToolUse { id, name, input }) = block
+            else {
+                return None;
+            };
+            collapsible_info_for_tool(id, name, input)
+        }
+        RenderableMessage::GroupedToolUse(group) => {
+            let kind = collapsible_kind_for_tool(&group.tool_name)?;
+            let (read_count, search_count, list_count) =
+                counts_for_kind(kind, group.tool_use_ids.len());
+            Some(CollapsibleToolInfo {
+                tool_use_ids: group.tool_use_ids.clone(),
+                read_count,
+                search_count,
+                list_count,
+                hint: Some(group.tool_name.clone()),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn collapsible_info_for_tool(
+    id: &str,
+    name: &str,
+    input: &serde_json::Value,
+) -> Option<CollapsibleToolInfo> {
+    let kind = collapsible_kind_for_tool(name)?;
+    let (read_count, search_count, list_count) = counts_for_kind(kind, 1);
+    Some(CollapsibleToolInfo {
+        tool_use_ids: vec![id.to_string()],
+        read_count,
+        search_count,
+        list_count,
+        hint: tool_primary_input(name, input),
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CollapsibleKind {
+    Read,
+    Search,
+    List,
+}
+
+fn collapsible_kind_for_tool(name: &str) -> Option<CollapsibleKind> {
+    match name {
+        "Read" => Some(CollapsibleKind::Read),
+        "Grep" | "Glob" | "WebSearch" => Some(CollapsibleKind::Search),
+        "LS" | "List" => Some(CollapsibleKind::List),
+        _ => None,
+    }
+}
+
+fn counts_for_kind(kind: CollapsibleKind, count: usize) -> (usize, usize, usize) {
+    match kind {
+        CollapsibleKind::Read => (count, 0, 0),
+        CollapsibleKind::Search => (0, count, 0),
+        CollapsibleKind::List => (0, 0, count),
+    }
+}
+
+fn grouping_tool_use_key(msg: &RenderableMessage) -> Option<(usize, &str)> {
+    let RenderableMessage::Message {
+        message: Message::Assistant(assistant),
+        source_index,
+    } = msg
+    else {
+        return None;
+    };
+    let (ContentBlock::ToolUse { name, .. } | ContentBlock::ServerToolUse { name, .. }) =
+        assistant.content.first()?
+    else {
+        return None;
+    };
+    if is_groupable_tool(name) {
+        Some((*source_index, name.as_str()))
+    } else {
+        None
+    }
+}
+
+fn is_groupable_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "Task" | "Agent" | "TodoWrite" | "Read" | "Grep" | "Glob"
+    )
+}
+
+fn source_index_of(msg: &RenderableMessage) -> Option<usize> {
+    match msg {
+        RenderableMessage::Message { source_index, .. } => Some(*source_index),
+        RenderableMessage::GroupedToolUse(group) => group.source_indices.first().copied(),
+        RenderableMessage::CollapsedReadSearch(group) => group.source_indices.first().copied(),
+    }
+}
+
+fn tool_use_id(msg: &RenderableMessage) -> Option<&str> {
+    let RenderableMessage::Message {
+        message: Message::Assistant(assistant),
+        ..
+    } = msg
+    else {
+        return None;
+    };
+    match assistant.content.first()? {
+        ContentBlock::ToolUse { id, .. } | ContentBlock::ServerToolUse { id, .. } => Some(id),
+        _ => None,
+    }
+}
+
+fn tool_result_id(msg: &RenderableMessage) -> Option<&str> {
+    let RenderableMessage::Message {
+        message: Message::User(user),
+        ..
+    } = msg
+    else {
+        return None;
+    };
+    message_content_blocks(&user.content)
+        .iter()
+        .find_map(|block| match block {
+            ContentBlock::ToolResult { tool_use_id, .. } => Some(tool_use_id.as_str()),
+            _ => None,
+        })
+}
+
+fn is_api_error_message(msg: &RenderableMessage) -> bool {
+    matches!(
+        msg,
+        RenderableMessage::Message {
+            message: Message::System(cc_types::message::SystemMessage {
+                subtype: SystemSubtype::ApiError { .. },
+                ..
+            }),
+            ..
+        }
+    )
+}
+
+fn find_latest_bash_output_uuid(messages: &[RenderableMessage]) -> Option<uuid::Uuid> {
+    messages.iter().rev().find_map(|msg| {
+        let RenderableMessage::Message {
+            message: Message::User(user),
+            ..
+        } = msg
+        else {
+            return None;
+        };
+        message_content_blocks(&user.content)
+            .iter()
+            .find_map(|block| {
+                let ContentBlock::Text { text } = block else {
+                    return None;
+                };
+                (text.starts_with("<bash-stdout") || text.starts_with("<bash-stderr"))
+                    .then_some(user.uuid)
+            })
+    })
+}
+
+fn find_last_thinking_block_id(messages: &[RenderableMessage]) -> Option<String> {
+    messages.iter().rev().find_map(|msg| {
+        let RenderableMessage::Message {
+            message: Message::Assistant(assistant),
+            ..
+        } = msg
+        else {
+            return None;
+        };
+        assistant
+            .content
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(idx, block)| {
+                matches!(
+                    block,
+                    ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. }
+                )
+                .then(|| format!("{}:{idx}", assistant.uuid))
+            })
+    })
+}
+
+fn message_content_blocks(content: &MessageContent) -> Vec<&ContentBlock> {
+    match content {
+        MessageContent::Text(_) => Vec::new(),
+        MessageContent::Blocks(blocks) => blocks.iter().collect(),
+    }
+}
+
+fn derive_group_uuid(parent: uuid::Uuid, salt: &str) -> uuid::Uuid {
+    uuid_from_parent_and_salt(parent, salt)
+}
+
+fn uuid_from_parent_and_salt(parent: uuid::Uuid, salt: &str) -> uuid::Uuid {
+    let mut bytes = *parent.as_bytes();
+    for (idx, byte) in salt.as_bytes().iter().enumerate() {
+        bytes[idx % bytes.len()] ^= *byte;
+    }
+    uuid::Uuid::from_bytes(bytes)
+}
+
+fn message_type_key(message: &Message) -> &'static str {
+    match message {
+        Message::User(_) => "u",
+        Message::Assistant(_) => "a",
+        Message::System(_) => "s",
+        Message::Progress(_) => "p",
+        Message::Attachment(_) => "t",
+    }
 }
 
 impl ToolUseRenderRecord {
@@ -139,7 +1091,7 @@ impl ToolUseRenderRecord {
     reason = "message renderer takes explicit ratatui render state to avoid per-frame allocations"
 )]
 pub fn render_messages(
-    messages: &[Message],
+    _messages: &[Message],
     area: Rect,
     buf: &mut Buffer,
     theme: &Theme,
@@ -148,7 +1100,8 @@ pub fn render_messages(
     vscroll: &VirtualScroll,
     render_context: &MessageRenderContext,
 ) {
-    if area.height == 0 || area.width == 0 || messages.is_empty() {
+    let renderable_messages = render_context.renderable_messages();
+    if area.height == 0 || area.width == 0 || renderable_messages.is_empty() {
         return;
     }
 
@@ -162,12 +1115,17 @@ pub fn render_messages(
 
     let mut y = 0usize; // current row in the viewport
 
-    for idx in start..end.min(messages.len()) {
-        let mut msg_lines =
-            render_single_message_wrapped(&messages[idx], idx, theme, area.width, render_context);
+    for idx in start..end.min(renderable_messages.len()) {
+        let mut msg_lines = render_renderable_message_wrapped(
+            &renderable_messages[idx],
+            idx,
+            theme,
+            area.width,
+            render_context,
+        );
         if streaming
-            && idx == messages.len().saturating_sub(1)
-            && matches!(&messages[idx], Message::Assistant(_))
+            && idx == renderable_messages.len().saturating_sub(1)
+            && renderable_messages[idx].is_assistant_message()
         {
             if let Some(last_line) = msg_lines.last_mut() {
                 last_line.spans.push(Span::styled(" ▌", theme.dim));
@@ -175,7 +1133,7 @@ pub fn render_messages(
         }
 
         // Separator blank line (between messages, not after last)
-        let has_sep = idx < messages.len() - 1;
+        let has_sep = idx < renderable_messages.len() - 1;
         let total_for_msg = msg_lines.len() + if has_sep { 1 } else { 0 };
 
         let skip = if idx == start { skip_in_first } else { 0 };
@@ -196,35 +1154,38 @@ pub fn render_messages(
     }
 }
 
-fn render_single_message_wrapped<'a>(
-    msg: &Message,
+pub(crate) fn render_renderable_message_wrapped<'a>(
+    msg: &RenderableMessage,
     index: usize,
     theme: &Theme,
     width: u16,
     render_context: &MessageRenderContext,
 ) -> Vec<Line<'a>> {
-    render_single_message_for_layout(msg, index, theme, width as usize, render_context)
+    render_renderable_message_for_layout(msg, index, theme, width as usize, render_context)
         .into_iter()
         .flat_map(|line| wrap_line_to_width(&line, width))
         .collect()
 }
 
-pub(crate) fn render_single_message_for_layout<'a>(
-    msg: &Message,
+pub(crate) fn render_renderable_message_for_layout<'a>(
+    msg: &RenderableMessage,
     index: usize,
     theme: &Theme,
     width: usize,
     render_context: &MessageRenderContext,
 ) -> Vec<Line<'a>> {
-    let mut lines = render_single_message_with_context(msg, index, theme, width, render_context);
-    if render_context.selected_message == Some(index) {
-        decorate_selected_message(
-            &mut lines,
-            msg,
-            theme,
-            render_context.selected_expanded,
-            width,
-        );
+    let mut lines =
+        render_renderable_message_with_context(msg, index, theme, width, render_context);
+    if msg.has_source_index(render_context.selected_message) {
+        if let RenderableMessage::Message { message, .. } = msg {
+            decorate_selected_message(
+                &mut lines,
+                message,
+                theme,
+                render_context.selected_expanded,
+                width,
+            );
+        }
     }
     lines
 }
@@ -248,10 +1209,63 @@ pub(in crate::ui) fn render_single_message_with_context<'a>(
         Message::User(user_msg) => {
             render_user_message(user_msg, theme, index, width, render_context)
         }
-        Message::Assistant(assistant_msg) => render_assistant_message(assistant_msg, theme),
+        Message::Assistant(assistant_msg) => {
+            render_assistant_message(assistant_msg, theme, render_context)
+        }
         Message::System(system_msg) => render_system_message(system_msg, theme),
         Message::Progress(progress_msg) => render_progress_message(progress_msg, theme),
         Message::Attachment(attachment_msg) => render_attachment_message(attachment_msg, theme),
+    }
+}
+
+pub(in crate::ui) fn render_renderable_message_with_context<'a>(
+    msg: &RenderableMessage,
+    index: usize,
+    theme: &Theme,
+    width: usize,
+    render_context: &MessageRenderContext,
+) -> Vec<Line<'a>> {
+    match msg {
+        RenderableMessage::Message { message, .. } => {
+            render_single_message_with_context(message, index, theme, width, render_context)
+        }
+        RenderableMessage::GroupedToolUse(group) => {
+            let resolved_count = group
+                .tool_use_ids
+                .iter()
+                .filter(|id| render_context.lookups.resolved_tool_use_ids.contains(*id))
+                .count();
+            let error_count = group
+                .tool_use_ids
+                .iter()
+                .filter(|id| render_context.lookups.errored_tool_use_ids.contains(*id))
+                .count();
+            render_grouped_tool_use_lines(
+                &GroupedToolUseView {
+                    tool_name: group.tool_name.clone(),
+                    count: group.tool_use_ids.len(),
+                    resolved_count,
+                    error_count,
+                },
+                theme,
+            )
+        }
+        RenderableMessage::CollapsedReadSearch(group) => {
+            let active = group
+                .tool_use_ids
+                .iter()
+                .any(|id| render_context.lookups.in_progress_tool_use_ids.contains(id));
+            render_collapsed_read_search_lines(
+                &CollapsedReadSearchView {
+                    read_count: group.read_count,
+                    search_count: group.search_count,
+                    list_count: group.list_count,
+                    active,
+                    latest_hint: group.latest_hint.clone(),
+                },
+                theme,
+            )
+        }
     }
 }
 
@@ -383,6 +1397,9 @@ fn render_user_message<'a>(
             ) {
                 return tool_lines;
             }
+            if let Some(image_lines) = render_user_image_blocks(blocks, theme) {
+                return image_lines;
+            }
             blocks
                 .iter()
                 .filter_map(content_block_copy_text)
@@ -390,6 +1407,12 @@ fn render_user_message<'a>(
                 .join("\n")
         }
     };
+
+    if let Some(rendered) =
+        render_tagged_user_text(&content_text, msg.uuid, render_context, theme, width)
+    {
+        return rendered;
+    }
 
     if content_text.trim() == "[Request interrupted by user]" {
         return vec![Line::from(Span::styled(
@@ -422,6 +1445,54 @@ fn render_user_message<'a>(
     }
 
     lines
+}
+
+fn render_user_image_blocks<'a>(blocks: &[ContentBlock], theme: &Theme) -> Option<Vec<Line<'a>>> {
+    let images = blocks
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Image { source } => Some(image_reference(source)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    (!images.is_empty()).then(|| {
+        images
+            .into_iter()
+            .map(|image| Line::from(Span::styled(image, theme.dim)))
+            .collect()
+    })
+}
+
+fn render_tagged_user_text<'a>(
+    text: &str,
+    uuid: uuid::Uuid,
+    render_context: &MessageRenderContext,
+    theme: &Theme,
+    width: usize,
+) -> Option<Vec<Line<'a>>> {
+    let trimmed = text.trim();
+    if !(trimmed.starts_with("<bash-stdout") || trimmed.starts_with("<bash-stderr")) {
+        return None;
+    }
+    let output = extract_xmlish_body(trimmed).unwrap_or(trimmed);
+    let rendered = render_user_bash_output_message_with_options(
+        "bash",
+        output,
+        ShellOutputRenderOptions {
+            width: width.max(20),
+            expanded: render_context.lookups.latest_bash_output_uuid == Some(uuid),
+            total_lines: Some(output.lines().count()),
+            total_bytes: Some(output.len()),
+            ..ShellOutputRenderOptions::default()
+        },
+    );
+    Some(styled_text_lines(&rendered, theme.tool_result))
+}
+
+fn extract_xmlish_body(text: &str) -> Option<&str> {
+    let start = text.find('>')? + 1;
+    let end = text.rfind("</").unwrap_or(text.len());
+    Some(text[start..end].trim())
 }
 
 fn render_tool_result_user_message<'a>(
@@ -475,19 +1546,34 @@ fn render_tool_result_user_message<'a>(
                 return Some(lines);
             }
         }
-        return Some(styled_text_lines(
-            &pretty_json_or_raw(preview),
-            theme.tool_result,
-        ));
     }
 
     let text = tool_result_content_text(tool_result.1);
-    let style = if tool_result.2 {
-        theme.error
-    } else {
-        theme.tool_result
-    };
-    Some(styled_text_lines(&text, style))
+    let mut block = ToolResultBlock::new(tool_result.0.clone(), tool_result.2, text.clone());
+    block.tool_use_result = msg
+        .tool_use_result
+        .clone()
+        .or_else(|| (!text.is_empty()).then_some(text));
+    let mut lookups = UserToolResultLookups::new();
+    for (id, record) in &render_context.lookups.tool_uses {
+        lookups.tool_use_by_tool_use_id.insert(
+            id.clone(),
+            UserToolUseRecord {
+                tool_name: record.tool_name.clone(),
+                input: record.input.clone(),
+            },
+        );
+    }
+    let tools: cc_engine::types::tool::Tools = Vec::new();
+    Some(render_user_tool_result_message(
+        &block,
+        &lookups,
+        &tools,
+        theme,
+        render_context.options.verbose,
+        width,
+        render_context.options.is_transcript_mode,
+    ))
 }
 
 fn render_file_edit_preview<'a>(preview: &str, theme: &Theme) -> Option<Vec<Line<'a>>> {
@@ -546,13 +1632,6 @@ fn tool_result_content_text(content: &ToolResultContent) -> String {
     }
 }
 
-fn pretty_json_or_raw(raw: &str) -> String {
-    serde_json::from_str::<serde_json::Value>(raw)
-        .ok()
-        .and_then(|value| serde_json::to_string_pretty(&value).ok())
-        .unwrap_or_else(|| raw.to_string())
-}
-
 fn styled_text_lines<'a>(text: &str, style: Style) -> Vec<Line<'a>> {
     if text.is_empty() {
         return vec![Line::from(Span::styled("<empty tool output>", style))];
@@ -584,6 +1663,7 @@ fn api_error_display_text(text: &str) -> String {
 fn render_assistant_message<'a>(
     msg: &cc_types::message::AssistantMessage,
     theme: &Theme,
+    render_context: &MessageRenderContext,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
 
@@ -657,15 +1737,11 @@ fn render_assistant_message<'a>(
                 first_block = false;
             }
 
-            ContentBlock::ToolUse { id: _, name, input } => {
+            ContentBlock::ToolUse { id, name, input } => {
                 let input_json = serde_json::to_string(input).unwrap_or_else(|_| input.to_string());
-                let rendered = render_assistant_tool_use_message(
-                    name,
-                    &input_json,
-                    ToolUseState::InProgress,
-                    false,
-                    theme,
-                );
+                let state = tool_state_for_id(id, render_context);
+                let rendered =
+                    render_assistant_tool_use_message(name, &input_json, state, false, theme);
                 for (i, line) in rendered.lines().enumerate() {
                     lines.push(Line::from(vec![
                         Span::raw(if first_block && i == 0 {
@@ -679,15 +1755,11 @@ fn render_assistant_message<'a>(
                 first_block = false;
             }
 
-            ContentBlock::ServerToolUse { id: _, name, input } => {
+            ContentBlock::ServerToolUse { id, name, input } => {
                 let input_json = serde_json::to_string(input).unwrap_or_else(|_| input.to_string());
-                let rendered = render_assistant_tool_use_message(
-                    name,
-                    &input_json,
-                    ToolUseState::InProgress,
-                    false,
-                    theme,
-                );
+                let state = tool_state_for_id(id, render_context);
+                let rendered =
+                    render_assistant_tool_use_message(name, &input_json, state, false, theme);
                 for (i, line) in rendered.lines().enumerate() {
                     lines.push(Line::from(vec![
                         Span::raw(if first_block && i == 0 {
@@ -757,39 +1829,43 @@ fn render_assistant_message<'a>(
                 thinking,
                 signature: _,
             } => {
-                // Render thinking in dim/italic, collapsible.
-                if !thinking.is_empty() {
-                    lines.push(Line::from(vec![
-                        Span::raw(if first_block { "" } else { "        " }),
-                        Span::styled("[thinking] ", theme.thinking),
-                    ]));
-                    // Show first 3 lines of thinking content.
-                    for tl in thinking.lines().take(3) {
-                        lines.push(Line::from(vec![
-                            Span::raw("          "),
-                            Span::styled(tl.to_string(), theme.thinking),
-                        ]));
-                    }
-                    let thinking_line_count = thinking.lines().count();
-                    if thinking_line_count > 3 {
-                        lines.push(Line::from(vec![
-                            Span::raw("          "),
-                            Span::styled(
-                                format!("... {} more lines", thinking_line_count - 3),
-                                theme.dim,
-                            ),
-                        ]));
+                let thinking_lines = render_assistant_thinking_lines(
+                    &AssistantThinkingView {
+                        thinking: thinking.clone(),
+                        verbose: render_context.options.verbose,
+                        is_transcript_mode: render_context.options.is_transcript_mode,
+                    },
+                    theme,
+                );
+                for (i, line) in thinking_lines.into_iter().enumerate() {
+                    if first_block && i == 0 {
+                        lines.push(line);
+                    } else {
+                        let mut spans = vec![Span::raw("        ")];
+                        spans.extend(line.spans);
+                        lines.push(Line::from(spans));
                     }
                 }
-                first_block = false;
+                if !thinking.is_empty()
+                    && (render_context.options.verbose || render_context.options.is_transcript_mode)
+                {
+                    first_block = false;
+                }
             }
 
             ContentBlock::RedactedThinking { .. } => {
-                lines.push(Line::from(vec![
-                    Span::raw(if first_block { "" } else { "        " }),
-                    Span::styled("[redacted thinking]", theme.thinking),
-                ]));
-                first_block = false;
+                if render_context.options.verbose || render_context.options.is_transcript_mode {
+                    for (i, line) in crate::ui::messages::assistant_redacted_thinking_message::render_assistant_redacted_thinking_lines(theme).into_iter().enumerate() {
+                        if first_block && i == 0 {
+                            lines.push(line);
+                        } else {
+                            let mut spans = vec![Span::raw("        ")];
+                            spans.extend(line.spans);
+                            lines.push(Line::from(spans));
+                        }
+                    }
+                    first_block = false;
+                }
             }
 
             ContentBlock::Image { source } => {
@@ -804,6 +1880,14 @@ fn render_assistant_message<'a>(
 
     // If there was no content at all, at least show the name.
     if lines.is_empty() {
+        if msg.content.iter().all(|block| {
+            matches!(
+                block,
+                ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. }
+            )
+        }) {
+            return Vec::new();
+        }
         lines.push(Line::from(vec![prefix]));
     }
 
@@ -816,6 +1900,24 @@ fn render_assistant_message<'a>(
     }
 
     lines
+}
+
+fn tool_state_for_id(tool_use_id: &str, render_context: &MessageRenderContext) -> ToolUseState {
+    if render_context
+        .lookups
+        .errored_tool_use_ids
+        .contains(tool_use_id)
+    {
+        ToolUseState::Error
+    } else if render_context
+        .lookups
+        .resolved_tool_use_ids
+        .contains(tool_use_id)
+    {
+        ToolUseState::Resolved
+    } else {
+        ToolUseState::InProgress
+    }
 }
 
 // ── System messages ─────────────────────────────────────────────────────
@@ -861,6 +1963,14 @@ fn render_system_message<'a>(
             render_system_text_message("api_error", detail, theme)
         };
         return plain_text_to_lines(&rendered, theme.error);
+    }
+
+    if matches!(&msg.subtype, SystemSubtype::MicrocompactBoundary { .. }) {
+        return Vec::new();
+    }
+
+    if matches!(&msg.subtype, SystemSubtype::CompactBoundary { .. }) {
+        return render_compact_boundary_lines(theme);
     }
 
     if matches!(
@@ -1117,7 +2227,8 @@ mod tests {
     use crate::ui::theme::Theme;
     use cc_types::message::{
         ApiErrorInfo, AssistantMessage, CompactMetadata, ContentBlock, ImageSource, Message,
-        MessageContent, SystemMessage, SystemSubtype, ToolResultContent, UserMessage,
+        MessageContent, MicrocompactMetadata, SystemMessage, SystemSubtype, ToolResultContent,
+        UserMessage,
     };
     use serde_json::json;
 
@@ -1218,7 +2329,7 @@ mod tests {
             content: String::new(),
         });
         assert!(lines_to_text(render_single_message(&compact, &theme))
-            .contains("context compacted: 12000 → 4000 tokens"));
+            .contains("✻ Conversation compacted (ctrl+o for history)"));
 
         let interrupted = Message::User(UserMessage {
             uuid: uuid::Uuid::new_v4(),
@@ -1284,6 +2395,149 @@ mod tests {
             rendered,
             "Error occurred: Provider proxy error (HTTP 403): forbidden"
         );
+    }
+
+    #[test]
+    fn thinking_visibility_matches_prompt_and_transcript_modes() {
+        let message = Message::Assistant(AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "assistant".to_string(),
+            content: vec![ContentBlock::Thinking {
+                thinking: "inspect files".to_string(),
+                signature: None,
+            }],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        });
+
+        let prompt = render_single_message(&message, &Theme::default());
+        assert!(prompt.is_empty());
+
+        let transcript_context = super::build_message_render_context_with_options(
+            std::slice::from_ref(&message),
+            None,
+            false,
+            super::MessageRenderOptions {
+                verbose: false,
+                is_transcript_mode: true,
+                show_all_in_transcript: true,
+            },
+        );
+        let transcript = super::render_single_message_with_context(
+            &message,
+            0,
+            &Theme::default(),
+            80,
+            &transcript_context,
+        );
+        let rendered = lines_to_text(transcript);
+        assert!(rendered.contains("∴ Thinking"));
+        assert!(rendered.contains("inspect files"));
+    }
+
+    #[test]
+    fn render_pipeline_collapses_read_search_and_hides_microcompact() {
+        let read_id = "toolu_read".to_string();
+        let grep_id = "toolu_grep".to_string();
+        let messages = vec![
+            Message::System(SystemMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: 0,
+                subtype: SystemSubtype::MicrocompactBoundary {
+                    microcompact_metadata: Some(MicrocompactMetadata {
+                        trigger: "test".to_string(),
+                        pre_tokens: 100,
+                        tokens_saved: 50,
+                        compacted_tool_ids: vec![read_id.clone()],
+                        cleared_attachment_uuids: Vec::new(),
+                    }),
+                },
+                content: String::new(),
+            }),
+            Message::Assistant(AssistantMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: 1,
+                role: "assistant".to_string(),
+                content: vec![
+                    ContentBlock::ToolUse {
+                        id: read_id.clone(),
+                        name: "Read".to_string(),
+                        input: json!({ "file_path": "src/lib.rs" }),
+                    },
+                    ContentBlock::ToolUse {
+                        id: grep_id.clone(),
+                        name: "Grep".to_string(),
+                        input: json!({ "pattern": "fn main" }),
+                    },
+                ],
+                usage: None,
+                stop_reason: None,
+                is_api_error_message: false,
+                api_error: None,
+                cost_usd: 0.0,
+            }),
+            Message::User(UserMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: 2,
+                role: "user".to_string(),
+                content: MessageContent::Blocks(vec![ContentBlock::ToolResult {
+                    tool_use_id: read_id,
+                    content: ToolResultContent::Text("ok".to_string()),
+                    is_error: false,
+                }]),
+                is_meta: true,
+                tool_use_result: Some("ok".to_string()),
+                source_tool_assistant_uuid: None,
+            }),
+            Message::User(UserMessage {
+                uuid: uuid::Uuid::new_v4(),
+                timestamp: 3,
+                role: "user".to_string(),
+                content: MessageContent::Blocks(vec![ContentBlock::ToolResult {
+                    tool_use_id: grep_id,
+                    content: ToolResultContent::Text("match".to_string()),
+                    is_error: false,
+                }]),
+                is_meta: true,
+                tool_use_result: Some("match".to_string()),
+                source_tool_assistant_uuid: None,
+            }),
+        ];
+
+        let context = super::build_message_render_context_with_options(
+            &messages,
+            None,
+            false,
+            super::MessageRenderOptions::default(),
+        );
+        let rendered = context
+            .renderable_messages()
+            .iter()
+            .flat_map(|message| {
+                super::render_renderable_message_with_context(
+                    message,
+                    0,
+                    &Theme::default(),
+                    80,
+                    &context,
+                )
+            })
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(!rendered.contains("microcompact"));
+        assert!(rendered.contains("Read 1 file"));
+        assert!(rendered.contains("Searched for 1 pattern"));
     }
 
     #[test]

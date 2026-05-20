@@ -9,10 +9,12 @@ pub mod callbacks;
 pub mod event_class;
 pub mod ingress;
 pub mod query_runner;
+pub mod requests;
 pub mod sdk_mapping;
 pub mod sink;
 pub mod transport;
 
 pub use callbacks::{PendingPermissions, PendingQuestions};
 pub use event_class::{EventClass, QueuePressureDiagnostic};
+pub use requests::{AppServerRequests, PendingRequest};
 pub use sink::FrontendSink;

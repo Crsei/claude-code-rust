@@ -1,9 +1,9 @@
 //! Agent list rendering and selection state.
 
 use super::types::{AgentDefinition, AgentSourceFilter};
+use super::utils::filter_agents;
 #[cfg(test)]
 use super::utils::group_agents_by_source;
-use super::utils::filter_agents;
 #[cfg(test)]
 use super::utils::{get_agent_source_display_name, memory_label, model_label, selection_marker};
 

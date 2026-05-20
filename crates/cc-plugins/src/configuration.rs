@@ -86,7 +86,11 @@ pub fn get_plugin_config_schema(config: Option<&Value>) -> ConfigSchema {
     let required: Vec<String> = config
         .get("required")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let properties = config
@@ -115,7 +119,10 @@ pub fn get_plugin_config_schema(config: Option<&Value>) -> ConfigSchema {
                         .unwrap_or_default(),
                     minimum: prop.get("minimum").and_then(|v| v.as_f64()),
                     maximum: prop.get("maximum").and_then(|v| v.as_f64()),
-                    pattern: prop.get("pattern").and_then(|v| v.as_str()).map(String::from),
+                    pattern: prop
+                        .get("pattern")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                 })
                 .collect()
         })

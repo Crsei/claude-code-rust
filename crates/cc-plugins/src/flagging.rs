@@ -51,7 +51,12 @@ impl PluginFlagging {
     }
 
     /// Flag a plugin with the given reason.
-    pub fn flag_plugin(&self, plugin_id: impl Into<String>, reason: FlagReason, detail: impl Into<String>) {
+    pub fn flag_plugin(
+        &self,
+        plugin_id: impl Into<String>,
+        reason: FlagReason,
+        detail: impl Into<String>,
+    ) {
         use std::time::{SystemTime, UNIX_EPOCH};
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -136,7 +141,10 @@ mod tests {
 
         let flags = state.get_flagged_plugins();
         assert_eq!(flags.len(), 1);
-        assert_eq!(flags[0].reason, FlagReason::Vulnerability("CVE-2024".into()));
+        assert_eq!(
+            flags[0].reason,
+            FlagReason::Vulnerability("CVE-2024".into())
+        );
     }
 
     #[test]

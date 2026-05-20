@@ -479,10 +479,7 @@ pub fn collect_config_diagnostics(loaded: &LoadedSettings) -> Vec<ConfigDiagnost
     }
 
     // Shadowed rules.
-    let managed_perms = loaded
-        .managed
-        .as_ref()
-        .and_then(|r| r.permissions.clone());
+    let managed_perms = loaded.managed.as_ref().and_then(|r| r.permissions.clone());
     let shadowed = permission_validation::find_shadowed_rules(
         &loaded.effective.permissions,
         managed_perms.as_ref(),
@@ -722,7 +719,9 @@ mod tests {
             "expected at least some diagnostics from empty settings, got 0"
         );
         assert!(
-            diagnostics.iter().any(|d| d.code.as_deref() == Some("missing-model")),
+            diagnostics
+                .iter()
+                .any(|d| d.code.as_deref() == Some("missing-model")),
             "expected missing-model tip in diagnostics"
         );
     }

@@ -123,9 +123,7 @@ fn check_dangerous_allow(rule: &str) -> Option<PermissionValidationWarning> {
 }
 
 /// Validate auto mode classifier rules.
-pub fn check_auto_mode_settings(
-    settings: &AutoModeSettings,
-) -> Vec<PermissionValidationWarning> {
+pub fn check_auto_mode_settings(settings: &AutoModeSettings) -> Vec<PermissionValidationWarning> {
     let mut warnings = Vec::new();
 
     if settings.allow.is_empty() && settings.soft_deny.is_empty() && settings.environment.is_empty()
@@ -222,8 +220,9 @@ mod tests {
             ..Default::default()
         };
         let warnings = validate_permission_settings(&settings, &SourceMap::new());
-        assert!(warnings.iter().any(|w| w.field == "permissions.allow"
-            && w.message.contains("appears in both")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.field == "permissions.allow" && w.message.contains("appears in both")));
     }
 
     #[test]
@@ -233,9 +232,7 @@ mod tests {
             ..Default::default()
         };
         let warnings = validate_permission_settings(&settings, &SourceMap::new());
-        assert!(warnings
-            .iter()
-            .any(|w| w.message.contains("dangerous")));
+        assert!(warnings.iter().any(|w| w.message.contains("dangerous")));
     }
 
     #[test]
@@ -253,9 +250,7 @@ mod tests {
             ..Default::default()
         };
         let warnings = check_auto_mode_settings(&auto);
-        assert!(warnings
-            .iter()
-            .any(|w| w.message.contains("very short")));
+        assert!(warnings.iter().any(|w| w.message.contains("very short")));
     }
 
     #[test]
@@ -317,8 +312,9 @@ mod tests {
             ..Default::default()
         };
         let warnings = validate_permission_settings(&settings, &SourceMap::new());
-        assert!(warnings.iter().any(|w| w.field == "permissions.defaultMode"
-            && w.severity == WarningSeverity::Info));
+        assert!(warnings
+            .iter()
+            .any(|w| w.field == "permissions.defaultMode" && w.severity == WarningSeverity::Info));
     }
 
     #[test]

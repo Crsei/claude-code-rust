@@ -155,7 +155,6 @@ cargo check --workspace --all-targets --message-format short
 退出条件：
 
 - `cargo check --workspace --all-targets --message-format short` 没有 Rust source warning。
-- 环境 warning 只剩已记录的 `npm` 缺失 build-script 提示，或本机安装 npm 后完全无 warning。
 - `cargo build --workspace --release` 仍保持无 Rust warning。
 
 验证：

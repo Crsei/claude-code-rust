@@ -8,9 +8,9 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use super::{get_all_plugins, register_plugin, unregister_plugin};
 use crate::loader::load_installed_plugins;
 use crate::{PluginEntry, PluginStatus};
-use super::{get_all_plugins, register_plugin, unregister_plugin};
 
 /// Report of reconciliation findings.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -196,7 +196,10 @@ fn detect_orphaned_cache_dirs(
             let referenced = disk_by_id.values().any(|p| {
                 p.cache_path
                     .as_ref()
-                    .map(|cp| cp.starts_with(&path) || path_str.contains(&cp.to_string_lossy().to_string()))
+                    .map(|cp| {
+                        cp.starts_with(&path)
+                            || path_str.contains(&cp.to_string_lossy().to_string())
+                    })
                     .unwrap_or(false)
             });
 
@@ -262,7 +265,9 @@ mod tests {
             name: id.to_string(),
             version: version.to_string(),
             description: "".to_string(),
-            source: crate::PluginSource::Local { path: "/tmp".into() },
+            source: crate::PluginSource::Local {
+                path: "/tmp".into(),
+            },
             status: PluginStatus::Installed,
             marketplace: None,
             cache_path: None,

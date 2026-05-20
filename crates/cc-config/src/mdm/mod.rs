@@ -132,9 +132,7 @@ pub fn load_managed_settings_policy() -> Result<ManagedSettingsConfig> {
         None => {
             // No managed file; check env for enforcement override.
             let enforcement_active = std::env::var(constants::CC_RUST_ENFORCE_POLICY)
-                .map(|v| {
-                    v.eq_ignore_ascii_case("true") || v == "1"
-                })
+                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
                 .unwrap_or(false);
 
             Ok(ManagedSettingsConfig {
@@ -151,24 +149,19 @@ pub fn load_managed_settings_policy() -> Result<ManagedSettingsConfig> {
             let has_enforcement = managed.enforcement.is_some();
             let enforcement_active = has_enforcement
                 || std::env::var(constants::CC_RUST_ENFORCE_POLICY)
-                    .map(|v| {
-                        v.eq_ignore_ascii_case("true") || v == "1"
-                    })
+                    .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
                     .unwrap_or(false);
 
-            let enforcement_level = managed
-                .enforcement
-                .clone()
-                .unwrap_or_else(|| {
-                    if enforcement_active {
-                        EnforcementLevel::default()
-                    } else {
-                        EnforcementLevel {
-                            level: Enforcement::Strict,
-                            overridable: true, // not enforced by default
-                        }
+            let enforcement_level = managed.enforcement.clone().unwrap_or_else(|| {
+                if enforcement_active {
+                    EnforcementLevel::default()
+                } else {
+                    EnforcementLevel {
+                        level: Enforcement::Strict,
+                        overridable: true, // not enforced by default
                     }
-                });
+                }
+            });
 
             Ok(ManagedSettingsConfig {
                 active: true,

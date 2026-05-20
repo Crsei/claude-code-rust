@@ -10,8 +10,6 @@
 //! freely across the JSONL/SSE boundary between the Rust backend and any
 //! frontend process.
 
-#![allow(dead_code)] // Types are pre-defined for upcoming IPC extension tasks
-
 use std::collections::HashMap;
 
 use cc_types::mcp::McpOAuthConfig;

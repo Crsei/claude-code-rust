@@ -14,12 +14,7 @@ pub const MANAGED_SETTINGS_FILE_NAME: &str = "managed-settings.json";
 
 /// Top-level managed policy key names that are extracted from the managed
 /// settings file's extra fields.
-pub const MANAGED_POLICY_KEYS: &[&str] = &[
-    "policy",
-    "blocklist",
-    "allowlist",
-    "enforcement",
-];
+pub const MANAGED_POLICY_KEYS: &[&str] = &["policy", "blocklist", "allowlist", "enforcement"];
 
 /// Known settings sub-keys that, when present in the managed layer, always
 /// win regardless of the normal settings priority order. These correspond to

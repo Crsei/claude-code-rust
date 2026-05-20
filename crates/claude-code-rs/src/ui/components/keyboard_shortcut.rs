@@ -6,14 +6,10 @@
 //! unused in the running binary.  They exist for design-system completeness and
 //! will be wired up during Design System Sprint 3 (integration phase).
 
-#[cfg(test)]
 use ratatui::style::{Modifier, Style};
-#[cfg(test)]
 use ratatui::text::Span;
 
-#[cfg(test)]
 use crate::ui::theme::color::resolve_color;
-#[cfg(test)]
 use crate::ui::theme::ThemeColors;
 
 // ---------------------------------------------------------------------------
@@ -37,10 +33,8 @@ pub struct ShortcutHint<'a> {
     /// Whether to wrap the hint in parentheses: `(Ctrl+O open)`.
     parens: bool,
     /// Whether to render the key in bold.
-    #[cfg(test)]
     bold_key: bool,
     /// Optional theme colour key for the hint text (default: `inactive`).
-    #[cfg(test)]
     color: Option<&'a str>,
 }
 
@@ -50,15 +44,12 @@ impl<'a> ShortcutHint<'a> {
             key,
             action,
             parens: false,
-            #[cfg(test)]
             bold_key: false,
-            #[cfg(test)]
             color: None,
         }
     }
 
     /// Wrap the hint in parentheses.
-    #[cfg(test)]
     pub fn with_parens(mut self) -> Self {
         self.parens = true;
         self
@@ -78,7 +69,6 @@ impl<'a> ShortcutHint<'a> {
     }
 
     /// Render this hint as a [`Span`] with the given theme.
-    #[cfg(test)]
     pub fn render(&self, colors: &ThemeColors) -> Span<'static> {
         let fg = self
             .color
@@ -131,7 +121,6 @@ pub fn render_shortcut_hints(hints: &[ShortcutHint<'_>]) -> String {
 ///
 /// Each hint is rendered through its own `render()` method so bold/parens
 /// settings are preserved.  Returns an empty vec when `hints` is empty.
-#[cfg(test)]
 pub fn render_hints_styled(hints: &[ShortcutHint<'_>], colors: &ThemeColors) -> Vec<Span<'static>> {
     if hints.is_empty() {
         return Vec::new();

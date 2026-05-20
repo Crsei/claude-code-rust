@@ -435,11 +435,8 @@ mod tests {
 
     #[test]
     fn compact_line_includes_progress_summary_and_output_count() {
-        let mut activity = ToolActivity::from_tool_use(
-            "bash",
-            r#"{"command":"cargo check"}"#,
-            ToolState::Running,
-        );
+        let mut activity =
+            ToolActivity::from_tool_use("bash", r#"{"command":"cargo check"}"#, ToolState::Running);
         activity.elapsed_ms = 1_250;
         activity.progress = Some((2, 4));
         activity.output_lines = 7;

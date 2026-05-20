@@ -70,7 +70,15 @@ pub enum TelemetryExporter {
     None,
     /// Log events via the `tracing` crate (debug level).
     Log,
-    /// BigQuery export — NON-P0. See docs/utils/telemetry-observability.md
+    /// BigQuery export.
+    ///
+    /// Intentional: BigQuery exporter is defined as a future surface but is not
+    ///     yet implemented. The variant exists so the type hierarchy is complete
+    ///     and callers that match on `TelemetryExporter` can handle this case
+    ///     (currently a stub that drains events silently).
+    /// Owner: https://github.com/Crsei/claude-code-rust/issues (telemetry)
+    /// Removal: When the BigQuery exporter backend is implemented, remove this
+    ///     allow-dead-code and add real export logic in `TelemetryHandle::flush`.
     #[allow(dead_code)]
     BigQuery,
 }

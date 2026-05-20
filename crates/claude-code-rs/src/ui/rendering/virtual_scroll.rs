@@ -9,7 +9,7 @@ use unicode_width::UnicodeWidthStr;
 
 use cc_types::message::Message;
 
-use super::messages::{render_single_message_for_layout, MessageRenderContext};
+use super::messages::{render_renderable_message_for_layout, MessageRenderContext};
 use super::theme::Theme;
 
 /// Number of extra lines to render above/below the viewport for smooth
@@ -74,7 +74,7 @@ impl VirtualScroll {
     /// Re-computes only the invalidated tail.
     pub fn ensure_up_to_date(
         &mut self,
-        messages: &[Message],
+        _messages: &[Message],
         width: u16,
         theme: &Theme,
         render_context: &MessageRenderContext,
@@ -86,17 +86,29 @@ impl VirtualScroll {
             self.cached_render_key = render_context.cache_key().to_string();
         }
 
+        let renderable_messages = render_context.renderable_messages();
+
         // Shrink if messages were removed
-        if self.heights.len() > messages.len() {
-            self.invalidate_from(messages.len());
+        if self.heights.len() > renderable_messages.len() {
+            self.invalidate_from(renderable_messages.len());
         }
 
         let start = self.valid_up_to;
-        let total = messages.len();
+        let total = renderable_messages.len();
 
-        for (i, message) in messages.iter().enumerate().take(total).skip(start) {
-            let lines =
-                render_single_message_for_layout(message, i, theme, width as usize, render_context);
+        for (i, message) in renderable_messages
+            .iter()
+            .enumerate()
+            .take(total)
+            .skip(start)
+        {
+            let lines = render_renderable_message_for_layout(
+                message,
+                i,
+                theme,
+                width as usize,
+                render_context,
+            );
             let mut h = lines.len();
             let mut visual_h = wrapped_line_height(&lines, width);
             // Separator blank line between messages (not after last)

@@ -96,9 +96,9 @@ impl ChangeDetector {
 
         match (self.mtimes.get(path), current_mtime) {
             (Some(old), Some(new)) => *old != new,
-            (Some(_), None) => true,  // file was deleted
-            (None, Some(_)) => true,  // file just appeared
-            (None, None) => false,    // never tracked and still doesn't exist
+            (Some(_), None) => true, // file was deleted
+            (None, Some(_)) => true, // file just appeared
+            (None, None) => false,   // never tracked and still doesn't exist
         }
     }
 
@@ -153,8 +153,8 @@ impl ChangeDetector {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn test_watch_empty() {

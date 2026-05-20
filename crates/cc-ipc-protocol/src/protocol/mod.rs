@@ -24,6 +24,7 @@ mod team;
 pub use base::{ConversationMessage, ToolResultContentInfo};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use cc_types::agent_events::{AgentCommand, AgentEvent, TeamCommand, TeamEvent};
 use cc_types::plan_workflow::PlanWorkflowRecord;
@@ -129,7 +130,6 @@ pub enum FrontendMessage {
     },
 
     // ── Phase 2 integration: completions, telemetry, LSP recommendations ──
-
     /// Request input completions for the given text and cursor position.
     RequestCompletions {
         input: String,
@@ -138,14 +138,9 @@ pub enum FrontendMessage {
     },
     /// Accept a completion item at the given index from the last
     /// `RequestCompletions` response.
-    AcceptCompletion {
-        request_id: String,
-        index: usize,
-    },
+    AcceptCompletion { request_id: String, index: usize },
     /// Install a recommended plugin from the LSP recommendation engine.
-    InstallRecommendedPlugin {
-        plugin_id: String,
-    },
+    InstallRecommendedPlugin { plugin_id: String },
     /// Request a telemetry status refresh.
     RefreshPluginTelemetry,
     /// Request LSP recommendations for a specific language (or all known).
@@ -251,6 +246,8 @@ pub enum BackendMessage {
         tool_use_id: String,
         tool: String,
         command: String,
+        #[serde(default)]
+        input: Value,
         options: Vec<String>,
     },
     /// Ask the user a question.  The frontend should display the question
@@ -362,7 +359,6 @@ pub enum BackendMessage {
     },
 
     // ── Phase 2 integration: completions, telemetry, LSP recommendations ──
-
     /// Completion items for the frontend popup.
     Completions {
         items: Vec<CompletionItemDTO>,

@@ -246,7 +246,7 @@ impl ColorExt for Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::theme::{ThemeName, get_theme};
+    use crate::ui::theme::{get_theme, ThemeName};
 
     fn dark_colors() -> &'static ThemeColors {
         get_theme(&ThemeName::Dark)

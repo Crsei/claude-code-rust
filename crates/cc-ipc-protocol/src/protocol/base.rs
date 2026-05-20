@@ -146,4 +146,42 @@ mod tests {
             _ => panic!("expected QuestionResponse"),
         }
     }
+
+    #[test]
+    fn frontend_control_commands_deserialize() {
+        use super::super::FrontendMessage;
+
+        let submit: FrontendMessage =
+            serde_json::from_str(r#"{"type":"submit_prompt","text":"hello","id":"ui-1"}"#).unwrap();
+        assert!(matches!(
+            submit,
+            FrontendMessage::SubmitPrompt { text, id } if text == "hello" && id == "ui-1"
+        ));
+
+        let slash: FrontendMessage =
+            serde_json::from_str(r#"{"type":"slash_command","raw":"/help"}"#).unwrap();
+        assert!(matches!(
+            slash,
+            FrontendMessage::SlashCommand { raw } if raw == "/help"
+        ));
+
+        let permission: FrontendMessage = serde_json::from_str(
+            r#"{"type":"permission_response","tool_use_id":"tool-1","decision":"allow"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            permission,
+            FrontendMessage::PermissionResponse {
+                tool_use_id,
+                decision,
+                ..
+            } if tool_use_id == "tool-1" && decision == "allow"
+        ));
+
+        let abort: FrontendMessage = serde_json::from_str(r#"{"type":"abort_query"}"#).unwrap();
+        assert!(matches!(abort, FrontendMessage::AbortQuery));
+
+        let quit: FrontendMessage = serde_json::from_str(r#"{"type":"quit"}"#).unwrap();
+        assert!(matches!(quit, FrontendMessage::Quit));
+    }
 }

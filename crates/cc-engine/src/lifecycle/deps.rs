@@ -26,7 +26,9 @@ use crate::tool_runtime::execution::{
 use crate::types::app_state::AppState;
 use crate::types::message::{Message, StreamEvent};
 use crate::types::state::AutoCompactTracking;
-use crate::types::tool::{PermissionMode, ToolProgress, Tools, ValidationResult};
+use crate::types::tool::{
+    PermissionMode, PermissionRequestPayload, ToolProgress, Tools, ValidationResult,
+};
 use cc_engine::query::deps::{
     CompactionResult, ModelCallParams, ModelResponse, QueryDeps, ToolExecRequest, ToolExecResult,
 };
@@ -1242,18 +1244,18 @@ impl QueryDeps for QueryEngineDeps {
 
                     if !hook_allowed {
                         if let Some(ref callback) = ctx.permission_callback {
-                            let description = format!("{}: {}", request.tool_name, message);
                             let options = vec![
                                 "Allow".to_string(),
                                 "Deny".to_string(),
                                 "Always Allow".to_string(),
                             ];
-                            let decision = callback(
-                                request.tool_use_id.clone(),
-                                request.tool_name.clone(),
-                                description,
+                            let decision = callback(PermissionRequestPayload {
+                                tool_use_id: request.tool_use_id.clone(),
+                                tool_name: request.tool_name.clone(),
+                                tool_input: effective_input.clone(),
+                                message,
                                 options,
-                            )
+                            })
                             .await;
 
                             match decision.to_lowercase().as_str() {
@@ -2739,8 +2741,7 @@ mod tests {
                 })
             }
         }));
-        let callback: PermissionCallback =
-            Arc::new(|_, _, _, _| Box::pin(async { "allow".to_string() }));
+        let callback: PermissionCallback = Arc::new(|_| Box::pin(async { "allow".to_string() }));
         deps.permission_callback = Some(callback);
 
         for _ in 0..2 {
@@ -2869,8 +2870,7 @@ mod tests {
             progress_payload: Some(json!({"phase": "running"})),
         });
         let mut deps = make_deps(vec![tool], PermissionMode::Default);
-        let callback: PermissionCallback =
-            Arc::new(|_, _, _, _| Box::pin(async { "allow".to_string() }));
+        let callback: PermissionCallback = Arc::new(|_| Box::pin(async { "allow".to_string() }));
         deps.permission_callback = Some(callback);
         let seen_progress = Arc::new(parking_lot::Mutex::new(None));
         let progress_callback: Arc<dyn Fn(ToolProgress) + Send + Sync> = {

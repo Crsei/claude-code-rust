@@ -1,7 +1,9 @@
 //! Rust-side helper for memory input messages.
 
+#[cfg(test)]
 use crate::ui::theme::Theme;
 
+#[cfg(test)]
 pub fn render_user_memory_input_message(key: &str, value: &str, _theme: &Theme) -> String {
     let value = value.trim();
     if key.trim().is_empty() {

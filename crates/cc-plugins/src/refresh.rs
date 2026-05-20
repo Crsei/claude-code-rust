@@ -158,10 +158,7 @@ impl PluginDelta {
 }
 
 /// Compute a delta between two lists of plugins by ID, version, and status.
-pub fn compute_plugin_delta(
-    old: &[crate::PluginEntry],
-    new: &[crate::PluginEntry],
-) -> PluginDelta {
+pub fn compute_plugin_delta(old: &[crate::PluginEntry], new: &[crate::PluginEntry]) -> PluginDelta {
     use std::collections::HashMap;
 
     let old_by_id: HashMap<&str, &crate::PluginEntry> =
@@ -209,11 +206,12 @@ pub fn refresh_marketplace_index() {
     if !marketplaces_path.exists() {
         return;
     }
-    match crate::marketplace::GLOBAL_MARKETPLACE_INDEX
-        .load_from_file(&marketplaces_path)
-    {
+    match crate::marketplace::GLOBAL_MARKETPLACE_INDEX.load_from_file(&marketplaces_path) {
         Ok(()) => {
-            info!("Marketplace index refreshed from {}", marketplaces_path.display());
+            info!(
+                "Marketplace index refreshed from {}",
+                marketplaces_path.display()
+            );
         }
         Err(e) => {
             warn!(

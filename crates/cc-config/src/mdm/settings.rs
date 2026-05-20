@@ -254,7 +254,10 @@ impl ManagedSettings {
             .map(|entries| {
                 entries
                     .into_iter()
-                    .map(|e| BlocklistEntry { source: SettingsSource::Managed, ..e })
+                    .map(|e| BlocklistEntry {
+                        source: SettingsSource::Managed,
+                        ..e
+                    })
                     .collect()
             });
 
@@ -264,7 +267,10 @@ impl ManagedSettings {
             .map(|entries| {
                 entries
                     .into_iter()
-                    .map(|e| AllowlistEntry { source: SettingsSource::Managed, ..e })
+                    .map(|e| AllowlistEntry {
+                        source: SettingsSource::Managed,
+                        ..e
+                    })
                     .collect()
             });
 
@@ -318,10 +324,7 @@ pub fn merge_managed_settings(base: &mut ManagedSettings, over: &ManagedSettings
     }
 }
 
-fn merge_managed_policy(
-    base: Option<ManagedPolicy>,
-    over: &ManagedPolicy,
-) -> ManagedPolicy {
+fn merge_managed_policy(base: Option<ManagedPolicy>, over: &ManagedPolicy) -> ManagedPolicy {
     let mut out = base.unwrap_or_default();
     if let Some(ref pp) = over.plugin_install_policy {
         out.plugin_install_policy = Some(pp.clone());
@@ -388,9 +391,7 @@ mod tests {
         let managed = ManagedSettings::from_raw(&raw);
 
         let policy = managed.policy.expect("policy should be present");
-        let plugin = policy
-            .plugin_install_policy
-            .expect("plugin install policy");
+        let plugin = policy.plugin_install_policy.expect("plugin install policy");
         assert_eq!(plugin.allowed_sources.len(), 1);
         assert_eq!(plugin.require_signature, Some(true));
         assert_eq!(plugin.max_plugins, Some(10));
@@ -464,7 +465,10 @@ mod tests {
         };
 
         merge_managed_settings(&mut base, &over);
-        assert_eq!(base.enforcement.as_ref().unwrap().level, Enforcement::Strict);
+        assert_eq!(
+            base.enforcement.as_ref().unwrap().level,
+            Enforcement::Strict
+        );
 
         let over2 = ManagedSettings {
             enforcement: Some(EnforcementLevel {
@@ -475,7 +479,10 @@ mod tests {
         };
         merge_managed_settings(&mut base, &over2);
         // managed always wins for policy fields
-        assert_eq!(base.enforcement.as_ref().unwrap().level, Enforcement::WarningOnly);
+        assert_eq!(
+            base.enforcement.as_ref().unwrap().level,
+            Enforcement::WarningOnly
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Normalized IPC payloads shared by non-JSONL transports.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::protocol::{
     BackendMessage, CompletionItemDTO, ConversationMessage, InstallProgress, LspRecommendationDTO,
@@ -93,6 +94,8 @@ pub enum PermissionEvent {
         tool_use_id: String,
         tool: String,
         command: String,
+        #[serde(default)]
+        input: Value,
         options: Vec<String>,
     },
     QuestionRequest {
@@ -312,11 +315,13 @@ pub fn legacy_backend_to_payload(message: &BackendMessage) -> LegacyBackendPaylo
             tool_use_id,
             tool,
             command,
+            input,
             options,
         } => LegacyBackendPayload::Permission(PermissionEvent::PermissionRequest {
             tool_use_id: tool_use_id.clone(),
             tool: tool.clone(),
             command: command.clone(),
+            input: input.clone(),
             options: options.clone(),
         }),
         BackendMessage::QuestionRequest { id, text } => {
@@ -448,6 +453,7 @@ mod tests {
             tool_use_id: "tool-1".to_string(),
             tool: "Bash".to_string(),
             command: "rm -rf target".to_string(),
+            input: serde_json::json!({"command":"rm -rf target"}),
             options: vec!["allow".to_string(), "deny".to_string()],
         };
 

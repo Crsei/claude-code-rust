@@ -1,102 +1,74 @@
 // BEGIN generated upstream messages modules
 // Rust-side message modules mirrored from upstream React components.
 #[path = "messages/advisor_message.rs"]
-#[cfg(test)]
 pub mod advisor_message;
 #[path = "messages/assistant_redacted_thinking_message.rs"]
-#[cfg(test)]
 pub mod assistant_redacted_thinking_message;
 #[path = "messages/assistant_text_message.rs"]
 pub mod assistant_text_message;
 #[path = "messages/assistant_thinking_message.rs"]
-#[cfg(test)]
 pub mod assistant_thinking_message;
 #[path = "messages/assistant_tool_use_message.rs"]
 pub mod assistant_tool_use_message;
 #[path = "messages/attachment_message.rs"]
 pub mod attachment_message;
 #[path = "messages/collapsed_read_search_content.rs"]
-#[cfg(test)]
 pub mod collapsed_read_search_content;
 #[path = "messages/compact_boundary_message.rs"]
-#[cfg(test)]
 pub mod compact_boundary_message;
 #[path = "messages/file_edit_tool_updated_message.rs"]
 pub mod file_edit_tool_updated_message;
 #[path = "messages/grouped_tool_use_content.rs"]
-#[cfg(test)]
 pub mod grouped_tool_use_content;
 #[path = "messages/highlighted_thinking_text.rs"]
-#[cfg(test)]
 pub mod highlighted_thinking_text;
 #[path = "messages/hook_progress_message.rs"]
-#[cfg(test)]
 pub mod hook_progress_message;
 #[path = "messages/null_rendering_attachments.rs"]
-#[cfg(test)]
 pub mod null_rendering_attachments;
 #[path = "messages/plan_approval_message.rs"]
-#[cfg(test)]
 pub mod plan_approval_message;
 #[path = "messages/rate_limit_message.rs"]
-#[cfg(test)]
 pub mod rate_limit_message;
 #[path = "messages/shutdown_message.rs"]
-#[cfg(test)]
 pub mod shutdown_message;
 #[path = "messages/system_api_error_message.rs"]
-#[cfg(test)]
 pub mod system_api_error_message;
 #[path = "messages/system_text_message.rs"]
 pub mod system_text_message;
 #[path = "messages/task_assignment_message.rs"]
-#[cfg(test)]
 pub mod task_assignment_message;
 #[path = "messages/team_mem_collapsed.rs"]
-#[cfg(test)]
 pub mod team_mem_collapsed;
 #[path = "messages/team_mem_saved.rs"]
-#[cfg(test)]
 pub mod team_mem_saved;
 #[path = "messages/user_agent_notification_message.rs"]
-#[cfg(test)]
 pub mod user_agent_notification_message;
 #[path = "messages/user_bash_input_message.rs"]
-#[cfg(test)]
 pub mod user_bash_input_message;
 #[path = "messages/user_bash_output_message.rs"]
 pub mod user_bash_output_message;
 #[path = "messages/user_channel_message.rs"]
-#[cfg(test)]
 pub mod user_channel_message;
 #[path = "messages/user_command_message.rs"]
-#[cfg(test)]
 pub mod user_command_message;
 #[path = "messages/user_image_message.rs"]
-#[cfg(test)]
 pub mod user_image_message;
 #[path = "messages/user_local_command_output_message.rs"]
-#[cfg(test)]
 pub mod user_local_command_output_message;
 #[path = "messages/user_memory_input_message.rs"]
-#[cfg(test)]
 pub mod user_memory_input_message;
 #[path = "messages/user_plan_message.rs"]
-#[cfg(test)]
 pub mod user_plan_message;
 #[path = "messages/user_prompt_message.rs"]
-#[cfg(test)]
 pub mod user_prompt_message;
 #[path = "messages/user_resource_update_message.rs"]
-#[cfg(test)]
 pub mod user_resource_update_message;
 #[path = "messages/user_teammate_message.rs"]
-#[cfg(test)]
 pub mod user_teammate_message;
 #[path = "messages/user_text_message.rs"]
 pub mod user_text_message;
 #[path = "messages/user_tool_result_message/mod.rs"]
-#[cfg(test)]
 pub mod user_tool_result_message;
 // END generated upstream messages modules
 
@@ -105,10 +77,12 @@ mod render;
 #[path = "messages/wrap.rs"]
 mod wrap;
 
+#[cfg(test)]
+pub(super) use render::build_message_render_context;
 pub use render::render_messages;
 pub(super) use render::{
-    build_message_render_context, message_copy_text, message_primary_reference,
-    render_single_message_for_layout, MessageRenderContext,
+    build_message_render_context_with_options, message_copy_text, message_primary_reference,
+    render_renderable_message_for_layout, MessageRenderContext, MessageRenderOptions,
 };
 
 #[cfg(test)]

@@ -9,8 +9,6 @@
 //! - `subsystem_handlers.rs` — command handling
 //! - LSP / MCP / Plugin / Skill modules — to emit events
 
-#![allow(dead_code)] // Types are pre-defined for upcoming IPC extension tasks
-
 use crate::lsp::{CompletionItemInfo, DocumentChange};
 use crate::subsystem_types::*;
 use serde::{Deserialize, Serialize};
@@ -172,7 +170,6 @@ pub enum PluginEvent {
     Reloaded { count: usize, had_error: bool },
 
     // ── Phase 2 variants (Serial Integration Lane) ──
-
     /// A plugin was installed.
     Installed {
         plugin_id: String,
@@ -186,10 +183,7 @@ pub enum PluginEvent {
         version: String,
     },
     /// A plugin was uninstalled.
-    Uninstalled {
-        plugin_id: String,
-        name: String,
-    },
+    Uninstalled { plugin_id: String, name: String },
     /// Plugin validation failed.
     ValidationFailed {
         plugin_id: String,
@@ -197,10 +191,7 @@ pub enum PluginEvent {
         errors: Vec<String>,
     },
     /// Plugin configuration was changed externally.
-    ConfigChanged {
-        plugin_id: String,
-        name: String,
-    },
+    ConfigChanged { plugin_id: String, name: String },
 }
 
 /// Events emitted by the IDE-integration subsystem.
@@ -518,7 +509,6 @@ pub enum SubsystemEvent {
     AgentSettings(Box<AgentSettingsEvent>),
 
     // ── Phase 2 integration (Serial Integration Lane) ──
-
     /// A completion was provided/accepted by the user.
     CompletionProvided {
         request_id: String,

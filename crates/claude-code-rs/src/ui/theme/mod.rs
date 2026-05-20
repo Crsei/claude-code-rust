@@ -594,73 +594,87 @@ impl Theme {
         let theme_color =
             |key: &str, fallback: Color| color::resolve_color(key, colors).unwrap_or(fallback);
 
-        Self {
-            assistant_name: Style::default()
-                .fg(theme_color("accent", colors.accent))
-                .add_modifier(Modifier::BOLD),
-            user_name: Style::default()
-                .fg(theme_color("suggestion", colors.suggestion))
-                .add_modifier(Modifier::BOLD),
-            system_name: Style::default()
-                .fg(theme_color("dim", colors.dim))
-                .add_modifier(Modifier::ITALIC),
-            tool_name: Style::default()
-                .fg(theme_color("code", colors.code))
-                .add_modifier(Modifier::BOLD),
-            tool_result: Style::default().fg(colors.diffContext),
-            error: Style::default()
-                .fg(colors.error)
-                .add_modifier(Modifier::BOLD),
-            warning: Style::default().fg(colors.warning),
-            info: Style::default().fg(colors.info),
-            prompt: Style::default()
-                .fg(colors.suggestion)
-                .add_modifier(Modifier::BOLD),
-            border: Style::default().fg(colors.border),
-            code: Style::default().fg(colors.code).bg(colors.codeBg),
-            code_bg: colors.codeBg,
-            thinking: Style::default()
-                .fg(colors.dim)
-                .add_modifier(Modifier::ITALIC),
-            dim: Style::default().fg(colors.dim),
-            heading: Style::default()
-                .fg(colors.heading)
-                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            bold: Style::default()
-                .fg(colors.bold)
-                .add_modifier(Modifier::BOLD),
-            italic: Style::default().add_modifier(Modifier::ITALIC),
-            link: Style::default()
-                .fg(colors.link)
-                .add_modifier(Modifier::UNDERLINED),
-            syntax_keyword: Style::default().fg(colors.syntaxKeyword),
-            syntax_string: Style::default().fg(colors.syntaxString),
-            syntax_comment: Style::default()
-                .fg(colors.syntaxComment)
-                .add_modifier(Modifier::ITALIC),
-            syntax_type: Style::default().fg(colors.syntaxType),
-            syntax_function: Style::default().fg(colors.syntaxFunction),
-            syntax_number: Style::default().fg(colors.syntaxNumber),
-            syntax_operator: Style::default().fg(colors.syntaxOperator),
-            syntax_builtin: Style::default().fg(colors.syntaxBuiltin),
-            syntax_punctuation: Style::default().fg(colors.syntaxPunctuation),
-            diff_add: Style::default().fg(colors.diffAdd),
-            diff_remove: Style::default().fg(colors.diffRemove),
-            diff_context: Style::default().fg(colors.diffContext),
-            diff_header: Style::default()
-                .fg(colors.diffHeader)
-                .add_modifier(Modifier::BOLD),
-            selected: Style::default()
-                .fg(colors.selectionText)
-                .bg(colors.selection)
-                .add_modifier(Modifier::BOLD),
-            unselected: Style::default().fg(colors.inactiveText),
-            #[cfg(test)]
-            progress_fill: Style::default()
-                .fg(color::resolve_color("success", colors).unwrap_or(colors.success)),
-            #[cfg(test)]
-            progress_empty: Style::default()
-                .fg(color::resolve_color("inactive", colors).unwrap_or(colors.inactive)),
+        macro_rules! build_theme {
+            ($($extra:tt)*) => {
+                Self {
+                    assistant_name: Style::default()
+                        .fg(theme_color("accent", colors.accent))
+                        .add_modifier(Modifier::BOLD),
+                    user_name: Style::default()
+                        .fg(theme_color("suggestion", colors.suggestion))
+                        .add_modifier(Modifier::BOLD),
+                    system_name: Style::default()
+                        .fg(theme_color("dim", colors.dim))
+                        .add_modifier(Modifier::ITALIC),
+                    tool_name: Style::default()
+                        .fg(theme_color("code", colors.code))
+                        .add_modifier(Modifier::BOLD),
+                    tool_result: Style::default().fg(colors.diffContext),
+                    error: Style::default()
+                        .fg(colors.error)
+                        .add_modifier(Modifier::BOLD),
+                    warning: Style::default().fg(colors.warning),
+                    info: Style::default().fg(colors.info),
+                    prompt: Style::default()
+                        .fg(colors.suggestion)
+                        .add_modifier(Modifier::BOLD),
+                    border: Style::default().fg(colors.border),
+                    code: Style::default().fg(colors.code).bg(colors.codeBg),
+                    code_bg: colors.codeBg,
+                    thinking: Style::default()
+                        .fg(colors.dim)
+                        .add_modifier(Modifier::ITALIC),
+                    dim: Style::default().fg(colors.dim),
+                    heading: Style::default()
+                        .fg(colors.heading)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                    bold: Style::default()
+                        .fg(colors.bold)
+                        .add_modifier(Modifier::BOLD),
+                    italic: Style::default().add_modifier(Modifier::ITALIC),
+                    link: Style::default()
+                        .fg(colors.link)
+                        .add_modifier(Modifier::UNDERLINED),
+                    syntax_keyword: Style::default().fg(colors.syntaxKeyword),
+                    syntax_string: Style::default().fg(colors.syntaxString),
+                    syntax_comment: Style::default()
+                        .fg(colors.syntaxComment)
+                        .add_modifier(Modifier::ITALIC),
+                    syntax_type: Style::default().fg(colors.syntaxType),
+                    syntax_function: Style::default().fg(colors.syntaxFunction),
+                    syntax_number: Style::default().fg(colors.syntaxNumber),
+                    syntax_operator: Style::default().fg(colors.syntaxOperator),
+                    syntax_builtin: Style::default().fg(colors.syntaxBuiltin),
+                    syntax_punctuation: Style::default().fg(colors.syntaxPunctuation),
+                    diff_add: Style::default().fg(colors.diffAdd),
+                    diff_remove: Style::default().fg(colors.diffRemove),
+                    diff_context: Style::default().fg(colors.diffContext),
+                    diff_header: Style::default()
+                        .fg(colors.diffHeader)
+                        .add_modifier(Modifier::BOLD),
+                    selected: Style::default()
+                        .fg(colors.selectionText)
+                        .bg(colors.selection)
+                        .add_modifier(Modifier::BOLD),
+                    unselected: Style::default().fg(colors.inactiveText),
+                    $($extra)*
+                }
+            };
+        }
+
+        #[cfg(test)]
+        {
+            build_theme!(
+                progress_fill: Style::default()
+                    .fg(color::resolve_color("success", colors).unwrap_or(colors.success)),
+                progress_empty: Style::default()
+                    .fg(color::resolve_color("inactive", colors).unwrap_or(colors.inactive)),
+            )
+        }
+
+        #[cfg(not(test))]
+        {
+            build_theme!()
         }
     }
 }

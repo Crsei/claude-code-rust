@@ -1,8 +1,85 @@
 //! Bottom pane container and view stack.
 
+use ratatui::layout::{Constraint, Layout, Rect};
+
+#[cfg(test)]
 use super::approval_overlay::ApprovalOverlay;
+#[cfg(test)]
 use super::chat_composer::ChatComposerState;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BottomPaneHeights {
+    pub spinner: u16,
+    pub suggestions: u16,
+    pub paste_notice: u16,
+    pub input: u16,
+    pub completion_popup: u16,
+    pub command_palette: u16,
+    pub command_arg_help: u16,
+    pub notification: u16,
+    pub agent_footer: u16,
+    pub status: u16,
+}
+
+impl BottomPaneHeights {
+    pub fn total(self) -> u16 {
+        self.spinner
+            + self.suggestions
+            + self.paste_notice
+            + self.input
+            + self.completion_popup
+            + self.command_palette
+            + self.command_arg_help
+            + self.notification
+            + self.agent_footer
+            + self.status
+    }
+
+    pub fn split(self, area: Rect) -> BottomPaneAreas {
+        let chunks = Layout::vertical([
+            Constraint::Length(self.spinner),
+            Constraint::Length(self.suggestions),
+            Constraint::Length(self.paste_notice),
+            Constraint::Length(self.input),
+            Constraint::Length(self.completion_popup),
+            Constraint::Length(self.command_palette),
+            Constraint::Length(self.command_arg_help),
+            Constraint::Length(self.notification),
+            Constraint::Length(self.agent_footer),
+            Constraint::Length(self.status),
+        ])
+        .split(area);
+
+        BottomPaneAreas {
+            spinner: chunks[0],
+            suggestions: chunks[1],
+            paste_notice: chunks[2],
+            input: chunks[3],
+            completion_popup: chunks[4],
+            command_palette: chunks[5],
+            command_arg_help: chunks[6],
+            notification: chunks[7],
+            agent_footer: chunks[8],
+            status: chunks[9],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BottomPaneAreas {
+    pub spinner: Rect,
+    pub suggestions: Rect,
+    pub paste_notice: Rect,
+    pub input: Rect,
+    pub completion_popup: Rect,
+    pub command_palette: Rect,
+    pub command_arg_help: Rect,
+    pub notification: Rect,
+    pub agent_footer: Rect,
+    pub status: Rect,
+}
+
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BottomPaneView {
     Composer,
@@ -11,6 +88,7 @@ pub enum BottomPaneView {
     Status { message: String },
 }
 
+#[cfg(test)]
 impl BottomPaneView {
     pub fn name(&self) -> &'static str {
         match self {
@@ -22,12 +100,14 @@ impl BottomPaneView {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BottomPane {
     pub composer: ChatComposerState,
     stack: Vec<BottomPaneView>,
 }
 
+#[cfg(test)]
 impl BottomPane {
     pub fn new(composer: ChatComposerState) -> Self {
         Self {
@@ -89,5 +169,27 @@ mod tests {
         assert_eq!(pane.pop().unwrap().name(), "status");
         assert_eq!(pane.pop().unwrap().name(), "selection");
         assert!(pane.pop().is_none());
+    }
+
+    #[test]
+    fn height_model_splits_terminal_regions() {
+        let heights = BottomPaneHeights {
+            spinner: 1,
+            suggestions: 1,
+            paste_notice: 0,
+            input: 3,
+            completion_popup: 2,
+            command_palette: 4,
+            command_arg_help: 2,
+            notification: 1,
+            agent_footer: 1,
+            status: 1,
+        };
+
+        assert_eq!(heights.total(), 16);
+        let areas = heights.split(Rect::new(0, 0, 80, 24));
+        assert_eq!(areas.spinner.height, 1);
+        assert_eq!(areas.input.height, 3);
+        assert_eq!(areas.status.height, 1);
     }
 }

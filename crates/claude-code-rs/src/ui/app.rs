@@ -1,19 +1,8 @@
 pub mod agent_navigation;
 mod agent_tree_dialog;
-#[cfg(test)]
-pub mod app_backtrack;
-#[cfg(test)]
-pub mod app_command;
 pub mod app_event;
-#[cfg(test)]
 pub mod app_event_sender;
-#[cfg(test)]
-pub mod app_server_adapter;
-#[cfg(test)]
-pub mod app_server_requests;
 mod input;
-#[cfg(test)]
-pub mod loaded_threads;
 mod render;
 pub mod status;
 #[cfg(test)]
@@ -40,7 +29,9 @@ use super::history_search_dialog::{HistorySearchDialog, HistorySearchEntry};
 use super::notifications::in_app::{
     InAppNotification, NotificationPriority, NotificationState, NotificationTone,
 };
-use super::permissions::{PermissionChoice, PermissionDialog};
+use super::permissions::{
+    PermissionChoice, PermissionDialog, PermissionDialogRequest, QuestionDialog,
+};
 use super::prompt_input::PromptInput;
 use super::spinner::SpinnerState;
 use super::status_line::StatusLineRunner;
@@ -61,6 +52,7 @@ pub enum AppAction {
     ScrollUp,
     ScrollDown,
     PermissionResponse(PermissionChoice),
+    QuestionResponse(String),
     AgentThreadSelected(String),
     KillAgentThreads(Vec<String>),
     LspRecommendationResponse {
@@ -128,6 +120,7 @@ pub struct App {
     is_streaming: bool,
     spinner_state: SpinnerState,
     permission_dialog: Option<PermissionDialog>,
+    question_dialog: Option<QuestionDialog>,
     should_quit: bool,
     design_theme_provider: ThemeProvider,
     theme: Theme,
@@ -136,6 +129,7 @@ pub struct App {
     session_id: String,
     cwd: String,
     output_style: Option<String>,
+    verbose: bool,
     permission_mode_label: String,
     sandbox_label: String,
     effort_label: Option<String>,
@@ -227,6 +221,7 @@ impl App {
             is_streaming: false,
             spinner_state: SpinnerState::new(),
             permission_dialog: None,
+            question_dialog: None,
             should_quit: false,
             design_theme_provider,
             theme,
@@ -235,6 +230,7 @@ impl App {
             session_id: String::new(),
             cwd: String::new(),
             output_style: None,
+            verbose: false,
             permission_mode_label: String::new(),
             sandbox_label: String::new(),
             effort_label: None,
@@ -374,8 +370,19 @@ impl App {
         }
     }
 
+    #[cfg(test)]
     pub fn show_permission_dialog(&mut self, tool_name: &str, input: &str, message: &str) {
         self.permission_dialog = Some(PermissionDialog::new(tool_name, input, message));
+        self.dirty = true;
+    }
+
+    pub fn show_question_dialog(&mut self, id: impl Into<String>, question: impl Into<String>) {
+        self.question_dialog = Some(QuestionDialog::new(id, question));
+        self.dirty = true;
+    }
+
+    pub fn show_permission_request(&mut self, request: PermissionDialogRequest) {
+        self.permission_dialog = Some(PermissionDialog::from_request(request));
         self.dirty = true;
     }
 
@@ -538,7 +545,6 @@ impl App {
 
     pub fn handle_app_event(&mut self, event: AppEvent) {
         match event {
-            #[cfg(test)]
             AppEvent::Notification {
                 key,
                 message,
@@ -547,7 +553,6 @@ impl App {
             } => {
                 self.add_notification(notification_from_app_event(key, message, level, timeout_ms));
             }
-            #[cfg(test)]
             AppEvent::LocalNotice { message } => {
                 self.add_notification(
                     InAppNotification::new("local-notice", NotificationPriority::Medium, message)

@@ -2,19 +2,21 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::prelude::Widget;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
 use super::App;
 use crate::ui::agents::agents_menu::AgentsMenuState;
+use crate::ui::bottom_pane::BottomPaneHeights;
 use crate::ui::command_palette::CommandPalette;
 use crate::ui::command_surface::CommandSurface;
 use crate::ui::history_search_dialog::HistorySearchDialog;
 use crate::ui::keyboard_shortcut::{render_shortcut_hints, ShortcutHint};
 use crate::ui::messages::render_messages;
 use crate::ui::notifications::in_app::{NotificationPriority, NotificationTone};
+use crate::ui::overlays::{render_centered_dialog_lines, CenteredOverlayFrame};
 use crate::ui::prompt_input::PromptInputRenderContext;
-use crate::ui::theme::Theme;
+use crate::ui::theme::{Theme, ThemeColors};
 use crate::ui::transcript::{self, TranscriptInputMode, ViewMode};
 use crate::ui::welcome;
 
@@ -88,25 +90,34 @@ impl App {
         } else {
             custom_lines.len().min(STATUS_LINE_MAX_LINES) as u16
         };
-        let bottom_height = spinner_height
-            + suggestion_height
-            + command_palette_height
-            + completion_popup_height
-            + command_arg_help_height
-            + paste_notice_height
-            + input_height
-            + notification_height
-            + agent_footer_height
-            + status_height;
+        let bottom_pane = BottomPaneHeights {
+            spinner: spinner_height,
+            suggestions: suggestion_height,
+            paste_notice: paste_notice_height,
+            input: input_height,
+            completion_popup: completion_popup_height,
+            command_palette: command_palette_height,
+            command_arg_help: command_arg_help_height,
+            notification: notification_height,
+            agent_footer: agent_footer_height,
+            status: status_height,
+        };
+        let bottom_height = bottom_pane.total();
         let max_content_height = size.height.saturating_sub(bottom_height);
         let content_height = if self.show_welcome {
             welcome::welcome_height_for(size.width).min(max_content_height)
         } else {
-            let message_render_context = super::super::messages::build_message_render_context(
-                &self.messages,
-                self.selected_message,
-                self.selected_message_expanded,
-            );
+            let message_render_context =
+                super::super::messages::build_message_render_context_with_options(
+                    &self.messages,
+                    self.selected_message,
+                    self.selected_message_expanded,
+                    super::super::messages::MessageRenderOptions {
+                        verbose: self.verbose,
+                        is_transcript_mode: false,
+                        show_all_in_transcript: false,
+                    },
+                );
             self.vscroll.ensure_up_to_date(
                 &self.messages,
                 size.width,
@@ -140,11 +151,17 @@ impl App {
             );
         } else {
             // Messages (virtual scroll)
-            let message_render_context = super::super::messages::build_message_render_context(
-                &self.messages,
-                self.selected_message,
-                self.selected_message_expanded,
-            );
+            let message_render_context =
+                super::super::messages::build_message_render_context_with_options(
+                    &self.messages,
+                    self.selected_message,
+                    self.selected_message_expanded,
+                    super::super::messages::MessageRenderOptions {
+                        verbose: self.verbose,
+                        is_transcript_mode: false,
+                        show_all_in_transcript: false,
+                    },
+                );
             self.vscroll.ensure_up_to_date(
                 &self.messages,
                 message_area.width,
@@ -171,38 +188,26 @@ impl App {
 
         // Bottom area: spinner + suggestions + paste_notice + input + completion_popup + palette + arg_help + notification + agent_footer + status
         let has_suggestions = suggestion_height > 0;
-        let bottom_chunks = Layout::vertical([
-            Constraint::Length(spinner_height),
-            Constraint::Length(suggestion_height),
-            Constraint::Length(paste_notice_height),
-            Constraint::Length(1),
-            Constraint::Length(completion_popup_height),
-            Constraint::Length(command_palette_height),
-            Constraint::Length(command_arg_help_height),
-            Constraint::Length(notification_height),
-            Constraint::Length(agent_footer_height),
-            Constraint::Length(status_height),
-        ])
-        .split(bottom_area);
+        let bottom_chunks = bottom_pane.split(bottom_area);
 
-        if self.is_streaming && bottom_chunks[0].height > 0 {
+        if self.is_streaming && bottom_chunks.spinner.height > 0 {
             self.spinner_state
-                .render(bottom_chunks[0], frame.buffer_mut(), &self.theme);
+                .render(bottom_chunks.spinner, frame.buffer_mut(), &self.theme);
         }
 
         if has_suggestions {
-            self.render_suggestions(bottom_chunks[1], frame.buffer_mut());
+            self.render_suggestions(bottom_chunks.suggestions, frame.buffer_mut());
         }
 
         if paste_notice_height > 0 {
-            self.render_paste_notice(bottom_chunks[2], frame.buffer_mut());
+            self.render_paste_notice(bottom_chunks.paste_notice, frame.buffer_mut());
         }
 
         let argument_hint = CommandPalette::argument_hint(&self.prompt.input, cwd_path);
         let placeholder = self.prompt_placeholder();
         let mode_indicator = self.prompt_mode_indicator();
         self.prompt.render_with_context(
-            bottom_chunks[3],
+            bottom_chunks.input,
             frame.buffer_mut(),
             &self.theme,
             PromptInputRenderContext {
@@ -214,36 +219,51 @@ impl App {
 
         // Render completion popup (when active and command palette is not active)
         if self.completion_state.active && !self.command_palette.active() {
-            self.render_completion_popup(bottom_chunks[4], frame.buffer_mut());
+            self.render_completion_popup(bottom_chunks.completion_popup, frame.buffer_mut());
         }
 
-        self.command_palette
-            .render(bottom_chunks[5], frame.buffer_mut(), &self.theme);
+        self.command_palette.render(
+            bottom_chunks.command_palette,
+            frame.buffer_mut(),
+            &self.theme,
+        );
 
         CommandPalette::render_argument_help(
             &self.prompt.input,
             cwd_path,
-            bottom_chunks[6],
+            bottom_chunks.command_arg_help,
             frame.buffer_mut(),
             &self.theme,
         );
 
         if notification_height > 0 {
-            self.render_notification(bottom_chunks[7], frame.buffer_mut());
+            self.render_notification(bottom_chunks.notification, frame.buffer_mut());
         }
 
         if agent_footer_height > 0 {
-            self.render_agent_footer(bottom_chunks[8], frame.buffer_mut());
+            self.render_agent_footer(bottom_chunks.agent_footer, frame.buffer_mut());
         }
 
-        self.render_status_bar(bottom_chunks[9], frame.buffer_mut(), &custom_lines);
+        self.render_status_bar(bottom_chunks.status, frame.buffer_mut(), &custom_lines);
 
         if let Some(ref surface) = self.command_surface {
-            render_command_surface_overlay(surface, size, frame.buffer_mut(), &self.theme);
+            render_command_surface_overlay(
+                surface,
+                size,
+                frame.buffer_mut(),
+                &self.theme,
+                self.design_theme_provider.colors(),
+            );
         }
 
         if let Some(ref dialog) = self.history_search_dialog {
-            render_history_search_overlay(dialog, size, frame.buffer_mut(), &self.theme);
+            render_history_search_overlay(
+                dialog,
+                size,
+                frame.buffer_mut(),
+                &self.theme,
+                self.design_theme_provider.colors(),
+            );
         }
 
         let current_thread_id = self.current_agent_thread_id().to_string();
@@ -255,10 +275,15 @@ impl App {
                 size,
                 frame.buffer_mut(),
                 &self.theme,
+                self.design_theme_provider.colors(),
             );
         }
 
         if let Some(ref dialog) = self.permission_dialog {
+            dialog.render(size, frame.buffer_mut(), &self.theme);
+        }
+
+        if let Some(ref dialog) = self.question_dialog {
             dialog.render(size, frame.buffer_mut(), &self.theme);
         }
     }
@@ -487,11 +512,17 @@ impl App {
         // Ensure the virtual-scroll cache matches the body width. Sharing
         // `vscroll` with prompt mode is fine because both invalidate on
         // width change.
-        let message_render_context = super::super::messages::build_message_render_context(
-            &self.messages,
-            self.selected_message,
-            self.selected_message_expanded,
-        );
+        let message_render_context =
+            super::super::messages::build_message_render_context_with_options(
+                &self.messages,
+                self.selected_message,
+                self.selected_message_expanded,
+                super::super::messages::MessageRenderOptions {
+                    verbose: self.verbose,
+                    is_transcript_mode: true,
+                    show_all_in_transcript: true,
+                },
+            );
         self.vscroll.ensure_up_to_date(
             &self.messages,
             body_area.width,
@@ -709,36 +740,24 @@ fn render_command_surface_overlay(
     area: Rect,
     buf: &mut ratatui::buffer::Buffer,
     theme: &Theme,
+    colors: &ThemeColors,
 ) {
-    if area.width < 8 || area.height < 5 {
-        return;
-    }
-
     let text = surface.render();
-    let line_count = text.lines().count() as u16;
-    let width = area.width.saturating_sub(4).clamp(8, 96);
-    let height = line_count
-        .saturating_add(2)
-        .min(area.height.saturating_sub(2))
-        .max(3);
-    let overlay = Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height,
-    };
-
-    Clear.render(overlay, buf);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!(" {} ", surface.title()))
-        .border_style(theme.dim);
-    let inner = block.inner(overlay);
-    block.render(overlay, buf);
-    Paragraph::new(text)
-        .style(Style::default().fg(Color::White))
-        .wrap(Wrap { trim: false })
-        .render(inner, buf);
+    let body = text
+        .lines()
+        .map(|line| Line::from(line.to_string()))
+        .collect::<Vec<_>>();
+    render_centered_dialog_lines(
+        CenteredOverlayFrame::new(surface.title())
+            .color("accent")
+            .width(32, 96)
+            .height(5, 28),
+        body,
+        area,
+        buf,
+        colors,
+        theme.dim,
+    );
 }
 
 fn render_history_search_overlay(
@@ -746,6 +765,7 @@ fn render_history_search_overlay(
     area: Rect,
     buf: &mut ratatui::buffer::Buffer,
     theme: &Theme,
+    colors: &ThemeColors,
 ) {
     if area.width < 20 || area.height < 8 {
         return;
@@ -753,25 +773,25 @@ fn render_history_search_overlay(
 
     let width = area.width.saturating_sub(4).clamp(20, 120);
     let height = area.height.saturating_sub(4).clamp(8, 18);
-    let overlay = Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height,
-    };
-
-    Clear.render(overlay, buf);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" History Search ")
-        .border_style(theme.dim);
-    let inner = block.inner(overlay);
-    block.render(overlay, buf);
-    let text = dialog.render(inner.width as usize, inner.height as usize);
-    Paragraph::new(text)
-        .style(Style::default().fg(Color::White))
-        .wrap(Wrap { trim: false })
-        .render(inner, buf);
+    let text = dialog.render(
+        width.saturating_sub(4) as usize,
+        height.saturating_sub(3) as usize,
+    );
+    let body = text
+        .lines()
+        .map(|line| Line::from(line.to_string()))
+        .collect::<Vec<_>>();
+    render_centered_dialog_lines(
+        CenteredOverlayFrame::new("History Search")
+            .color("accent")
+            .width(20, 120)
+            .height(8, 18),
+        body,
+        area,
+        buf,
+        colors,
+        theme.dim,
+    );
 }
 
 fn render_agent_tree_overlay(
@@ -781,27 +801,11 @@ fn render_agent_tree_overlay(
     area: Rect,
     buf: &mut ratatui::buffer::Buffer,
     theme: &Theme,
+    colors: &ThemeColors,
 ) {
     if area.width < 24 || area.height < 8 {
         return;
     }
-
-    let width = area.width.saturating_sub(6).clamp(24, 100);
-    let height = area.height.saturating_sub(6).clamp(8, 20);
-    let overlay = Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height,
-    };
-
-    Clear.render(overlay, buf);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Agent Threads ")
-        .border_style(theme.dim);
-    let inner = block.inner(overlay);
-    block.render(overlay, buf);
 
     let mut lines = dialog.render_lines(state, current_thread_id, theme);
     let total = state.thread_count();
@@ -814,10 +818,17 @@ fn render_agent_tree_overlay(
             Line::from(Span::styled(format!("Menu: {summary_row}"), theme.dim)),
         );
     }
-    Paragraph::new(lines)
-        .style(Style::default().fg(Color::White))
-        .wrap(Wrap { trim: false })
-        .render(inner, buf);
+    render_centered_dialog_lines(
+        CenteredOverlayFrame::new("Agent Threads")
+            .color("accent")
+            .width(24, 100)
+            .height(8, 20),
+        lines,
+        area,
+        buf,
+        colors,
+        theme.dim,
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -40,6 +40,7 @@ pub fn render_user_tool_reject_message(
 
     lines
 }
+#[cfg(test)]
 pub fn render_fallback_reject_message(theme: &Theme) -> Vec<Line<'static>> {
     render_fallback(None, theme)
 }

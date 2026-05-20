@@ -50,7 +50,9 @@ pub fn collect_validation_tips(
                         .to_string(),
                 ),
             },
-            "permissions.allow" | "permissions.deny" if diag.message.contains("appears in both") => {
+            "permissions.allow" | "permissions.deny"
+                if diag.message.contains("appears in both") =>
+            {
                 ValidationTip {
                     code: "conflicting-permission-rules".to_string(),
                     message: diag.message.clone(),
@@ -66,7 +68,8 @@ pub fn collect_validation_tips(
                 message: diag.message.clone(),
                 severity: diag.severity.clone(),
                 fix: Some(
-                    "Add auto mode rules in your settings file under permissions.autoMode.".to_string(),
+                    "Add auto mode rules in your settings file under permissions.autoMode."
+                        .to_string(),
                 ),
             },
             _ => ValidationTip {

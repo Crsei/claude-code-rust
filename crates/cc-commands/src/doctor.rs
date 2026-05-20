@@ -383,10 +383,7 @@ fn build_permission_rules_section(ctx: &CommandContext) -> Section {
     // Check for shadowed rules by loading managed settings and comparing.
     match mdm_module::load_managed_settings_policy() {
         Ok(config) if config.active => {
-            let managed_perms = config
-                .raw
-                .as_ref()
-                .and_then(|r| r.permissions.clone());
+            let managed_perms = config.raw.as_ref().and_then(|r| r.permissions.clone());
             let shadowed = permission_validation::find_shadowed_rules(
                 &ctx.app_state.settings.permissions,
                 managed_perms.as_ref(),
@@ -402,7 +399,10 @@ fn build_permission_rules_section(ctx: &CommandContext) -> Section {
                     rows.push(Row::new(
                         &rule.rule,
                         Status::Warn,
-                        format!("shadowed by {} (source: {:?})", rule.shadowed_by, rule.source),
+                        format!(
+                            "shadowed by {} (source: {:?})",
+                            rule.shadowed_by, rule.source
+                        ),
                     ));
                 }
             }
@@ -440,7 +440,11 @@ fn build_permission_rules_section(ctx: &CommandContext) -> Section {
         rows.push(Row::new(&w.field, status, w.message.clone()));
     }
 
-    if rows.is_empty() || rows.iter().all(|r| matches!(r.status, Status::Ok | Status::Info)) {
+    if rows.is_empty()
+        || rows
+            .iter()
+            .all(|r| matches!(r.status, Status::Ok | Status::Info))
+    {
         if perm_validation.is_empty() {
             rows.push(Row::new(
                 "permission validation",

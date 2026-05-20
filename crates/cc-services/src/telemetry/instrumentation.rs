@@ -45,11 +45,7 @@ pub struct InteractionSpan {
 
 impl InteractionSpan {
     /// Start a new interaction span.
-    pub fn start(
-        session_id: String,
-        submit_id: String,
-        handle: TelemetryHandle,
-    ) -> Self {
+    pub fn start(session_id: String, submit_id: String, handle: TelemetryHandle) -> Self {
         Self {
             interaction_id: format!("int_{}", Uuid::new_v4().as_simple()),
             session_id,
@@ -102,9 +98,7 @@ impl InteractionSpan {
 
     /// Finish the span, recording success with model and token counts.
     pub fn finish(&mut self, model: &str, tokens_in: u32, tokens_out: u32) {
-        let elapsed = (Utc::now() - self.start_time)
-            .num_milliseconds()
-            .max(0) as u64;
+        let elapsed = (Utc::now() - self.start_time).num_milliseconds().max(0) as u64;
         self.duration_ms = Some(elapsed);
         self.model = Some(model.to_string());
         self.tokens_in = Some(tokens_in);
@@ -116,9 +110,7 @@ impl InteractionSpan {
     pub fn record_error(&mut self, error: &str) {
         self.error = Some(error.to_string());
         if self.duration_ms.is_none() {
-            let elapsed = (Utc::now() - self.start_time)
-                .num_milliseconds()
-                .max(0) as u64;
+            let elapsed = (Utc::now() - self.start_time).num_milliseconds().max(0) as u64;
             self.duration_ms = Some(elapsed);
         }
         self.emit_event();
@@ -196,9 +188,7 @@ impl ModelSpan {
         cache_hit: bool,
         retry_count: u32,
     ) {
-        let elapsed = (Utc::now() - self.start_time)
-            .num_milliseconds()
-            .max(0) as u64;
+        let elapsed = (Utc::now() - self.start_time).num_milliseconds().max(0) as u64;
         self.duration_ms = Some(elapsed);
         self.request_tokens = Some(request_tokens);
         self.response_tokens = Some(response_tokens);
@@ -211,9 +201,7 @@ impl ModelSpan {
     pub fn record_error(&mut self, error: &str) {
         self.error = Some(error.to_string());
         if self.duration_ms.is_none() {
-            let elapsed = (Utc::now() - self.start_time)
-                .num_milliseconds()
-                .max(0) as u64;
+            let elapsed = (Utc::now() - self.start_time).num_milliseconds().max(0) as u64;
             self.duration_ms = Some(elapsed);
         }
         self.emit_event();
@@ -302,9 +290,7 @@ impl ToolSpan {
 
     /// Finish the span with a result.
     pub fn finish(&mut self, result: ToolResult) {
-        let elapsed = (Utc::now() - self.start_time)
-            .num_milliseconds()
-            .max(0) as u64;
+        let elapsed = (Utc::now() - self.start_time).num_milliseconds().max(0) as u64;
         self.duration_ms = Some(elapsed);
         self.result = result.as_str().to_string();
         self.emit_event();
@@ -367,9 +353,7 @@ impl HookSpan {
 
     /// Finish the span, recording success.
     pub fn finish(&mut self) {
-        let elapsed = (Utc::now() - self.start_time)
-            .num_milliseconds()
-            .max(0) as u64;
+        let elapsed = (Utc::now() - self.start_time).num_milliseconds().max(0) as u64;
         self.duration_ms = Some(elapsed);
         self.result = "ok".to_string();
         self.emit_event();
@@ -377,9 +361,7 @@ impl HookSpan {
 
     /// Record an error on the hook.
     pub fn record_error(&mut self, _error: &str) {
-        let elapsed = (Utc::now() - self.start_time)
-            .num_milliseconds()
-            .max(0) as u64;
+        let elapsed = (Utc::now() - self.start_time).num_milliseconds().max(0) as u64;
         self.duration_ms = Some(elapsed);
         self.result = "error".to_string();
         self.emit_event();

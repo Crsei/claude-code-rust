@@ -1,10 +1,37 @@
 //! Pure adapters from internal events to IPC protocol payloads.
 
 use cc_ipc_protocol::{
-    legacy_backend_to_payload, BackendMessage, IpcEnvelope, LegacyBackendPayload,
-    ToolResultContentInfo,
+    legacy_backend_to_payload, legacy_backend_type, BackendMessage, IpcEnvelope,
+    LegacyBackendPayload, ToolResultContentInfo,
 };
 use cc_types::message::{ContentBlock, StreamEvent};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadySnapshot {
+    pub session_id: String,
+    pub model: String,
+    pub cwd: String,
+}
+
+pub fn ready_snapshot(message: &BackendMessage) -> Option<ReadySnapshot> {
+    match message {
+        BackendMessage::Ready {
+            session_id,
+            model,
+            cwd,
+            ..
+        } => Some(ReadySnapshot {
+            session_id: session_id.clone(),
+            model: model.clone(),
+            cwd: cwd.clone(),
+        }),
+        _ => None,
+    }
+}
+
+pub fn backend_message_kind(message: &BackendMessage) -> &'static str {
+    legacy_backend_type(message)
+}
 
 pub fn legacy_to_envelope(
     message: &BackendMessage,
@@ -115,6 +142,33 @@ mod tests {
     use super::*;
     use cc_ipc_protocol::{ConversationEvent, LegacyBackendPayload};
     use cc_types::message::ImageSource;
+
+    fn ready() -> BackendMessage {
+        BackendMessage::Ready {
+            session_id: "session".to_string(),
+            model: "model".to_string(),
+            cwd: "/tmp/project".to_string(),
+            permission_mode: "default".to_string(),
+            available_models: Vec::new(),
+            plan_workflow: None,
+            editor_mode: None,
+            view_mode: None,
+            keybindings: None,
+        }
+    }
+
+    #[test]
+    fn extracts_ready_snapshot() {
+        let snapshot = ready_snapshot(&ready()).expect("ready snapshot");
+        assert_eq!(snapshot.session_id, "session");
+        assert_eq!(snapshot.model, "model");
+        assert_eq!(snapshot.cwd, "/tmp/project");
+    }
+
+    #[test]
+    fn names_backend_message_kind() {
+        assert_eq!(backend_message_kind(&ready()), "ready");
+    }
 
     #[test]
     fn maps_text_stream_delta() {

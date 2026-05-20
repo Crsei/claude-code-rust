@@ -35,11 +35,11 @@
 - `rust/crates/claude-code-rs/src/ui/app/app_event.rs` — 类型化 `AppEvent` 枚举（Backend、LocalNotice、Tick、Shutdown）
 - `rust/crates/claude-code-rs/src/ui/app/app_event_sender.rs` — 类型化发送器封装，提供 `channel()` 工厂
 - `rust/crates/claude-code-rs/src/ui/app/input.rs` — 完整的按键/鼠标/粘贴事件处理、按键绑定注册表解析、和弦支持、vim 集成、消息操作（复制/选择/导航）、历史上下翻动
-- `rust/crates/claude-code-rs/src/ui/app/loaded_threads.rs` — 多代理恢复的线程树过滤
-- `rust/crates/claude-code-rs/src/ui/app/app_backtrack.rs` — 回溯导航
-- `rust/crates/claude-code-rs/src/ui/app/app_command.rs` — 命令处理
-- `rust/crates/claude-code-rs/src/ui/app/app_server_adapter.rs` — 服务端流式适配器
-- `rust/crates/claude-code-rs/src/ui/app/app_server_requests.rs` — 服务端请求类型
+- `rust/crates/cc-teams/src/loaded_threads.rs` — 多代理恢复的线程树过滤
+- `rust/crates/cc-commands/src/rewind.rs` — `/rewind` 回退命令逻辑
+- `rust/crates/cc-ipc-protocol/src/protocol/` — 命令协议（`FrontendMessage`）
+- `rust/crates/cc-ipc-adapters/src/lib.rs` — 服务端/后端消息适配器
+- `rust/crates/cc-ipc-client/src/requests.rs` — 服务端请求类型
 - `rust/crates/claude-code-rs/src/ui/app/workspace_trust.rs` — 工作区信任门控
 - `rust/crates/claude-code-rs/src/ui/app/transcript_mode.rs` — 对话记录模式的按键处理
 - `rust/crates/claude-code-rs/src/ui/runtime/frame_requester.rs` — 带原因的合帧请求调度器（Input、Stream、Resize、Timer、Overlay）
@@ -146,7 +146,7 @@ Rust 拥有结构良好的语音集成，包含专用控制器连接、通过按
 
 ### Rust 文件
 - `rust/crates/claude-code-rs/src/ui/app/agent_navigation.rs` — `AgentNavigationState`，包含 `BTreeMap<String, AgentThreadEntry>`、插入顺序跟踪、`adjacent_thread_id()`、`active_agent_label()`、`render_agent_tree()`
-- `rust/crates/claude-code-rs/src/ui/app/loaded_threads.rs` — `find_loaded_subagent_threads_for_primary()` 树遍历
+- `rust/crates/cc-teams/src/loaded_threads.rs` — `find_loaded_subagent_threads_for_primary()` 树遍历
 
 ### TS 文件
 - `claude-code-bun/src/components/agents/AgentNavigationFooter.tsx` — 含操作说明和 Ctrl+C/D 退出的导航页脚

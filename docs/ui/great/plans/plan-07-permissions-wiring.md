@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+> 2026-05-20 更新：本文件上半部分保留了接线前的差距分析。当前实现状态以文末“实施后状态与遗留问题”为准。
+
 Rust 权限系统处于一种特有的 "已实现但未接线" 状态：
 
 ### 模块结构（镜像 TS）
@@ -241,13 +243,28 @@ Rust 对应：完全缺失。
 
 6. **测试风险**：当前唯一的测试覆盖率来自 `permissions.rs` 中的 snapshot 测试（`snapshot_permission_component_helpers`）。接入后，这些都需要更新或扩展以测试交互流程。建议为每个交互阶段（渲染 → 选择 → 反馈）分别新建测试。
 
-## 实施后遗留问题（2026-05-20）
+## 实施后状态与遗留问题（2026-05-20）
 
-本计划的第一阶段接线已经完成：新增 `PermissionRequestRouter`，常见工具权限请求会进入专用渲染路径，通用 `PermissionDialog` 会展示路由结果，并移除了已接线模块上的 `dead_code` 宽限。`cargo check -p claude-code-rs` 和 `cargo build --workspace --release` 未产生 Rust 生产警告。
+本轮已完成生产接线的基础层，而不是继续依赖 description 字符串推断：
+
+1. 权限回调改为传递结构化 `PermissionRequestPayload`，包含 `tool_use_id`、`tool_name`、`tool_input`、`message`、`options`。IPC 继续保留 legacy `command` 字段，同时新增 `input` 字段以保留结构化 tool input。
+2. direct TUI 的 `EngineEvent::PermissionRequest`、`App::show_permission_request` 和 `PermissionDialog` 已改为接收完整请求。`PermissionDialog` 现在用结构化 request 驱动 body 渲染和选项数量，不再用空 input 或 description 猜测主要内容。
+3. `PermissionRequestRouter` 已进入生产路径，优先按精确 tool name 分发，只有未知工具或缺少必要结构化字段时才走 fallback。当前覆盖 `Bash`、`PowerShell`、`WebFetch`、`Write`、`Edit`、`NotebookEdit`、`SedEdit`、`Filesystem`、`Skill`、`Monitor`、`ReviewArtifact`、`ComputerUse`、`EnterPlanMode`、`ExitPlanMode`、`Sandbox`。
+4. `AskUserQuestion` 已接入 direct TUI 的独立 `QuestionDialog` 和 `AskUserCallback` 事件路径，响应仍走 question callback，不混入 permission decision。headless `QuestionRequest` / `QuestionResponse` 语义保持独立。
+5. 已生产引用的权限组件解除测试隔离；仍无生产入口的纯快照、规则管理、反馈输入和调试 helper 继续保持 test-only，避免靠 `allow(dead_code)` 掩盖未接线代码。
 
 仍需在后续计划中跟踪：
 
-1. 反馈输入、IDE diff 交互、`BypassPermissionsModeDialog` 和权限分析事件尚未完成；这些仍对应原计划 Phase 2-4 与 Phase 6。
-2. 路由器已覆盖 bash、PowerShell、文件写入/编辑、WebFetch 等高频工具；较低频或复杂权限类型仍可能走 fallback/通用布局，需要逐个补齐 TS 对应组件语义。
-3. 权限对话框底部操作在极窄宽度下会降级为紧凑文案；最终 review 未发现阻塞问题，但宽度非常小时选中态可读性仍应通过后续快照或 viewport 测试继续覆盖。
-4. `cargo test -p claude-code-rs ui:: -- --nocapture` 仍可能在测试目标中暴露权限规则/辅助模块的 `dead_code` 警告；生产构建路径保持干净。
+1. 权限反馈输入、`PermissionChoice` feedback 全链路、IDE diff 交互、`BypassPermissionsModeDialog` 和权限分析事件尚未完成；这些仍对应原计划 Phase 2-4 与 Phase 6。
+2. 文件权限目前显示结构化摘要和已有 renderer 可表达的信息；外部 IDE diff 入口需等 editor bridge 能力明确后再启用。
+3. Team sandbox 仍是独立事件域，不应塞进普通 tool permission callback；等待 team event handler 具备 request/response UI 入口后再接专用交互。
+4. 缺少必要结构化字段的已知工具会明确 fallback，这是有意行为；后续若某工具需要专用 UI，应先补齐 payload，而不是恢复 description 硬解析。
+5. 权限对话框底部操作在极窄宽度下会降级为紧凑文案；宽度非常小时的选中态可读性仍需通过后续快照或 viewport 测试继续覆盖。
+
+已执行的验证：
+
+- `cargo check -p claude-code-rs`
+- `cargo test -p claude-code-rs ui:: -- --nocapture --test-threads=1`
+- `cargo test -p cc-ipc-client`
+- `cargo test -p cc-ipc-protocol`
+- `cargo build --workspace --release`

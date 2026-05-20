@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use cc_ipc_protocol::BackendMessage;
 pub use cc_types::callbacks::CallbackHost;
-use cc_types::callbacks::{AskUserCallback, PermissionCallback, ToolProgress};
+use cc_types::callbacks::{
+    AskUserCallback, PermissionCallback, PermissionRequestPayload, ToolProgress,
+};
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
 
@@ -28,42 +30,43 @@ pub fn install_permission_callback<H>(
     H: CallbackHost + Send + Sync + 'static,
 {
     let host_handle = host.clone();
-    let callback: PermissionCallback = Arc::new(
-        move |tool_use_id: String, tool_name: String, description: String, options: Vec<String>| {
-            let pending = pending.clone();
-            let sink = sink.clone();
-            let host = host_handle.clone();
-            let exit_plan_rejected = exit_plan_rejected.clone();
-            Box::pin(async move {
-                let _ = sink.send(&BackendMessage::PermissionRequest {
-                    tool_use_id: tool_use_id.clone(),
-                    tool: tool_name.clone(),
-                    command: description,
-                    options,
-                });
+    let callback: PermissionCallback = Arc::new(move |request: PermissionRequestPayload| {
+        let pending = pending.clone();
+        let sink = sink.clone();
+        let host = host_handle.clone();
+        let exit_plan_rejected = exit_plan_rejected.clone();
+        Box::pin(async move {
+            let tool_use_id = request.tool_use_id.clone();
+            let tool_name = request.tool_name.clone();
+            let _ = sink.send(&BackendMessage::PermissionRequest {
+                tool_use_id: tool_use_id.clone(),
+                tool: tool_name.clone(),
+                command: request.legacy_command(),
+                input: request.tool_input,
+                options: request.options,
+            });
 
-                let (tx, rx) = oneshot::channel();
-                pending.lock().insert(tool_use_id, tx);
+            let (tx, rx) = oneshot::channel();
+            pending.lock().insert(tool_use_id, tx);
 
-                match rx.await {
-                    Ok(decision) => {
-                        if tool_name == "ExitPlanMode"
-                            && matches!(
-                                decision.to_ascii_lowercase().as_str(),
-                                "deny" | "reject" | "no"
-                            )
-                        {
-                            if let Some(hook) = exit_plan_rejected.as_ref() {
-                                hook(&host, &sink);
-                            }
+            match rx.await {
+                Ok(decision) => {
+                    if tool_name == "ExitPlanMode"
+                        && matches!(
+                            decision.to_ascii_lowercase().as_str(),
+                            "deny" | "reject" | "no"
+                        )
+                    {
+                        if let Some(hook) = exit_plan_rejected.as_ref() {
+                            hook(&host, &sink);
                         }
-                        decision
                     }
-                    Err(_) => "deny".to_string(),
+                    decision
                 }
-            })
-        },
-    );
+                Err(_) => "deny".to_string(),
+            }
+        })
+    });
     host.set_permission_callback(callback);
 }
 
@@ -171,12 +174,13 @@ mod tests {
             .lock()
             .clone()
             .expect("permission callback installed");
-        let task = tokio::spawn(callback(
-            "tool-1".to_string(),
-            "Bash".to_string(),
-            "echo hi".to_string(),
-            vec!["allow".to_string(), "deny".to_string()],
-        ));
+        let task = tokio::spawn(callback(PermissionRequestPayload {
+            tool_use_id: "tool-1".to_string(),
+            tool_name: "Bash".to_string(),
+            tool_input: serde_json::json!({"command":"echo hi"}),
+            message: "echo hi".to_string(),
+            options: vec!["allow".to_string(), "deny".to_string()],
+        }));
 
         wait_until(|| pending.lock().contains_key("tool-1")).await;
 
@@ -186,10 +190,12 @@ mod tests {
                 tool_use_id,
                 tool,
                 command,
+                input,
                 options,
             } if tool_use_id == "tool-1"
                 && tool == "Bash"
-                && command == "echo hi"
+                && command == "Bash: echo hi"
+                && input == &serde_json::json!({"command":"echo hi"})
                 && options == &vec!["allow".to_string(), "deny".to_string()]
         ));
 
@@ -218,12 +224,13 @@ mod tests {
             .lock()
             .clone()
             .expect("permission callback installed");
-        let task = tokio::spawn(callback(
-            "exit-plan".to_string(),
-            "ExitPlanMode".to_string(),
-            "approve plan".to_string(),
-            vec!["allow".to_string(), "deny".to_string()],
-        ));
+        let task = tokio::spawn(callback(PermissionRequestPayload {
+            tool_use_id: "exit-plan".to_string(),
+            tool_name: "ExitPlanMode".to_string(),
+            tool_input: serde_json::json!({"plan":"approve plan"}),
+            message: "approve plan".to_string(),
+            options: vec!["allow".to_string(), "deny".to_string()],
+        }));
 
         wait_until(|| pending.lock().contains_key("exit-plan")).await;
 

@@ -1,7 +1,9 @@
 //! Rust-side helper for upstream advisor messages.
 
+#[cfg(test)]
 use crate::ui::theme::Theme;
 
+#[cfg(test)]
 pub fn render_advisor_message(
     model: Option<&str>,
     prompt: &str,

@@ -24,9 +24,10 @@ impl VersionRequirement {
     /// Check whether a concrete version satisfies this requirement.
     pub fn satisfied_by(&self, version: &str) -> bool {
         // If both version and requirement parse, use semver matching
-        if let (Ok(ver), Ok(req)) =
-            (semver::Version::parse(version), semver::VersionReq::parse(&self.spec))
-        {
+        if let (Ok(ver), Ok(req)) = (
+            semver::Version::parse(version),
+            semver::VersionReq::parse(&self.spec),
+        ) {
             return req.matches(&ver);
         }
         // Fallback: exact string comparison

@@ -633,8 +633,8 @@ fn web_fetch_permission_dialog_uses_dedicated_renderer() {
     let mut app = App::new();
     app.show_permission_dialog(
         "WebFetch",
-        "",
-        "WebFetch: Allow tool? https://example.com/docs",
+        r#"{"url":"https://example.com/docs"}"#,
+        "WebFetch: Allow tool?",
     );
     let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
     terminal.draw(|frame| app.render(frame)).expect("draw");

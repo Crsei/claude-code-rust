@@ -37,6 +37,7 @@ impl ToolResultBlock {
         }
     }
 
+    #[cfg(test)]
     pub fn with_tool_use_result(mut self, tool_use_result: impl Into<String>) -> Self {
         self.tool_use_result = Some(tool_use_result.into());
         self
@@ -106,6 +107,7 @@ pub(crate) fn format_tool_output(raw: &str) -> String {
 }
 
 /// Render a stable one-line text representation for testing/snapshots.
+#[cfg(test)]
 pub(crate) fn line_to_text(line: &ratatui::text::Line<'_>) -> String {
     line.spans
         .iter()

@@ -126,10 +126,7 @@ pub struct CompletionContext<'a> {
 
 impl<'a> CompletionContext<'a> {
     pub fn new(input: &'a str, cursor_pos: usize, _skill_scores: &'a [(String, f64)]) -> Self {
-        Self {
-            input,
-            cursor_pos,
-        }
+        Self { input, cursor_pos }
     }
 }
 

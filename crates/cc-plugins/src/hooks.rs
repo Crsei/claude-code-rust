@@ -39,13 +39,29 @@ pub fn load_plugin_hooks(
         Some(hooks) => hooks
             .iter()
             .map(|hook| PluginHookDefinition {
-                name: hook.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                trigger: hook.get("trigger").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                action: hook.get("action").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                name: hook
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                trigger: hook
+                    .get("trigger")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                action: hook
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
                 conditions: hook
                     .get("conditions")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default(),
                 plugin_id: plugin_id.to_string(),
             })

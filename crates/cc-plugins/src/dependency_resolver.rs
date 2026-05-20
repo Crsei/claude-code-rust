@@ -37,7 +37,10 @@ pub enum DependencyError {
 impl std::fmt::Display for DependencyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DependencyError::Missing { plugin_id, requirement } => {
+            DependencyError::Missing {
+                plugin_id,
+                requirement,
+            } => {
                 write!(
                     f,
                     "Missing dependency '{}' (required: {})",
@@ -150,11 +153,7 @@ impl DependencyResolver {
         path: &mut Vec<String>,
     ) -> Result<(), DependencyError> {
         if in_stack.contains(current) {
-            let chain: Vec<String> = path
-                .iter()
-                .skip_while(|p| *p != current)
-                .cloned()
-                .collect();
+            let chain: Vec<String> = path.iter().skip_while(|p| *p != current).cloned().collect();
             return Err(DependencyError::Cycle {
                 plugin_id: current.to_string(),
                 chain,
@@ -201,7 +200,10 @@ mod tests {
             mcp_servers: vec![],
             lsp_servers: None,
             commands: vec![],
-            dependencies: deps.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            dependencies: deps
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
             configuration: None,
             agents: None,
             hooks: None,

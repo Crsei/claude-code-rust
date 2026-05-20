@@ -1,25 +1,18 @@
 // BEGIN generated upstream permissions modules
 // Rust-side permission modules mirrored from upstream React components.
-#[cfg(test)]
 pub mod ask_user_question_permission_request;
 pub mod bash_permission_request;
-#[cfg(test)]
 pub mod computer_use_approval;
-#[cfg(test)]
 pub mod enter_plan_mode_permission_request;
-#[cfg(test)]
 pub mod exit_plan_mode_permission_request;
 pub mod fallback_permission_request;
 pub mod file_edit_permission_request;
 pub mod file_permission_dialog;
 pub mod file_write_permission_request;
-#[cfg(test)]
 pub mod filesystem_permission_request;
 #[cfg(test)]
 pub mod hooks;
-#[cfg(test)]
 pub mod monitor_permission_request;
-#[cfg(test)]
 pub mod notebook_edit_permission_request;
 #[cfg(test)]
 pub mod permission_decision_debug_info;
@@ -37,15 +30,12 @@ pub mod permission_request_title;
 #[cfg(test)]
 pub mod permission_rule_explanation;
 pub mod power_shell_permission_request;
-#[cfg(test)]
+pub mod question_dialog;
 pub mod review_artifact_permission_request;
 pub mod rules;
-#[cfg(test)]
 pub mod sandbox_permission_request;
-#[cfg(test)]
 pub mod sed_edit_permission_request;
 pub mod shell_permission_helpers;
-#[cfg(test)]
 pub mod skill_permission_request;
 #[cfg(test)]
 pub mod use_shell_permission_feedback;
@@ -60,6 +50,8 @@ pub mod worker_pending_permission;
 mod dialog_overlay;
 
 pub use dialog_overlay::{PermissionChoice, PermissionDialog};
+pub use permission_request_router::PermissionDialogRequest;
+pub use question_dialog::QuestionDialog;
 
 #[cfg(test)]
 mod tests {

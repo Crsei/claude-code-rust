@@ -101,7 +101,9 @@ impl CommandPalette {
                     let group_label = format!("  \u{2500} {} \u{2500}", current_group);
                     lines.push(Line::from(Span::styled(
                         group_label,
-                        Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::DIM),
                     )));
                 }
                 last_group = Some(CommandGroup::Builtin);

@@ -37,9 +37,9 @@
 | 会话日志 | — | `runtime/session_log.rs` | ✅ | |
 | 语音控制 | — | `app/voice.rs` | ✅ | |
 | 工作区信任 | — | `app/workspace_trust.rs` | ✅ | |
-| 回退导航 | — | `app/app_backtrack.rs` | ✅ | |
-| 已加载线程 | — | `app/loaded_threads.rs` | ✅ | |
-| 服务端适配 | — | `app/app_server_adapter.rs` | ✅ | |
+| 回退导航 | — | `cc-commands/src/rewind.rs` | ✅ | UI-only stub removed; slash command owns rewind |
+| 已加载线程 | — | `cc-teams/src/loaded_threads.rs` | ✅ | |
+| 服务端适配 | — | `cc-ipc-adapters/src/lib.rs` + `cc-ipc-client/src/requests.rs` | ✅ | |
 | 可视化回归 | — | `runtime/visual_regression.rs` | ✅ | 含 insta snapshot |
 | Snapshot 审阅导出 | — | `runtime/snapshot_export.rs` + `scripts/export-ui-snapshots.ps1` | ⚠️ | 本地已补导出入口，可汇总 accepted UI snapshots 到 `target/ui-snapshots/`；脚本/导出模块需确认纳入版本控制 |
 

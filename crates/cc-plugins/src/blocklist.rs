@@ -69,13 +69,18 @@ impl PluginBlocklist {
     pub fn is_blocklisted(&self, plugin_id: &str) -> bool {
         let allowlist = self.allowlist.read();
         // If allowlisted, never blocklisted
-        if allowlist.iter().any(|e| pattern_matches(&e.pattern, plugin_id)) {
+        if allowlist
+            .iter()
+            .any(|e| pattern_matches(&e.pattern, plugin_id))
+        {
             return false;
         }
         drop(allowlist);
 
         let blocklist = self.blocklist.read();
-        blocklist.iter().any(|e| pattern_matches(&e.pattern, plugin_id))
+        blocklist
+            .iter()
+            .any(|e| pattern_matches(&e.pattern, plugin_id))
     }
 
     /// Check whether a plugin ID is allowlisted.
@@ -147,9 +152,7 @@ fn pattern_matches(pattern: &str, value: &str) -> bool {
 pub static GLOBAL_BLOCKLIST: LazyLock<PluginBlocklist> = LazyLock::new(PluginBlocklist::new);
 
 /// Convert `cc_config::mdm::settings::BlocklistEntry` to our local type.
-pub fn from_config_blocklist(
-    entries: &[cc_config::mdm::BlocklistEntry],
-) -> Vec<BlocklistEntry> {
+pub fn from_config_blocklist(entries: &[cc_config::mdm::BlocklistEntry]) -> Vec<BlocklistEntry> {
     entries
         .iter()
         .map(|e| BlocklistEntry {
@@ -160,9 +163,7 @@ pub fn from_config_blocklist(
 }
 
 /// Convert `cc_config::mdm::settings::AllowlistEntry` to our local type.
-pub fn from_config_allowlist(
-    entries: &[cc_config::mdm::AllowlistEntry],
-) -> Vec<BlocklistEntry> {
+pub fn from_config_allowlist(entries: &[cc_config::mdm::AllowlistEntry]) -> Vec<BlocklistEntry> {
     entries
         .iter()
         .map(|e| BlocklistEntry {

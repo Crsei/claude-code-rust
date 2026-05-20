@@ -9,9 +9,7 @@ use uuid::Uuid;
 
 use cc_types::commands::{CommandDispatcher, ParsedCommand};
 
-use crate::types::message::{
-    ContentBlock, Message, MessageContent, UserMessage,
-};
+use crate::types::message::{ContentBlock, Message, MessageContent, UserMessage};
 
 // ---------------------------------------------------------------------------
 // AttachmentInfo
@@ -240,10 +238,7 @@ pub fn process_skill_input(_input: &str, skill_name: &str) -> ProcessedInput {
 ///
 /// Builds a `UserMessage` from the text and any attached images/files.
 /// Content blocks are constructed from attachments when present.
-pub fn process_text_input(
-    text: &str,
-    attachments: Vec<AttachmentInfo>,
-) -> ProcessedInput {
+pub fn process_text_input(text: &str, attachments: Vec<AttachmentInfo>) -> ProcessedInput {
     let content = if attachments.is_empty() {
         MessageContent::Text(text.to_string())
     } else {
@@ -308,13 +303,9 @@ fn is_known_skill(name: &str) -> bool {
     // Try to access the skill registry. If skills haven't been loaded yet,
     // this returns false and the input is treated as regular text.
     let skills = cc_skills::get_all_skills();
-    skills.iter().any(|s| {
-        s.name == name
-            || s.frontmatter
-                .name
-                .as_deref()
-                .is_some_and(|n| n == name)
-    })
+    skills
+        .iter()
+        .any(|s| s.name == name || s.frontmatter.name.as_deref().is_some_and(|n| n == name))
 }
 
 // ---------------------------------------------------------------------------

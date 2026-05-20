@@ -50,12 +50,7 @@ pub trait TelemetrySink: Send + Sync {
     );
 
     /// Record a single tool execution.
-    fn record_tool_execution(
-        &self,
-        tool_name: &str,
-        duration_ms: Option<u64>,
-        result: &str,
-    );
+    fn record_tool_execution(&self, tool_name: &str, duration_ms: Option<u64>, result: &str);
 }
 
 // ---------------------------------------------------------------------------
@@ -204,12 +199,7 @@ impl SessionTracingBridge {
     }
 
     /// Emit a tool execution event.
-    pub fn emit_tool_event(
-        &self,
-        tool_name: &str,
-        duration_ms: Option<u64>,
-        result: &str,
-    ) {
+    pub fn emit_tool_event(&self, tool_name: &str, duration_ms: Option<u64>, result: &str) {
         let outcome = match result {
             "error" | "denied" => Outcome::Failed,
             _ => Outcome::Completed,
@@ -262,7 +252,14 @@ mod tests {
         };
         let sink = AuditSink::noop(config);
         let bridge = SessionTracingBridge::new(sink);
-        bridge.emit_interaction_event("int_01", "sess_01", Some("sub_01"), Some(100), Some("claude-sonnet-4"), None);
+        bridge.emit_interaction_event(
+            "int_01",
+            "sess_01",
+            Some("sub_01"),
+            Some(100),
+            Some("claude-sonnet-4"),
+            None,
+        );
         bridge.emit_model_event("claude-sonnet-4", Some(50), Some(100), Some(200), None);
         bridge.emit_tool_event("Bash", Some(30), "ok");
         // Should not panic — events are silently discarded

@@ -224,9 +224,8 @@ diff --git a/src/lib.rs b/src/lib.rs
 
     #[test]
     fn result_and_combined_mode_use_diff_helpers() {
-        let result = GitDiffResult::from_string(
-            "diff --git a/a b/a\n@@ -1 +1 @@\n-old\n+new\n".to_string(),
-        );
+        let result =
+            GitDiffResult::from_string("diff --git a/a b/a\n@@ -1 +1 @@\n-old\n+new\n".to_string());
 
         assert_eq!(result.files_changed, 1);
         assert_eq!(result.lines_added, 1);

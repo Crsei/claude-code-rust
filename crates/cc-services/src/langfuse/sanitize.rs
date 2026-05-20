@@ -93,10 +93,7 @@ pub fn serialize_sanitized_value(value: &Value) -> String {
 /// Called during telemetry export to apply additional redaction rules
 /// on top of the default sanitization.
 #[cfg(feature = "telemetry")]
-pub fn apply_redaction_config(
-    value: &mut Value,
-    config: &crate::telemetry::TelemetryRedaction,
-) {
+pub fn apply_redaction_config(value: &mut Value, config: &crate::telemetry::TelemetryRedaction) {
     // Delegate to the telemetry privacy module for redaction
     crate::telemetry::privacy::redact_for_telemetry(value, config);
 }

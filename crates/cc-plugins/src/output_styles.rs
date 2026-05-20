@@ -30,9 +30,19 @@ pub fn load_plugin_output_styles(manifest: &PluginManifest) -> Vec<PluginOutputS
         Some(styles) => styles
             .iter()
             .map(|style| PluginOutputStyle {
-                name: style.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                matcher: style.get("matcher").and_then(|v| v.as_str()).map(String::from),
-                format_config: style.get("formatConfig").or_else(|| style.get("format_config")).cloned(),
+                name: style
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                matcher: style
+                    .get("matcher")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                format_config: style
+                    .get("formatConfig")
+                    .or_else(|| style.get("format_config"))
+                    .cloned(),
             })
             .collect(),
         None => Vec::new(),

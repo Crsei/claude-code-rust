@@ -6,7 +6,9 @@ use anyhow::Result;
 use parking_lot::RwLock;
 use serde_json::Value;
 
-pub use cc_types::callbacks::{AskUserCallback, PermissionCallback, ToolProgress};
+pub use cc_types::callbacks::{
+    AskUserCallback, PermissionCallback, PermissionRequestPayload, ToolProgress,
+};
 pub use cc_types::permissions::ToolPermissionRulesBySource;
 pub use cc_types::permissions::{
     AdditionalWorkingDirectory, PermissionMode, StrippedPermissionRule, ToolPermissionContext,

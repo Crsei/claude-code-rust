@@ -45,16 +45,38 @@ pub fn load_plugin_agents(
         Some(agents) => agents
             .iter()
             .map(|agent| PluginAgentDefinition {
-                id: agent.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                name: agent.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                description: agent.get("description").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                model: agent.get("model").and_then(|v| v.as_str()).map(String::from),
+                id: agent
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                name: agent
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                description: agent
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                model: agent
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 tools: agent
                     .get("tools")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default(),
-                instructions: agent.get("instructions").and_then(|v| v.as_str()).map(String::from),
+                instructions: agent
+                    .get("instructions")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 plugin_id: plugin_id.to_string(),
             })
             .collect(),

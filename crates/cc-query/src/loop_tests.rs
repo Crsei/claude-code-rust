@@ -162,7 +162,7 @@ impl QueryDeps for MockDeps {
             MockStreamStep::Response(resp) => {
                 let mut events = Vec::new();
                 events.push(Ok(StreamEvent::MessageStart {
-                    usage: resp.usage.clone(),
+                    usage: resp.assistant_message.usage.clone().unwrap_or_default(),
                 }));
                 for (i, block) in resp.assistant_message.content.iter().enumerate() {
                     events.push(Ok(StreamEvent::ContentBlockStart {
@@ -175,7 +175,7 @@ impl QueryDeps for MockDeps {
                     delta: cc_engine::types::message::MessageDelta {
                         stop_reason: resp.assistant_message.stop_reason.clone(),
                     },
-                    usage: Some(resp.usage),
+                    usage: resp.assistant_message.usage.clone(),
                 }));
                 events.push(Ok(StreamEvent::MessageStop));
                 events
@@ -465,13 +465,6 @@ fn make_text_response_with_stop_and_output_tokens(
             is_api_error_message: false,
             api_error: None,
             cost_usd: 0.001,
-        },
-        stream_events: vec![],
-        usage: Usage {
-            input_tokens: 100,
-            output_tokens,
-            cache_read_input_tokens: 0,
-            cache_creation_input_tokens: 0,
         },
     }
 }
@@ -1237,8 +1230,6 @@ async fn test_tool_use_then_text_response() {
             api_error: None,
             cost_usd: 0.001,
         },
-        stream_events: vec![],
-        usage: Usage::default(),
     };
 
     let text_response = make_text_response("Done! The output was hello.");
@@ -1311,8 +1302,6 @@ async fn tool_use_summary_gate_case(emit_tool_use_summaries: bool) -> Vec<QueryY
             api_error: None,
             cost_usd: 0.001,
         },
-        stream_events: vec![],
-        usage: Usage::default(),
     };
     let deps = Arc::new(MockDeps::new(vec![
         tool_response,
@@ -1374,8 +1363,6 @@ async fn run_observable_input_backfill_case(
             api_error: None,
             cost_usd: 0.0,
         },
-        stream_events: vec![],
-        usage: Usage::default(),
     };
     let tools: Tools = vec![Arc::new(ObservableInputTool {
         name: "ObservableMessage",
@@ -1706,8 +1693,6 @@ async fn test_max_turns_limit() {
             api_error: None,
             cost_usd: 0.0,
         },
-        stream_events: vec![],
-        usage: Usage::default(),
     };
 
     let deps = Arc::new(MockDeps::new(vec![tool_response]));
@@ -1767,8 +1752,6 @@ async fn test_hook_stopped_tool_execution_yields_attachment_and_stops() {
             api_error: None,
             cost_usd: 0.0,
         },
-        stream_events: vec![],
-        usage: Usage::default(),
     };
 
     let deps = Arc::new(MockDeps::new(vec![
@@ -1879,7 +1862,7 @@ impl QueryDeps for ImageMockDeps {
         let resp = responses.remove(0);
         let mut events = Vec::new();
         events.push(StreamEvent::MessageStart {
-            usage: resp.usage.clone(),
+            usage: resp.assistant_message.usage.clone().unwrap_or_default(),
         });
         for (i, block) in resp.assistant_message.content.iter().enumerate() {
             events.push(StreamEvent::ContentBlockStart {
@@ -1892,7 +1875,7 @@ impl QueryDeps for ImageMockDeps {
             delta: cc_engine::types::message::MessageDelta {
                 stop_reason: resp.assistant_message.stop_reason.clone(),
             },
-            usage: Some(resp.usage),
+            usage: resp.assistant_message.usage.clone(),
         });
         events.push(StreamEvent::MessageStop);
         let stream = futures::stream::iter(events.into_iter().map(Ok));
@@ -1999,8 +1982,6 @@ async fn test_image_tool_result_flows_as_blocks() {
             api_error: None,
             cost_usd: 0.001,
         },
-        stream_events: vec![],
-        usage: Usage::default(),
     };
 
     // Turn 2: model sees image and responds
@@ -2142,7 +2123,7 @@ impl QueryDeps for CuMockDeps {
         let resp = responses.remove(0);
         let mut events = Vec::new();
         events.push(StreamEvent::MessageStart {
-            usage: resp.usage.clone(),
+            usage: resp.assistant_message.usage.clone().unwrap_or_default(),
         });
         for (i, block) in resp.assistant_message.content.iter().enumerate() {
             events.push(StreamEvent::ContentBlockStart {
@@ -2155,7 +2136,7 @@ impl QueryDeps for CuMockDeps {
             delta: cc_engine::types::message::MessageDelta {
                 stop_reason: resp.assistant_message.stop_reason.clone(),
             },
-            usage: Some(resp.usage),
+            usage: resp.assistant_message.usage.clone(),
         });
         events.push(StreamEvent::MessageStop);
         let stream = futures::stream::iter(events.into_iter().map(Ok));
@@ -2269,8 +2250,6 @@ async fn test_computer_use_screenshot_click_round_trip() {
             api_error: None,
             cost_usd: 0.001,
         },
-        stream_events: vec![],
-        usage: Usage::default(),
     };
 
     // Turn 2: model sees image, decides to click
@@ -2295,8 +2274,6 @@ async fn test_computer_use_screenshot_click_round_trip() {
             api_error: None,
             cost_usd: 0.001,
         },
-        stream_events: vec![],
-        usage: Usage::default(),
     };
 
     // Turn 3: model confirms result

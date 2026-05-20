@@ -221,9 +221,7 @@ pub fn export_telemetry_events(events: Vec<TelemetryEvent>) {
             }
         };
 
-        let span_builder = tracer
-            .span_builder(span_name)
-            .with_attributes(attrs);
+        let span_builder = tracer.span_builder(span_name).with_attributes(attrs);
         tracer.build_with_context(span_builder, &opentelemetry::Context::new());
     }
 

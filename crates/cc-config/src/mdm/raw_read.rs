@@ -48,12 +48,7 @@ pub fn read_managed_settings_raw_value() -> Result<Option<Value>> {
     let contents = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read managed settings file: {}", path.display()))?;
     let value: Value = serde_json::from_str(&contents)
-        .with_context(|| {
-            format!(
-                "Failed to parse managed settings JSON: {}",
-                path.display()
-            )
-        })?;
+        .with_context(|| format!("Failed to parse managed settings JSON: {}", path.display()))?;
     Ok(Some(value))
 }
 
@@ -75,10 +70,7 @@ mod tests {
         std::fs::write(&path, "not valid json {{").unwrap();
         let result = read_managed_settings_raw_from(&path);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to parse"));
+        assert!(result.unwrap_err().to_string().contains("Failed to parse"));
     }
 
     #[test]

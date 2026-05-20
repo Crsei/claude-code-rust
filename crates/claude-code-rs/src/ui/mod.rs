@@ -24,7 +24,6 @@ pub mod tui;
 pub mod approval_overlay;
 #[path = "components/better_view_panel.rs"]
 pub mod better_view_panel;
-#[cfg(test)]
 #[path = "components/bottom_pane.rs"]
 pub mod bottom_pane;
 #[cfg(test)]
@@ -38,7 +37,6 @@ pub mod command_surface;
 #[cfg(test)]
 #[path = "components/cwd_prompt.rs"]
 pub mod cwd_prompt;
-#[cfg(test)]
 #[path = "components/divider.rs"]
 pub mod divider;
 #[cfg(test)]
@@ -62,7 +60,6 @@ pub mod loading_state;
 #[cfg(test)]
 #[path = "components/pager_overlay.rs"]
 pub mod pager_overlay;
-#[cfg(test)]
 #[path = "components/pane.rs"]
 pub mod pane;
 pub mod prompt_input;
@@ -217,5 +214,4 @@ pub mod status_line_resolver;
 pub mod theme;
 
 // Overlay / modal infrastructure.
-#[cfg(test)]
 pub mod overlays;

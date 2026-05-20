@@ -36,13 +36,7 @@ pub trait EngineTelemetry: Send + Sync {
     fn start_submit(&self, session_id: &str, submit_id: &str) -> SpanId;
 
     /// Called when a submit completes (success or error).
-    fn end_submit(
-        &self,
-        span_id: SpanId,
-        model: &str,
-        input_tokens: u64,
-        output_tokens: u64,
-    );
+    fn end_submit(&self, span_id: SpanId, model: &str, input_tokens: u64, output_tokens: u64);
 
     /// Called before a hook (e.g. `UserPromptSubmit`) runs.
     fn start_hook(&self, hook_name: &str) -> SpanId;

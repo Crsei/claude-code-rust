@@ -40,9 +40,9 @@ mod tests;
 
 use commands::{query_prompt_text, try_execute_command, CmdAction};
 use engine_events::{
-    create_user_message, handle_sdk_message, handle_tool_progress, install_tui_permission_callback,
-    install_tui_tool_progress_callback, now_ts, permission_choice_to_decision, spawn_engine_query,
-    EngineEvent, StreamingState,
+    create_user_message, handle_sdk_message, handle_tool_progress, install_tui_ask_user_callback,
+    install_tui_permission_callback, install_tui_tool_progress_callback, now_ts,
+    permission_choice_to_decision, spawn_engine_query, EngineEvent, StreamingState,
 };
 use export::export_to_editor;
 use subsystem_events::{
@@ -57,7 +57,7 @@ use cc_types::agent_channel::AgentIpcEvent;
 use cc_types::agent_events::AgentCommand;
 use cc_types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
 
-use super::app::{app_event::AppEvent, App, AppAction};
+use super::app::{app_event::AppEvent, app_event_sender, App, AppAction};
 
 fn lsp_event_to_subsystem(
     event: cc_lsp_service::LspEvent,
@@ -207,6 +207,7 @@ pub async fn run_tui(
     app.set_backend_name(engine.app_state().main_loop_backend.clone());
     app.set_session_id(engine.current_session_id().to_string());
     app.set_cwd(engine.cwd().to_string());
+    let (app_event_sender, mut app_event_rx) = app_event_sender::channel();
     match super::persistent_history::load_persistent_history_for_workspace(std::path::Path::new(
         engine.cwd(),
     )) {
@@ -214,6 +215,8 @@ pub async fn run_tui(
         Ok(_) => {}
         Err(error) => {
             tracing::warn!(error = %error, "persistent prompt history unavailable");
+            let _ =
+                app_event_sender.notice(format!("Persistent prompt history unavailable: {error}"));
         }
     }
 
@@ -268,10 +271,12 @@ pub async fn run_tui(
     // ── Create channels ────────────────────────────────────────────
     let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<EngineEvent>();
     install_tui_permission_callback(&engine, engine_tx.clone());
+    install_tui_ask_user_callback(&engine, engine_tx.clone());
     install_tui_tool_progress_callback(&engine, engine_tx.clone());
     let (agent_tx, mut agent_rx) = cc_types::agent_channel::agent_channel();
     engine.set_bg_agent_tx(agent_tx);
     let mut pending_permission_response: Option<oneshot::Sender<String>> = None;
+    let mut pending_question_response: Option<oneshot::Sender<String>> = None;
     let mut streaming_state = StreamingState::new();
 
     let subsystem_bus = SubsystemEventBus::new();
@@ -420,6 +425,11 @@ pub async fn run_tui(
                                         .send(permission_choice_to_decision(choice).to_string());
                                 }
                             }
+                            AppAction::QuestionResponse(answer) => {
+                                if let Some(response_tx) = pending_question_response.take() {
+                                    let _ = response_tx.send(answer);
+                                }
+                            }
                             AppAction::AgentThreadSelected(agent_id) => {
                                 let messages =
                                     cc_ipc::agent_handlers::handle_agent_command(
@@ -495,6 +505,10 @@ pub async fn run_tui(
                 handle_agent_ipc_event(&mut app, agent_event);
             }
 
+            Some(app_event) = app_event_rx.recv() => {
+                app.handle_app_event(app_event);
+            }
+
             // Engine events (query results)
             Some(engine_event) = engine_rx.recv() => {
                 match engine_event {
@@ -504,16 +518,23 @@ pub async fn run_tui(
                     EngineEvent::ToolProgress(progress) => {
                         handle_tool_progress(&mut app, progress);
                     }
-                    EngineEvent::PermissionRequest {
-                        tool_name,
-                        description,
-                        response_tx,
-                    } => {
+                    EngineEvent::PermissionRequest { request, response_tx } => {
                         if let Some(previous) = pending_permission_response.take() {
                             let _ = previous.send("deny".to_string());
                         }
-                        app.show_permission_dialog(&tool_name, "", &description);
+                        app.show_permission_request(request.into());
                         pending_permission_response = Some(response_tx);
+                    }
+                    EngineEvent::QuestionRequest {
+                        id,
+                        question,
+                        response_tx,
+                    } => {
+                        if let Some(previous) = pending_question_response.take() {
+                            let _ = previous.send(String::new());
+                        }
+                        app.show_question_dialog(id, question);
+                        pending_question_response = Some(response_tx);
                     }
                     EngineEvent::Done => {
                         app.set_streaming(false);
@@ -526,6 +547,12 @@ pub async fn run_tui(
                     Ok(event) => handle_subsystem_event(&mut app, event),
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                         add_system_error(&mut app, "A subsystem UI event was dropped because the TUI fell behind.");
+                        let _ = app_event_sender.notification(
+                            "subsystem-lag",
+                            "A subsystem UI event was dropped because the TUI fell behind.",
+                            "error",
+                            Some(8000),
+                        );
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {}
                 }

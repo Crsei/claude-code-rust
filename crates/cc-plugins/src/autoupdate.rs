@@ -70,7 +70,9 @@ impl AutoUpdateManager {
         updates.sort_by(|a, b| {
             let sev_a = severity_rank(&a.severity);
             let sev_b = severity_rank(&b.severity);
-            sev_b.cmp(&sev_a).then_with(|| a.plugin_id.cmp(&b.plugin_id))
+            sev_b
+                .cmp(&sev_a)
+                .then_with(|| a.plugin_id.cmp(&b.plugin_id))
         });
 
         updates
@@ -90,10 +92,7 @@ impl AutoUpdateManager {
     }
 
     /// Filter updates to only those matching the configured auto-update criteria.
-    pub fn filter_auto_updates(
-        updates: Vec<UpdateInfo>,
-        max_severity: &str,
-    ) -> Vec<UpdateInfo> {
+    pub fn filter_auto_updates(updates: Vec<UpdateInfo>, max_severity: &str) -> Vec<UpdateInfo> {
         let max_rank = severity_rank(max_severity);
         updates
             .into_iter()
@@ -173,7 +172,9 @@ mod tests {
             name: id.to_string(),
             version: version.to_string(),
             description: "".to_string(),
-            source: PluginSource::Local { path: "/tmp".into() },
+            source: PluginSource::Local {
+                path: "/tmp".into(),
+            },
             status: crate::PluginStatus::Installed,
             marketplace: None,
             cache_path: None,
@@ -267,14 +268,14 @@ mod tests {
 
     #[test]
     fn test_version_comparison() {
-        assert_eq!(
-            compare_versions("1.0.0", "2.0.0"),
-            std::cmp::Ordering::Less
-        );
+        assert_eq!(compare_versions("1.0.0", "2.0.0"), std::cmp::Ordering::Less);
         assert_eq!(
             compare_versions("2.0.0", "1.0.0"),
             std::cmp::Ordering::Greater
         );
-        assert_eq!(compare_versions("1.0.0", "1.0.0"), std::cmp::Ordering::Equal);
+        assert_eq!(
+            compare_versions("1.0.0", "1.0.0"),
+            std::cmp::Ordering::Equal
+        );
     }
 }

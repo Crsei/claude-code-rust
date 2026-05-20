@@ -205,9 +205,9 @@ mod tests {
             &["cfg", "conf"],
             "Manage configuration settings",
             "cf",
-            1.0,   // name weight
-            0.75,  // alias weight
-            0.5,   // description weight
+            1.0,  // name weight
+            0.75, // alias weight
+            0.5,  // description weight
         );
         assert!(result.is_some());
         // The score should be reasonable
@@ -220,7 +220,9 @@ mod tests {
             &["h", "?"],
             "Show help information",
             "",
-            1.0, 0.75, 0.5,
+            1.0,
+            0.75,
+            0.5,
         );
         assert!(result.is_some());
         assert_eq!(result.unwrap().kind, FuzzyMatchKind::Empty);
@@ -234,9 +236,9 @@ mod tests {
             "help",
             &["h"],
             "",
-            "h",   // query is alias
-            1.0,   // name weight high
-            1.0,   // alias weight high
+            "h", // query is alias
+            1.0, // name weight high
+            1.0, // alias weight high
             0.5,
         );
         assert!(name_match.is_some());
@@ -244,13 +246,8 @@ mod tests {
 
     #[test]
     fn no_match_returns_none() {
-        let result = weighted_fuzzy_match(
-            "help",
-            &[],
-            "Show help",
-            "zzzznonexistent",
-            1.0, 0.75, 0.5,
-        );
+        let result =
+            weighted_fuzzy_match("help", &[], "Show help", "zzzznonexistent", 1.0, 0.75, 0.5);
         assert!(result.is_none());
     }
 }

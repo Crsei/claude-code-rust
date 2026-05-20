@@ -120,7 +120,10 @@ pub const CLAUDE_IN_CHROME_MCP_SERVER_NAME: &str = "claude-in-chrome";
 ///
 /// Every field is used on *some* platform via the cfg-gated path helpers
 /// below, but the dead-code lint can only see one platform's usage at a
-/// time.
+/// time. Fields not relevant on the current platform carry
+/// `#[cfg_attr(not(target_os = "…"), allow(dead_code))]` so the struct can
+/// be constructed uniformly in `config_for()` on all platforms while
+/// keeping the per-platform path-accessor functions warning-free.
 #[derive(Debug, Clone, Copy)]
 struct BrowserConfig {
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]

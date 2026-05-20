@@ -85,8 +85,8 @@ pub fn parse_mcpb_from_bytes(data: &[u8]) -> Result<McpbBundle> {
     cursor
         .read_exact(&mut manifest_bytes)
         .context("Failed to read MCPB manifest")?;
-    let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
-        .context("Failed to parse MCPB manifest JSON")?;
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&manifest_bytes).context("Failed to parse MCPB manifest JSON")?;
 
     // Read expected hash (32 bytes)
     let mut expected_hash_bytes = [0u8; HASH_LENGTH];
@@ -174,7 +174,9 @@ fn create_directory_zip(dir: &Path) -> Result<Vec<u8>> {
 
     add_dir_to_zip(&mut zip_writer, dir, dir, &options)?;
 
-    zip_writer.finish().context("Failed to finalize ZIP archive")?;
+    zip_writer
+        .finish()
+        .context("Failed to finalize ZIP archive")?;
     Ok(buf)
 }
 
@@ -240,7 +242,11 @@ mod tests {
             "version": "1.0.0",
             "description": "Test plugin"
         });
-        std::fs::write(dir.path().join("plugin.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+        std::fs::write(
+            dir.path().join("plugin.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
         std::fs::create_dir_all(dir.path().join("skills")).unwrap();
         std::fs::write(dir.path().join("skills/hello.md"), b"# Hello").unwrap();
 
@@ -268,7 +274,11 @@ mod tests {
             "name": "test-plugin",
             "version": "1.0.0"
         });
-        std::fs::write(dir.path().join("plugin.json"), serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
+        std::fs::write(
+            dir.path().join("plugin.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
 
         let output = dir.path().join("bundle.mcpb");
         create_mcpb(dir.path(), &output).unwrap();

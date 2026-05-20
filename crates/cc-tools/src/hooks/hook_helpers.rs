@@ -67,17 +67,6 @@ pub fn get_hook_display_text(hook: &HookEntry) -> String {
     }
 }
 
-/// Get the default timeout for a hook entry type.
-#[allow(unused)]
-pub fn get_hook_default_timeout(hook: &HookEntry) -> u64 {
-    match hook {
-        HookEntry::Command { .. } => 60,
-        HookEntry::Prompt { .. } => 30,
-        HookEntry::Agent { .. } => 60,
-        HookEntry::Http { .. } => 600,
-    }
-}
-
 /// Hook helpers utility struct.
 pub struct HookHelpers;
 

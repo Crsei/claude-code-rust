@@ -78,6 +78,12 @@ impl App {
             self.dirty = true;
         }
 
+        if self.verbose != state.verbose {
+            self.verbose = state.verbose;
+            self.vscroll.invalidate_all();
+            self.dirty = true;
+        }
+
         if state.verbose {
             self.add_notification(
                 InAppNotification::new(

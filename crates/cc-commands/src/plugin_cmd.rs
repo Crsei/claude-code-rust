@@ -798,21 +798,18 @@ mod tests {
         }
 
         pub fn get_plugin_info_stub(id: &str) -> Result<String> {
-            let plugin = find_plugin(id)
-                .or_else(|| {
-                    lock_vec(disk())
-                        .iter()
-                        .find(|p| p.id == id)
-                        .cloned()
-                });
+            let plugin =
+                find_plugin(id).or_else(|| lock_vec(disk()).iter().find(|p| p.id == id).cloned());
             match plugin {
-                Some(p) => Ok(format!(
+                Some(p) => {
+                    Ok(format!(
                     "ID: {}\nName: {}\nVersion: {}\nStatus: {:?}\nTools: {}\nSkills: {}\nMCP: {}",
                     p.id, p.name, p.version, p.status,
                     p.tools.join(", "),
                     p.skills.join(", "),
                     p.mcp_servers.join(", "),
-                )),
+                ))
+                }
                 None => Ok(format!("Plugin '{}' not found.", id)),
             }
         }

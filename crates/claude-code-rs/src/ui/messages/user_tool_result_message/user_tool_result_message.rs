@@ -110,6 +110,7 @@ fn user_tool_reject_with_tool(
     param: &ToolResultBlock,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
+    let _tool_use_id = &tool_resolution.tool_use_id;
     if let Ok(input) = serde_json::from_str::<serde_json::Value>(&param.content) {
         let tool: &dyn Tool = tool_resolution.tool.as_ref();
         return crate::ui::messages::user_tool_result_message::user_tool_reject_message::render_user_tool_reject_message(

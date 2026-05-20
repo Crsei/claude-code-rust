@@ -6,7 +6,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 use crate::ui::approval_overlay::ApprovalKind;
-use crate::ui::permissions::permission_request_router::PermissionRequestRouter;
+use crate::ui::permissions::permission_request_router::{
+    PermissionDialogRequest, PermissionRequestRouter,
+};
 use crate::ui::theme::Theme;
 
 /// The user's response to a permission prompt.
@@ -24,12 +26,8 @@ const DEFAULT_OPTIONS: [&str; 3] = ["Allow", "Deny", "Always Allow"];
 
 /// An overlay dialog that asks the user whether to permit a tool invocation.
 pub struct PermissionDialog {
-    /// Name of the tool requesting permission.
-    pub tool_name: String,
-    /// Abbreviated / formatted tool input.
-    pub tool_input: String,
-    /// Human-readable description of what the tool wants to do.
-    pub message: String,
+    /// Complete permission request payload used by the dispatcher.
+    pub request: PermissionDialogRequest,
     /// Current permission category inferred from the tool name.
     kind: ApprovalKind,
     /// Button labels shown at the bottom of the dialog.
@@ -39,18 +37,22 @@ pub struct PermissionDialog {
 }
 
 impl PermissionDialog {
+    #[cfg(test)]
     pub fn new(tool_name: &str, input: &str, message: &str) -> Self {
-        let routed = PermissionRequestRouter::route(tool_name, input, message, 0);
-        let kind = approval_kind(tool_name, input, message);
+        Self::from_request(PermissionDialogRequest::legacy(tool_name, input, message))
+    }
+
+    pub fn from_request(request: PermissionDialogRequest) -> Self {
+        let routed = PermissionRequestRouter::route(&request, 0);
+        let input_summary = request.input_summary();
+        let kind = approval_kind(&request.tool_name, &input_summary, &request.message);
         let options = if routed.options.is_empty() {
             default_options()
         } else {
             routed.options
         };
         Self {
-            tool_name: tool_name.to_string(),
-            tool_input: input.to_string(),
-            message: message.to_string(),
+            request,
             kind,
             options,
             selected: 0,
@@ -60,7 +62,7 @@ impl PermissionDialog {
     /// Handle a key event. Returns `Some(choice)` when the user confirms a
     /// selection with Enter, or makes a direct choice via a keyboard shortcut.
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<PermissionChoice> {
-        let choice_count = self.options.len().max(DEFAULT_OPTIONS.len());
+        let choice_count = self.normalized_options().len().max(1);
 
         match (key.modifiers, key.code) {
             // Navigation
@@ -139,7 +141,7 @@ impl PermissionDialog {
         let tool_info = vec![
             Line::from(vec![
                 Span::styled("Tool: ", theme.dim),
-                Span::styled(self.tool_name.clone(), theme.tool_name),
+                Span::styled(self.request.tool_name.clone(), theme.tool_name),
             ]),
             Line::from(vec![
                 Span::styled("Kind: ", theme.dim),
@@ -185,22 +187,18 @@ impl PermissionDialog {
     }
 
     fn body_text(&self) -> String {
-        if !self.tool_input.trim().is_empty() {
-            self.tool_input.clone()
-        } else if !self.message.trim().is_empty() {
-            self.message.clone()
+        let summary = self.request.input_summary();
+        if summary != "(no details supplied)" {
+            summary
+        } else if !self.request.message.trim().is_empty() {
+            self.request.message.clone()
         } else {
             "(no details supplied)".to_string()
         }
     }
 
     fn body_lines(&self, max_width: usize, max_height: u16, theme: &Theme) -> Vec<Line<'static>> {
-        let routed = PermissionRequestRouter::route(
-            &self.tool_name,
-            &self.tool_input,
-            &self.message,
-            self.selected,
-        );
+        let routed = PermissionRequestRouter::route(&self.request, self.selected);
         let routed_lines = routed_detail_lines(&routed.rendered)
             .into_iter()
             .take(max_height.saturating_sub(1) as usize)
@@ -223,9 +221,11 @@ impl PermissionDialog {
             Span::styled(truncate_str(&body_text, max_width), theme.warning),
         ])];
 
-        if !self.message.trim().is_empty() && self.message.trim() != body_text.trim() {
+        if !self.request.message.trim().is_empty()
+            && self.request.message.trim() != body_text.trim()
+        {
             body_lines.push(Line::from(vec![Span::styled(
-                truncate_str(&self.message, max_width),
+                truncate_str(&self.request.message, max_width),
                 theme.dim,
             )]));
         }

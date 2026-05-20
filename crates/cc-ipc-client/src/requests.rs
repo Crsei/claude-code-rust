@@ -1,5 +1,4 @@
-// test infrastructure — not wired to production yet; tracked in IMPLEMENTATION_GAPS.md
-//! Pending app-server request registry.
+//! Generic client-side request registry for UI/runtime request-response flows.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};

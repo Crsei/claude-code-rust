@@ -6,21 +6,13 @@ use futures::Stream;
 use serde_json::Value;
 
 use cc_engine::types::app_state::AppState;
-use cc_engine::types::message::{AssistantMessage, Message, StreamEvent, Usage};
+use cc_engine::types::message::{AssistantMessage, Message, StreamEvent};
 use cc_engine::types::state::AutoCompactTracking;
 use cc_engine::types::tool::{ToolProgress, ToolResult, Tools};
 
 #[derive(Debug, Clone)]
 pub struct ModelResponse {
     pub assistant_message: AssistantMessage,
-    // Missing implementation reserve: streaming events are returned by deps but
-    // the query loop has not yet wired them into downstream observability.
-    #[allow(dead_code)]
-    pub stream_events: Vec<StreamEvent>,
-    // Missing implementation reserve: usage is preserved for the model-call
-    // contract until token accounting consumes it from ModelResponse.
-    #[allow(dead_code)]
-    pub usage: Usage,
 }
 
 #[derive(Debug, Clone)]

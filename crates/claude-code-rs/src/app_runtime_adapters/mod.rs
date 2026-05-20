@@ -531,43 +531,37 @@ fn install_root_subsystem_event_sinks(event_tx: tokio::sync::broadcast::Sender<S
                 plugin_id,
                 name,
                 version,
-            } => SubsystemEvent::Plugin(
-                cc_ipc_protocol::subsystem_events::PluginEvent::Installed {
+            } => {
+                SubsystemEvent::Plugin(cc_ipc_protocol::subsystem_events::PluginEvent::Installed {
                     plugin_id,
                     name,
                     version,
-                },
-            ),
+                })
+            }
             cc_plugins::PluginSubsystemEvent::Updated {
                 plugin_id,
                 name,
                 old_version: _old,
                 new_version,
-            } => SubsystemEvent::Plugin(
-                cc_ipc_protocol::subsystem_events::PluginEvent::Updated {
-                    plugin_id,
-                    name,
-                    version: new_version,
-                },
-            ),
+            } => SubsystemEvent::Plugin(cc_ipc_protocol::subsystem_events::PluginEvent::Updated {
+                plugin_id,
+                name,
+                version: new_version,
+            }),
             cc_plugins::PluginSubsystemEvent::Uninstalled { plugin_id, name } => {
                 SubsystemEvent::Plugin(
-                    cc_ipc_protocol::subsystem_events::PluginEvent::Uninstalled {
+                    cc_ipc_protocol::subsystem_events::PluginEvent::Uninstalled { plugin_id, name },
+                )
+            }
+            cc_plugins::PluginSubsystemEvent::ValidationFailed { plugin_id, errors } => {
+                SubsystemEvent::Plugin(
+                    cc_ipc_protocol::subsystem_events::PluginEvent::ValidationFailed {
                         plugin_id,
-                        name,
+                        name: String::new(),
+                        errors,
                     },
                 )
             }
-            cc_plugins::PluginSubsystemEvent::ValidationFailed {
-                plugin_id,
-                errors,
-            } => SubsystemEvent::Plugin(
-                cc_ipc_protocol::subsystem_events::PluginEvent::ValidationFailed {
-                    plugin_id,
-                    name: String::new(),
-                    errors,
-                },
-            ),
             cc_plugins::PluginSubsystemEvent::ConfigChanged { plugin_id } => {
                 SubsystemEvent::Plugin(
                     cc_ipc_protocol::subsystem_events::PluginEvent::ConfigChanged {

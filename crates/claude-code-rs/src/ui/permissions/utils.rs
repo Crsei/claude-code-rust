@@ -326,7 +326,6 @@ pub fn shell_risk_hint(command: &str) -> &'static str {
     }
 }
 
-#[cfg(test)]
 pub fn path_action_summary(action: &str, path: &str) -> String {
     format!("{} {}", action.trim(), truncate_middle(path.trim(), 100))
 }
