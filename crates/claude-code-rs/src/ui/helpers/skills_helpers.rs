@@ -2,6 +2,7 @@
 
 use cc_skills::SkillDefinition;
 
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[cfg(test)]
 pub(crate) const SKILL_NAME_TRUNCATE_LEN: usize = 21;
 
@@ -18,6 +19,7 @@ pub(crate) fn skill_description(skill: &SkillDefinition) -> &str {
     skill.frontmatter.description.as_str()
 }
 
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[cfg(test)]
 pub(crate) fn truncate_skill_name(name: &str) -> String {
     let count = name.chars().count();
@@ -32,6 +34,7 @@ pub(crate) fn truncate_skill_name(name: &str) -> String {
     out
 }
 
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[cfg(test)]
 pub(crate) fn match_skill(skill: &SkillDefinition, query: &str) -> bool {
     let query = query.trim().to_ascii_lowercase();

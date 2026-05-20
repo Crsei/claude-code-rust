@@ -71,8 +71,8 @@ impl<'a> ShortcutHint<'a> {
         self
     }
 
-    /// Set a specific theme colour key.
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn with_color(mut self, color: &'a str) -> Self {
         self.color = Some(color);
         self
@@ -179,16 +179,19 @@ impl<'a> Byline<'a> {
     }
 
     /// Add a pre-configured `ShortcutHint`.
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn push(mut self, hint: ShortcutHint<'a>) -> Self {
         self.hints.push(hint);
         self
     }
 
     /// Number of hints in the byline.
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn len(&self) -> usize {
         self.hints.len()
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn is_empty(&self) -> bool {
         self.hints.is_empty()
     }

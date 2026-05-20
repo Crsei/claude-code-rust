@@ -1,3 +1,6 @@
+// test infrastructure — slash-command helpers not called from production tests
+#![allow(dead_code)]
+
 //! Slash-command descriptors for command palette and prompt completion.
 
 use cc_commands as commands;

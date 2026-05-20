@@ -85,6 +85,7 @@ impl ToolActivity {
         }
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn compact_line(&self) -> String {
         let mut parts = vec![

@@ -14,6 +14,7 @@ use crate::ui::theme::ThemeColors;
 #[derive(Debug, Clone)]
 pub struct Tab {
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: test infrastructure — field not read by tests
     pub id: String,
     pub title: String,
 }
@@ -42,12 +43,15 @@ pub struct Tabs {
     color: Option<&'static str>,
     /// Whether to use full terminal width for the header.
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     use_full_width: bool,
     /// Optional fixed content height in rows.
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     content_height: Option<usize>,
     /// Whether the header is focused (keyboard navigation active).
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     header_focused: bool,
 }
 
@@ -112,18 +116,21 @@ impl Tabs {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn use_full_width(mut self) -> Self {
         self.use_full_width = true;
         self
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn content_height(mut self, v: usize) -> Self {
         self.content_height = Some(v);
         self
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn header_focus(mut self, v: bool) -> Self {
         self.header_focused = v;
         self

@@ -56,6 +56,7 @@ pub fn progress_bar(task: &TaskStatus, width: usize) -> String {
 ///
 /// Uses the new `ProgressBar` widget with the provided theme colors.
 /// The progress bar uses accent color for the filled portion.
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[cfg(test)]
 pub fn progress_bar_styled(
     task: &TaskStatus,

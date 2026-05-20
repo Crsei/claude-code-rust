@@ -1,3 +1,6 @@
+// test infrastructure — JSONL session logging for future IPC adapter integration
+#![allow(dead_code)]
+
 //! Optional JSONL session event logging for TUI adapters.
 
 use std::fs::{self, OpenOptions};

@@ -4,6 +4,7 @@ use super::types::AgentDefinition;
 use super::utils::selection_marker;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Phase 1: upstream parity surface
 pub enum AgentEditMode {
     Menu,
     EditTools,

@@ -45,6 +45,7 @@ pub fn format_agent_as_markdown(agent: &AgentDefinition) -> String {
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn get_new_agent_file_path(
     source: AgentSource,
     agent_type: &str,
@@ -92,6 +93,7 @@ pub fn render_agent_file_summary(agent: &AgentDefinition) -> String {
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn sanitize_agent_filename(agent_type: &str) -> String {
     let mut sanitized = String::new();
     for ch in agent_type.chars() {
@@ -108,6 +110,7 @@ pub fn sanitize_agent_filename(agent_type: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Phase 1: upstream parity surface
 fn agent_dir(source: AgentSource, cwd: &Path, home: &Path, managed_root: &Path) -> PathBuf {
     match source {
         AgentSource::User => home.join(AGENT_FOLDER_NAME).join(AGENTS_DIR),

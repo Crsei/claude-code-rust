@@ -26,6 +26,7 @@ pub enum OverlayKind {
     /// A fuzzy-finder / search overlay.
     FuzzyPicker,
     /// A permission request dialog.
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Permission,
 }
 
@@ -33,6 +34,7 @@ pub enum OverlayKind {
 #[derive(Debug, Clone)]
 pub struct OverlayEntry {
     pub id: OverlayId,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub kind: OverlayKind,
     /// Human-readable label for the overlay (used in stack traces / debug).
     pub label: String,
@@ -90,6 +92,7 @@ impl OverlayStack {
     }
 
     /// Peek mutably at the topmost overlay.
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn peek_mut(&mut self) -> Option<&mut OverlayEntry> {
         self.entries.last_mut()
     }
@@ -118,6 +121,7 @@ impl OverlayStack {
     }
 
     /// Iterate from bottom to top.
+    #[allow(dead_code)] // Phase 1: not wired to production event dispatch yet
     pub fn iter(&self) -> impl Iterator<Item = &OverlayEntry> {
         self.entries.iter()
     }

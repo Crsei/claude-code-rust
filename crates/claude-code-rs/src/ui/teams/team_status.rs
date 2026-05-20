@@ -23,6 +23,7 @@ pub fn render_team_status(
     Some(status)
 }
 
+#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn render_team_summary_status(
     total_teammates: usize,
     active_teammates: usize,

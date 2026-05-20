@@ -1,3 +1,6 @@
+// test infrastructure — upstream UI capability contract not wired to event dispatch yet
+#![allow(dead_code)]
+
 //! Rust-side UI capability contract.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

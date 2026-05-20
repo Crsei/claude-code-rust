@@ -1,3 +1,6 @@
+// test infrastructure — file search not wired to production TUI yet
+#![allow(dead_code)]
+
 //! File picker/search helpers for the Rust TUI boundary.
 
 use std::io;

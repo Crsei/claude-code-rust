@@ -128,6 +128,7 @@ impl CommandPalette {
     ///
     /// If `should_execute` is true and the command has no arguments, submit it
     /// directly instead of inserting into the prompt.
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn apply_command_suggestion(
         &self,
@@ -278,6 +279,7 @@ impl Default for CommandPalette {
 }
 
 /// Action to take when applying a command suggestion.
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[cfg(test)]
 #[derive(Debug, Clone)]
 pub enum CommandAction {
@@ -288,5 +290,5 @@ pub enum CommandAction {
 }
 
 // Re-export CommandGroup types from filter for render
-#[allow(unused_imports)]
+#[allow(unused_imports)] // Phase 1: re-exported for render module compatibility
 pub use filter::CommandGroup;

@@ -29,6 +29,7 @@ impl ShimmerAnimation {
     }
 
     /// Create a shimmer with a custom hue shift (0.0 = default grayscale).
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn with_hue(hue_shift: f32) -> Self {
         Self {
             start: Instant::now(),

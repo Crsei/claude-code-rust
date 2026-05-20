@@ -45,6 +45,7 @@ impl DesktopNotificationBackend {
         }
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn method(&self) -> NotificationMethod {
         match self {
             DesktopNotificationBackend::Osc9(_) => NotificationMethod::Osc9,
@@ -52,6 +53,7 @@ impl DesktopNotificationBackend {
         }
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn notify(&mut self, message: &str) -> io::Result<()> {
         match self {
             DesktopNotificationBackend::Osc9(backend) => backend.notify(message),

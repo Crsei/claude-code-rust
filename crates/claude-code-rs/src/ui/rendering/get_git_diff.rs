@@ -1,3 +1,6 @@
+// test infrastructure — diff helpers for future git-diff UI; tracked in IMPLEMENTATION_GAPS.md
+#![allow(dead_code)]
+
 //! Git diff helpers shared by TUI surfaces.
 
 use std::path::Path;

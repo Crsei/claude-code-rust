@@ -9,12 +9,14 @@ use ratatui::crossterm::execute;
 pub struct BelBackend;
 
 impl BelBackend {
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn notify(&mut self, _message: &str) -> io::Result<()> {
         execute!(stdout(), PostNotification)
     }
 }
 
 /// Command that emits a BEL desktop notification.
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[derive(Debug, Clone)]
 pub struct PostNotification;
 

@@ -1,3 +1,6 @@
+// test infrastructure — streaming controller not wired to TUI streaming path yet
+#![allow(dead_code)]
+
 //! Deterministic streaming controller.
 
 #[derive(Debug, Clone, PartialEq, Eq)]

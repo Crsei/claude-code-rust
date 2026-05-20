@@ -1,3 +1,6 @@
+// test infrastructure — theme variant support not wired to production TUI
+#![allow(dead_code)]
+
 use ratatui::style::{Color, Modifier, Style};
 
 /// Named theme variants.

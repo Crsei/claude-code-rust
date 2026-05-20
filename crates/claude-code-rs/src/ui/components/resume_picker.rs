@@ -14,6 +14,7 @@ pub struct SessionTarget {
 }
 
 impl SessionTarget {
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn from_info(info: SessionInfo) -> Self {
         Self {
             session_id: info.session_id,
@@ -29,12 +30,14 @@ impl SessionTarget {
     }
 }
 
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionSelection {
     Selected(SessionTarget),
     Cancelled,
 }
 
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionPickerAction {
     MoveUp,
@@ -46,6 +49,7 @@ pub enum SessionPickerAction {
 }
 
 impl SessionPickerAction {
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Select | Self::Cancel)
     }
@@ -66,6 +70,7 @@ impl ResumePicker {
         }
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn from_session_info(sessions: Vec<SessionInfo>) -> Self {
         Self::new(sessions.into_iter().map(SessionTarget::from_info).collect())
     }
@@ -74,10 +79,12 @@ impl ResumePicker {
         self.sessions.get(self.selected)
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn sessions(&self) -> &[SessionTarget] {
         &self.sessions
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn apply(
         &mut self,
         action: SessionPickerAction,
@@ -108,6 +115,7 @@ impl ResumePicker {
     }
 }
 
+#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn load_resume_targets() -> anyhow::Result<Vec<SessionTarget>> {
     Ok(cc_session::storage::list_sessions()?
         .into_iter()

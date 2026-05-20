@@ -11,8 +11,11 @@ pub enum StatusIcon {
     Success,
     Error,
     Warning,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Info,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Pending,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Loading,
 }
 
@@ -30,6 +33,7 @@ impl StatusIcon {
     }
 
     /// Theme colour key, or `None` for dim fallback (pending/loading).
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn color_key(self) -> Option<&'static str> {
         match self {
             Self::Success => Some("icon_success"),
@@ -91,8 +95,11 @@ impl StatusIcon {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegacyStatus {
     Ok,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Warning,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Error,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Attention,
 }
 

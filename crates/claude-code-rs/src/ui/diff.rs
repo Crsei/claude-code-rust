@@ -101,6 +101,7 @@ impl DiffData {
         self.hunks.get(path).map_or(&[], |hunks| hunks.as_slice())
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     #[cfg(test)]
     pub fn structured_hunks_for_path(&self, path: &str) -> Vec<StructuredDiffHunk> {
         parse_structured_hunks(self.hunks_for_path(path))

@@ -1,3 +1,6 @@
+// test infrastructure — debug-config rendering not wired to production TUI
+#![allow(dead_code)]
+
 //! Debug-config rendering helpers.
 
 use ratatui::text::{Line, Span};

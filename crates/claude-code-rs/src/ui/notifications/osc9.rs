@@ -9,12 +9,14 @@ use ratatui::crossterm::execute;
 pub struct Osc9Backend;
 
 impl Osc9Backend {
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn notify(&mut self, message: &str) -> io::Result<()> {
         execute!(stdout(), PostNotification(message.to_string()))
     }
 }
 
 /// Command that emits an OSC 9 desktop notification with a message.
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[derive(Debug, Clone)]
 pub struct PostNotification(pub String);
 

@@ -82,6 +82,7 @@ impl<'a> ThemedText<'a> {
         self
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn strikethrough(mut self) -> Self {
         self.strikethrough = true;
         self

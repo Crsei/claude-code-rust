@@ -48,38 +48,47 @@ impl ChatWidget {
         Self { app }
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn from_app(app: App) -> Self {
         Self { app }
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn app(&self) -> &App {
         &self.app
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn app_mut(&mut self) -> &mut App {
         &mut self.app
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn into_app(self) -> App {
         self.app
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn add_message(&mut self, message: Message) {
         self.app.add_message(message);
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn messages(&self) -> &[Message] {
         self.app.messages()
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn clear_messages(&mut self) {
         self.app.clear_messages();
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn set_streaming(&mut self, streaming: bool) {
         self.app.set_streaming(streaming);
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn handle_key_event(&mut self, key: KeyEvent) -> AppAction {
         self.app.handle_key_event(key)
     }
@@ -91,12 +100,14 @@ impl Default for ChatWidget {
     }
 }
 
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayKind {
     Full,
     VisibleOnly,
 }
 
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserMessage {
     pub text: String,
@@ -116,6 +127,7 @@ impl From<&str> for UserMessage {
     }
 }
 
+#[allow(dead_code)] // Phase 1: upstream parity surface
 pub fn create_initial_user_message(text: impl Into<String>) -> UserMessage {
     UserMessage { text: text.into() }
 }

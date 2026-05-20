@@ -8,6 +8,7 @@ pub enum ToolBucketKind {
     Edit,
     Execution,
     Mcp,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Other,
 }
 
@@ -66,6 +67,7 @@ impl ToolSelectorState {
         }
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn selected_output(&self) -> Option<Vec<String>> {
         if self.selected_tools.len() == self.tools.len() && !self.tools.is_empty() {
             None
@@ -74,6 +76,7 @@ impl ToolSelectorState {
         }
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn toggle_tool(&mut self, tool_name: &str) {
         if !self.selected_tools.remove(tool_name) {
             self.selected_tools.insert(tool_name.to_string());

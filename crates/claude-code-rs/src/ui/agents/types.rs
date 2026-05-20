@@ -30,6 +30,7 @@ impl AgentSource {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn is_editable(self) -> bool {
         matches!(
             self,
@@ -155,6 +156,7 @@ impl AgentDefinition {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn is_plugin(&self) -> bool {
         self.source == AgentSource::Plugin
     }
@@ -191,6 +193,7 @@ impl AgentValidationResult {
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Phase 1: upstream parity surface
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentModeState {
     MainMenu,

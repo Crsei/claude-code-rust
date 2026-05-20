@@ -1,3 +1,6 @@
+// test infrastructure — upstream audio-device boundary; voice capture routed through cc_voice instead
+#![allow(dead_code)]
+
 //! Audio-device compatibility surface for the Codex TUI layout.
 //!
 //! cc-rust currently routes voice capture through `cc_voice`, whose default

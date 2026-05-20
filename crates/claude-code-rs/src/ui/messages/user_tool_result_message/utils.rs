@@ -66,6 +66,7 @@ pub struct ToolUseRecord {
 /// Result of `find_tool_from_messages`.
 pub struct ToolResolution {
     pub tool: Arc<dyn Tool>,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub tool_use_id: String,
     pub input: Value,
 }

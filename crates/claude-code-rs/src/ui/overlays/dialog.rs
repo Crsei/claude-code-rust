@@ -128,12 +128,14 @@ impl<'a> Dialog<'a> {
     }
 
     /// Set the accent colour key.
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn color(mut self, v: &'a str) -> Self {
         self.color = Some(v);
         self
     }
 
     /// Hide the top border / divider.
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn hide_border(mut self) -> Self {
         self.hide_border = true;
         self

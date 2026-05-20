@@ -1,3 +1,6 @@
+// test infrastructure — terminal scroll-region insert not wired to production TUI
+#![allow(dead_code)]
+
 //! Insert already-rendered history lines into a terminal stream.
 
 use std::fmt;

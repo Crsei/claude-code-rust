@@ -41,6 +41,7 @@ impl AgentsMenuState {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn move_next(&mut self) {
         if self.counts.is_empty() {
             return;
@@ -49,6 +50,7 @@ impl AgentsMenuState {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn move_prev(&mut self) {
         if self.counts.is_empty() {
             return;
@@ -61,6 +63,7 @@ impl AgentsMenuState {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn selected_filter(&self) -> Option<AgentSourceFilter> {
         self.counts
             .get(self.selected_index)

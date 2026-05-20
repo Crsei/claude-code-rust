@@ -44,6 +44,7 @@ pub enum ApprovalChoice {
     AllowOnce,
     AllowAlways,
     Deny,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     EditRequest,
 }
 
@@ -93,6 +94,7 @@ impl ApprovalOverlay {
         self.selected = selected.min(self.choices.len().saturating_sub(1));
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn selected_choice(&self) -> ApprovalChoice {
         self.choices
             .get(self.selected)

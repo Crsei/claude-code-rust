@@ -56,7 +56,9 @@ impl std::str::FromStr for FeaturePanelKind {
 pub enum PanelState {
     Ready,
     NeedsConfig,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Running,
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Error,
 }
 
@@ -95,6 +97,7 @@ impl FeaturePanelFormState {
         Some((tab.id.parse().ok()?, option.id.clone()))
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn render(&self) -> String {
         self.form.render_lines().join("\n")
     }

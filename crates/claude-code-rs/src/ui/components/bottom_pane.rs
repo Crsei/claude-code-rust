@@ -7,7 +7,9 @@ use super::chat_composer::ChatComposerState;
 pub enum BottomPaneView {
     Composer,
     Approval(ApprovalOverlay),
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Selection { title: String, count: usize },
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     Status { message: String },
 }
 
@@ -40,6 +42,7 @@ impl BottomPane {
         self.stack.push(view);
     }
 
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn pop(&mut self) -> Option<BottomPaneView> {
         if self.stack.len() <= 1 {
             return None;

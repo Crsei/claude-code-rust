@@ -380,6 +380,7 @@ impl App {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn dismiss_permission_dialog(&mut self) {
         self.permission_dialog = None;
         self.dirty = true;
@@ -474,6 +475,7 @@ impl App {
     /// Current view mode; tests and the TUI key binding use this to
     /// verify Ctrl+O cycling.
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn view_mode(&self) -> ViewMode {
         self.view_mode
     }
@@ -516,6 +518,7 @@ impl App {
     /// Current transcript state exposed read-only so tests can assert
     /// search invariants without going through the render path.
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn transcript_state(&self) -> &TranscriptState {
         &self.transcript_state
     }
@@ -780,6 +783,7 @@ impl App {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn clear_suggestions(&mut self) {
         if self.suggestions.is_some() {
             self.suggestions = None;
@@ -788,6 +792,7 @@ impl App {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Phase 1: upstream parity surface
     pub fn suggestions(&self) -> Option<&[PromptSuggestion]> {
         self.suggestions.as_deref()
     }
