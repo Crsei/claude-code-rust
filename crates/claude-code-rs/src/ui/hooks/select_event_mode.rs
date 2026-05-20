@@ -1,7 +1,6 @@
 //! Hook event selection.
 
 pub use cc_types::hooks::HookEvent;
-#[cfg(test)]
 pub use cc_types::hooks::HOOK_EVENTS;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

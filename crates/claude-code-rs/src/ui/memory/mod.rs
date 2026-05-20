@@ -1,6 +1,5 @@
 //! Rust-side memory UI surfaces.
 pub mod memory_file_selector;
-#[cfg(test)]
 pub mod memory_update_notification;
 
 #[cfg(test)]

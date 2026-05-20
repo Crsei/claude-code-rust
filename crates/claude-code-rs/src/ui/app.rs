@@ -30,6 +30,7 @@ use super::history_search_dialog::{HistorySearchDialog, HistorySearchEntry};
 use super::notifications::in_app::{
     InAppNotification, NotificationPriority, NotificationState, NotificationTone,
 };
+use super::overlays::dialog::ExitGuard;
 use super::permissions::worker_pending_permission::render_worker_pending_permission;
 use super::permissions::{
     BypassPermissionsModeChoice, BypassPermissionsModeDialog, PermissionChoice, PermissionDialog,
@@ -152,6 +153,7 @@ pub struct App {
     bypass_permissions_mode_dialog: Option<BypassPermissionsModeDialog>,
     permission_dialog: Option<PermissionDialog>,
     question_dialog: Option<QuestionDialog>,
+    exit_guard: ExitGuard,
     should_quit: bool,
     design_theme_provider: ThemeProvider,
     theme: Theme,
@@ -254,6 +256,7 @@ impl App {
             bypass_permissions_mode_dialog: None,
             permission_dialog: None,
             question_dialog: None,
+            exit_guard: ExitGuard::new(),
             should_quit: false,
             design_theme_provider,
             theme,
@@ -414,7 +417,12 @@ impl App {
     }
 
     pub fn show_permission_request(&mut self, request: PermissionDialogRequest) {
-        self.permission_dialog = Some(PermissionDialog::from_request(request));
+        self.permission_dialog = Some(if request.tool_use_id.is_empty() {
+            let input = request.tool_input.to_string();
+            PermissionDialog::new(&request.tool_name, &input, &request.message)
+        } else {
+            PermissionDialog::from_request(request)
+        });
         self.dirty = true;
     }
 
@@ -597,9 +605,7 @@ impl App {
                         .with_fold(true),
                 );
             }
-            #[cfg(test)]
             AppEvent::Tick => self.tick(),
-            #[cfg(test)]
             AppEvent::Shutdown => {
                 self.should_quit = true;
                 self.dirty = true;

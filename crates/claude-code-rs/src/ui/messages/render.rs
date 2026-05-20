@@ -2058,7 +2058,6 @@ fn render_attachment_message<'a>(
 
 /// Create an abbreviated string representation of a JSON value, capped at
 /// `max_chars` characters.
-#[cfg(test)]
 fn abbreviate_json(value: &serde_json::Value, max_chars: usize) -> String {
     let full = match serde_json::to_string(value) {
         Ok(s) => s,
@@ -2072,7 +2071,6 @@ fn abbreviate_json(value: &serde_json::Value, max_chars: usize) -> String {
         full[..max_chars].to_string()
     }
 }
-#[cfg(test)]
 fn tool_input_summary(name: &str, input: &serde_json::Value, max_chars: usize) -> String {
     if let Some(primary) = tool_primary_input(name, input) {
         let json = abbreviate_json(input, max_chars);
@@ -2130,7 +2128,7 @@ fn content_block_copy_text(block: &ContentBlock) -> Option<String> {
         ContentBlock::ConnectorText { connector_text, .. } => Some(connector_text.clone()),
         ContentBlock::ToolUse { name, input, .. }
         | ContentBlock::ServerToolUse { name, input, .. } => {
-            tool_primary_input(name, input).or_else(|| Some(input.to_string()))
+            Some(tool_input_summary(name, input, 240))
         }
         ContentBlock::ToolResult { content, .. } => Some(tool_result_content_text(content)),
         ContentBlock::Image { source } => Some(image_reference(source)),

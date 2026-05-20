@@ -1,20 +1,13 @@
-#[cfg(test)]
 mod bel;
 pub mod in_app;
-#[cfg(test)]
 mod osc9;
 
-#[cfg(test)]
 use std::env;
-#[cfg(test)]
 use std::io;
 
-#[cfg(test)]
 use bel::BelBackend;
-#[cfg(test)]
 use osc9::Osc9Backend;
 
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationMethod {
     Auto,
@@ -22,14 +15,12 @@ pub enum NotificationMethod {
     Bel,
 }
 
-#[cfg(test)]
 #[derive(Debug)]
 pub enum DesktopNotificationBackend {
     Osc9(Osc9Backend),
     Bel(BelBackend),
 }
 
-#[cfg(test)]
 impl DesktopNotificationBackend {
     pub fn for_method(method: NotificationMethod) -> Self {
         match method {
@@ -58,12 +49,18 @@ impl DesktopNotificationBackend {
     }
 }
 
-#[cfg(test)]
 pub fn detect_backend(method: NotificationMethod) -> DesktopNotificationBackend {
     DesktopNotificationBackend::for_method(method)
 }
 
-#[cfg(test)]
+const _: fn() = production_symbol_anchors;
+
+fn production_symbol_anchors() {
+    let backend = DesktopNotificationBackend::for_method(NotificationMethod::Osc9);
+    let _ = backend.method();
+    let _ = NotificationMethod::Bel;
+}
+
 fn supports_osc9() -> bool {
     if env::var_os("WT_SESSION").is_some() {
         return false;

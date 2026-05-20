@@ -40,7 +40,6 @@ impl AgentsMenuState {
         lines.join("\n")
     }
 
-    #[cfg(test)]
     pub fn move_next(&mut self) {
         if self.counts.is_empty() {
             return;
@@ -48,7 +47,6 @@ impl AgentsMenuState {
         self.selected_index = (self.selected_index + 1) % self.counts.len();
     }
 
-    #[cfg(test)]
     pub fn move_prev(&mut self) {
         if self.counts.is_empty() {
             return;
@@ -60,7 +58,6 @@ impl AgentsMenuState {
         };
     }
 
-    #[cfg(test)]
     pub fn selected_filter(&self) -> Option<AgentSourceFilter> {
         self.counts
             .get(self.selected_index)

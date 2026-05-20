@@ -2,9 +2,7 @@
 
 use super::types::{AgentDefinition, AgentSourceFilter};
 use super::utils::filter_agents;
-#[cfg(test)]
 use super::utils::group_agents_by_source;
-#[cfg(test)]
 use super::utils::{get_agent_source_display_name, memory_label, model_label, selection_marker};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,7 +66,6 @@ impl AgentsListState {
         self.visible_agents().get(self.selected_index).cloned()
     }
 
-    #[cfg(test)]
     pub fn render(&self) -> String {
         let mut lines = vec![get_agent_source_display_name(self.source)];
         if self.show_create_new {

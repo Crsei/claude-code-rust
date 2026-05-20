@@ -113,4 +113,4 @@ notifications: terminal-bell
 
 ## tool-activity
 [succeeded] | 12ms | Read(path=src/ui/app.rs) | loaded file | 80 output lines
-[running] | 240ms | Bash(command=cargo test) | 1/4 [██▌       ] | running tests | 14 output lines
+[running] | 240ms | Bash(command=cargo test) | 1/4 [███       ] | running tests | 14 output lines

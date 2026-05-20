@@ -400,12 +400,10 @@ impl CombinedCompleter {
         all.into_iter().map(|(_, _, item)| item).collect()
     }
 
-    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.providers.is_empty()
     }
 
-    #[cfg(test)]
     pub fn provider_count(&self) -> usize {
         self.providers.len()
     }
@@ -431,7 +429,6 @@ impl fmt::Debug for CombinedCompleter {
 
 /// Find the range of a `/command` token that the cursor is at or after.
 /// Returns `None` if no slash token is found.
-#[cfg(test)]
 pub fn find_command_token_range(input: &str, cursor_pos: usize) -> Option<Range<usize>> {
     let byte_pos = cursor_pos.min(input.len());
     let prefix = &input[..byte_pos];

@@ -1,5 +1,4 @@
 //! Rust-side hooks configuration UI surfaces.
-#[cfg(test)]
 pub mod hooks_config_menu;
 pub mod select_event_mode;
 pub mod select_hook_mode;

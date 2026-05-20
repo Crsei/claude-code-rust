@@ -52,7 +52,6 @@ pub fn filter_agents(
     sorted_agents(filtered.cloned().collect())
 }
 
-#[cfg(test)]
 pub fn group_agents_by_source(
     agents: &[AgentDefinition],
 ) -> BTreeMap<AgentSource, Vec<AgentDefinition>> {
@@ -116,7 +115,6 @@ pub fn selection_marker(selected: bool) -> &'static str {
     }
 }
 
-#[cfg(test)]
 pub fn truncate_middle(value: &str, max_chars: usize) -> String {
     let count = value.chars().count();
     if count <= max_chars {
@@ -168,7 +166,6 @@ pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-#[cfg(test)]
 pub fn indent_lines(lines: impl IntoIterator<Item = String>, spaces: usize) -> Vec<String> {
     let prefix = " ".repeat(spaces);
     lines

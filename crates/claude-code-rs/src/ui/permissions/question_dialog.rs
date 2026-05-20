@@ -8,8 +8,11 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
+use crate::ui::permissions::ask_user_question_permission_request::ask_user_question_permission_request::render_ask_user_question_permission_request;
+use crate::ui::permissions::ask_user_question_permission_request::preview_box::render_preview_box;
 use crate::ui::permissions::ask_user_question_permission_request::preview_question_view::render_preview_question_view;
 use crate::ui::permissions::ask_user_question_permission_request::submit_questions_view::render_submit_questions_view;
+use crate::ui::permissions::ask_user_question_permission_request::use_multiple_choice_state::MultipleChoiceState;
 use crate::ui::theme::Theme;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,17 +21,17 @@ pub struct QuestionDialog {
     pub request: AskUserRequestPayload,
     answer: String,
     cursor: usize,
-    selected_choice: usize,
+    choices: MultipleChoiceState,
 }
 
 impl QuestionDialog {
     pub fn new(id: impl Into<String>, request: AskUserRequestPayload) -> Self {
         Self {
             id: id.into(),
+            choices: MultipleChoiceState::new(request.choices.clone()),
             request,
             answer: String::new(),
             cursor: 0,
-            selected_choice: 0,
         }
     }
 
@@ -37,13 +40,15 @@ impl QuestionDialog {
             (_, KeyCode::Enter) => return Some(self.submit_answer()),
             (_, KeyCode::Esc) => return Some(String::new()),
             (_, KeyCode::Up) | (_, KeyCode::Char('k')) => {
-                self.selected_choice = self.selected_choice.saturating_sub(1);
+                self.choices.selected = self.choices.selected.saturating_sub(1);
             }
             (_, KeyCode::Down) | (_, KeyCode::Char('j')) => {
-                let choice_count = self.request.choices.len();
-                if choice_count > 0 {
-                    self.selected_choice = (self.selected_choice + 1).min(choice_count - 1);
+                if !self.choices.options.is_empty() {
+                    self.choices.select_next();
                 }
+            }
+            (_, KeyCode::Char(' ')) if !self.request.allow_free_text => {
+                self.choices.toggle_selected();
             }
             (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
                 self.answer.clear();
@@ -135,20 +140,32 @@ impl QuestionDialog {
         } else {
             self.answer.clone()
         };
-        let rendered = format!(
-            "{}\n\n{}",
-            render_preview_question_view(&self.request.question, &[answer_preview.as_str()]),
-            render_submit_questions_view(usize::from(!self.answer.trim().is_empty()), 1),
-        );
-        let mut lines = self.choice_lines(width);
-        lines.extend(
-            rendered
-                .lines()
-                .filter(|line| !line.trim().is_empty())
-                .take(6)
-                .map(|line| Line::from(truncate(line, width))),
-        );
-        lines
+        let mut rendered = if self.choices.options.is_empty() {
+            render_ask_user_question_permission_request(
+                &self.request.question,
+                &MultipleChoiceState::new(vec![answer_preview.clone()]),
+                1,
+                1,
+            )
+        } else {
+            render_ask_user_question_permission_request(&self.request.question, &self.choices, 1, 1)
+        };
+        rendered.push_str("\n\n");
+        rendered.push_str(&render_preview_box(
+            "Preview",
+            &render_preview_question_view(&self.request.question, &[answer_preview.as_str()]),
+        ));
+        rendered.push('\n');
+        rendered.push_str(&render_submit_questions_view(
+            usize::from(!self.submit_answer().trim().is_empty()),
+            1,
+        ));
+        rendered
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .take(10)
+            .map(|line| Line::from(truncate(line, width)))
+            .collect()
     }
 
     fn answer_with_cursor(&self) -> String {
@@ -171,31 +188,24 @@ impl QuestionDialog {
         self.request
             .choices
             .get(
-                self.selected_choice
+                self.choices
+                    .selected
                     .min(self.request.choices.len().saturating_sub(1)),
             )
             .cloned()
     }
 
-    fn choice_lines(&self, width: usize) -> Vec<Line<'static>> {
-        self.request
-            .choices
-            .iter()
-            .enumerate()
-            .map(|(idx, choice)| {
-                let marker = if idx == self.selected_choice {
-                    ">"
-                } else {
-                    " "
-                };
-                Line::from(truncate(&format!("{marker} {choice}"), width))
-            })
-            .collect()
-    }
-
     fn submit_answer(&self) -> String {
         if !self.answer.trim().is_empty() {
             self.answer.clone()
+        } else if !self.choices.submitted.is_empty() {
+            self.choices
+                .submitted
+                .iter()
+                .filter_map(|idx| self.choices.options.get(*idx))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
         } else {
             self.selected_choice_text().unwrap_or_default()
         }

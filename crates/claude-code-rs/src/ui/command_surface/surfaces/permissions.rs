@@ -3,8 +3,13 @@ use crossterm::event::KeyEvent;
 use crate::ui::better_view_panel::{selected_row, BetterViewPanel};
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
+use crate::ui::permissions::rules::add_permission_rules::render_add_permission_rules;
+use crate::ui::permissions::rules::add_workspace_directory::render_add_workspace_directory;
+use crate::ui::permissions::rules::permission_rule_description::render_permission_rule_description;
+use crate::ui::permissions::rules::permission_rule_input::PermissionRuleInputState;
 use crate::ui::permissions::rules::permission_rule_list::render_permission_rule_list;
 use crate::ui::permissions::rules::recent_denials_tab::render_recent_denials_tab;
+use crate::ui::permissions::rules::remove_workspace_directory::render_remove_workspace_directory;
 use crate::ui::permissions::rules::workspace_tab::render_workspace_tab;
 use crate::ui::permissions::rules::{PermissionRule, RecentDenial, WorkspaceDirectory};
 use crate::ui::permissions::utils::{PermissionDecision, PermissionScope};
@@ -96,6 +101,18 @@ impl PermissionsSurface {
                     .lines()
                     .map(str::to_string),
             );
+            if let Some(rule) = self.rules.get(
+                self.state
+                    .selected_index
+                    .min(self.rules.len().saturating_sub(1)),
+            ) {
+                detail_lines.push(String::new());
+                detail_lines.extend(
+                    render_permission_rule_description(rule)
+                        .lines()
+                        .map(str::to_string),
+                );
+            }
         } else if self.active_tab_id() == Some("workspace") {
             detail_lines.push(String::new());
             detail_lines.extend(
@@ -103,10 +120,40 @@ impl PermissionsSurface {
                     .lines()
                     .map(str::to_string),
             );
+            detail_lines.push(String::new());
+            detail_lines.extend(
+                render_add_workspace_directory("<path>", true)
+                    .lines()
+                    .map(str::to_string),
+            );
+            if let Some(directory) = self.workspace_directories.get(
+                self.state
+                    .selected_index
+                    .min(self.workspace_directories.len().saturating_sub(1)),
+            ) {
+                detail_lines.push(String::new());
+                detail_lines.extend(
+                    render_remove_workspace_directory(&directory.path, self.rules.len())
+                        .lines()
+                        .map(str::to_string),
+                );
+            }
         } else if self.active_tab_id() == Some("denials") {
             detail_lines.push(String::new());
             detail_lines.extend(
                 render_recent_denials_tab(&self.recent_denials)
+                    .lines()
+                    .map(str::to_string),
+            );
+        } else if self.active_tab_id() == Some("mutate") {
+            detail_lines.push(String::new());
+            let inputs = [
+                PermissionRuleInputState::new("Bash(cargo test*)", PermissionDecision::AlwaysAllow),
+                PermissionRuleInputState::new("Bash(*)", PermissionDecision::Ask),
+                PermissionRuleInputState::new("Write(/tmp/**)", PermissionDecision::Deny),
+            ];
+            detail_lines.extend(
+                render_add_permission_rules(&inputs)
                     .lines()
                     .map(str::to_string),
             );

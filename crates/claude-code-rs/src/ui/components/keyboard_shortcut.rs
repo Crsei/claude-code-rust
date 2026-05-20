@@ -56,13 +56,11 @@ impl<'a> ShortcutHint<'a> {
     }
 
     /// Render the key portion in bold.
-    #[cfg(test)]
     pub fn with_bold_key(mut self) -> Self {
         self.bold_key = true;
         self
     }
 
-    #[cfg(test)]
     pub fn with_color(mut self, color: &'a str) -> Self {
         self.color = Some(color);
         self
@@ -137,7 +135,6 @@ pub fn render_hints_styled(hints: &[ShortcutHint<'_>], colors: &ThemeColors) -> 
 }
 
 /// Render a full byline (wrapper around [`render_hints_styled`]).
-#[cfg(test)]
 pub fn render_byline(hints: &[ShortcutHint<'_>], colors: &ThemeColors) -> Vec<Span<'static>> {
     render_hints_styled(hints, colors)
 }
@@ -149,12 +146,10 @@ pub fn render_byline(hints: &[ShortcutHint<'_>], colors: &ThemeColors) -> Vec<Sp
 /// A byline composed of keyboard hints separated by middle dots.
 ///
 /// Mirrors the upstream TypeScript `Byline.tsx` design-system component.
-#[cfg(test)]
 pub struct Byline<'a> {
     hints: Vec<ShortcutHint<'a>>,
 }
 
-#[cfg(test)]
 impl<'a> Byline<'a> {
     pub fn new() -> Self {
         Self { hints: Vec::new() }
@@ -188,7 +183,6 @@ impl<'a> Byline<'a> {
     }
 }
 
-#[cfg(test)]
 impl<'a> Default for Byline<'a> {
     fn default() -> Self {
         Self::new()

@@ -657,25 +657,15 @@ impl Theme {
                         .bg(colors.selection)
                         .add_modifier(Modifier::BOLD),
                     unselected: Style::default().fg(colors.inactiveText),
+                    progress_fill: Style::default()
+                        .fg(color::resolve_color("success", colors).unwrap_or(colors.success)),
+                    progress_empty: Style::default()
+                        .fg(color::resolve_color("inactive", colors).unwrap_or(colors.inactive)),
                     $($extra)*
                 }
             };
         }
-
-        #[cfg(test)]
-        {
-            build_theme!(
-                progress_fill: Style::default()
-                    .fg(color::resolve_color("success", colors).unwrap_or(colors.success)),
-                progress_empty: Style::default()
-                    .fg(color::resolve_color("inactive", colors).unwrap_or(colors.inactive)),
-            )
-        }
-
-        #[cfg(not(test))]
-        {
-            build_theme!()
-        }
+        build_theme!()
     }
 }
 

@@ -35,7 +35,6 @@ impl MemoryFileOption {
         self
     }
 
-    #[cfg(test)]
     pub fn with_parent(mut self, parent: impl Into<PathBuf>) -> Self {
         self.parent = Some(parent.into());
         self
@@ -60,7 +59,6 @@ impl MemoryFileSelectorState {
             selected_index: 0,
         }
     }
-    #[cfg(test)]
     pub fn selected_path(&self) -> Option<&Path> {
         self.options
             .get(self.selected_index)

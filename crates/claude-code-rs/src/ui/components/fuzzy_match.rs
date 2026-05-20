@@ -69,7 +69,6 @@ pub fn best_fuzzy_match<'a>(
 /// - description_weight: weight applied to description (0.5 = default)
 ///
 /// Returns the lowest (best) weighted score across all evaluated fields.
-#[cfg(test)]
 pub fn weighted_fuzzy_match(
     name: &str,
     aliases: &[&str],
@@ -116,7 +115,6 @@ pub fn weighted_fuzzy_match(
     })
 }
 
-#[cfg(test)]
 fn update_best(
     best_score: &mut Option<usize>,
     best_kind: &mut FuzzyMatchKind,

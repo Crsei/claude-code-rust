@@ -1,5 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/permissions.rs
+assertion_line: 445
 expression: rendered
 ---
 ## utils-request
@@ -17,6 +18,7 @@ expression: rendered
 |                        > Allow                        allow  run this tool once  ... |
 |                          Deny                         deny  block this tool call ... |
 |                          Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+
@@ -25,6 +27,7 @@ expression: rendered
   Allow                        allow  run this tool once  scope=this request
 > Deny                         deny  block this tool call  scope=this request
   Always allow                 always allow  save a reusable allow rule  scope=project
+  Escalate                     escalate  ask for a higher-level approval path  scope=session
 
 ## utils-key-values
 Rows
@@ -62,6 +65,7 @@ edit src/main.rs
 |                        > Allow                        allow  run this tool once  ... |
 |                          Deny                         deny  block this tool call ... |
 |                          Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+
@@ -71,6 +75,7 @@ Allow this action?
   Allow                        allow  run this tool once  scope=this request
   Deny                         deny  block this tool call  scope=this request
 > Always allow                 always allow  save a reusable allow rule  scope=project
+  Escalate                     escalate  ask for a higher-level approval path  scope=session
 Enter confirms, Esc denies
 
 ## permission-title
@@ -106,6 +111,7 @@ Permission decision
 |                        > Allow                        allow  run this tool once  ... |
 |                          Deny                         deny  block this tool call ... |
 |                          Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+
@@ -125,6 +131,7 @@ layout width: 80
 |                        > Allow                        allow  run this tool once  ... |
 |                          Deny                         deny  block this tool call ... |
 |                          Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+
@@ -144,6 +151,7 @@ layout width: 80
 |                        > Allow                        allow  run this tool once  ... |
 |                          Deny                         deny  block this tool call ... |
 |                          Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+
@@ -384,6 +392,7 @@ replaced lines: 1
 |                          Allow                        allow  run this tool once  ... |
 |                          Deny                         deny  block this tool call ... |
 |                        > Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+
@@ -403,6 +412,7 @@ replaced lines: 1
 |                        > Allow                        allow  run this tool once  ... |
 |                          Deny                         deny  block this tool call ... |
 |                          Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+
@@ -432,6 +442,7 @@ verification:
 |                          Allow                        allow  run this tool once  ... |
 |                        > Deny                         deny  block this tool call ... |
 |                          Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+
@@ -450,6 +461,7 @@ verification:
 |                        > Allow                        allow  run this tool once  ... |
 |                          Deny                         deny  block this tool call ... |
 |                          Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+
@@ -512,6 +524,7 @@ language: python
 |                          Allow                        allow  run this tool once  ... |
 |                        > Deny                         deny  block this tool call ... |
 |                          Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+
@@ -530,6 +543,7 @@ language: python
 |                          Allow                        allow  run this tool once  ... |
 |                          Deny                         deny  block this tool call ... |
 |                        > Always allow                 always allow  save a reusab... |
+|                          Escalate                     escalate  ask for a higher-... |
 |--------------------------------------------------------------------------------------|
 | Up/Down decision | Enter confirm | Esc deny                                          |
 +--------------------------------------------------------------------------------------+

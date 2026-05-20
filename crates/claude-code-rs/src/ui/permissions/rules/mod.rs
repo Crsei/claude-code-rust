@@ -1,14 +1,10 @@
 //! Permission rule management surfaces.
-#[cfg(test)]
 pub mod add_permission_rules;
-#[cfg(test)]
 pub mod add_workspace_directory;
 pub mod permission_rule_description;
-#[cfg(test)]
 pub mod permission_rule_input;
 pub mod permission_rule_list;
 pub mod recent_denials_tab;
-#[cfg(test)]
 pub mod remove_workspace_directory;
 pub mod workspace_tab;
 

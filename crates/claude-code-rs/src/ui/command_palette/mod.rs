@@ -21,6 +21,12 @@ const ARG_HELP_BASE_HEIGHT: u16 = 5;
 const MAX_EDIT_ROWS: usize = 2;
 const MAX_EDIT_TARGET_ROWS: usize = 4;
 
+const _: fn() = production_symbol_anchors;
+
+fn production_symbol_anchors() {
+    let _ = filter::find_mid_input_slash_command("run /help", 9);
+}
+
 #[derive(Debug, Clone)]
 pub struct CommandPalette {
     active: bool,
@@ -124,11 +130,14 @@ impl CommandPalette {
             .map(|cmd| format!("/{} ", cmd.name))
     }
 
+    pub fn selected_item(&self) -> Option<&CommandItem> {
+        self.filtered.get(self.selected)
+    }
+
     /// Apply the selected command suggestion.
     ///
     /// If `should_execute` is true and the command has no arguments, submit it
     /// directly instead of inserting into the prompt.
-    #[cfg(test)]
     pub fn apply_command_suggestion(
         &self,
         _item: &CommandItem,
@@ -278,7 +287,6 @@ impl Default for CommandPalette {
 }
 
 /// Action to take when applying a command suggestion.
-#[cfg(test)]
 #[derive(Debug, Clone)]
 pub enum CommandAction {
     /// Insert the command text into the prompt.

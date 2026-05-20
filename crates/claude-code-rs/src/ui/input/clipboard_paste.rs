@@ -1,7 +1,4 @@
-// test infrastructure — image paste not wired to production TUI yet
-#[cfg(any(test, feature = "image"))]
 use std::path::Path;
-#[cfg(any(test, feature = "image"))]
 use std::path::PathBuf;
 
 #[cfg(any(test, feature = "image"))]
@@ -28,7 +25,6 @@ impl std::fmt::Display for PasteImageError {
 #[cfg(any(test, feature = "image"))]
 impl std::error::Error for PasteImageError {}
 
-#[cfg(any(test, feature = "image"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncodedImageFormat {
     Png,
@@ -36,7 +32,6 @@ pub enum EncodedImageFormat {
     Other,
 }
 
-#[cfg(any(test, feature = "image"))]
 impl EncodedImageFormat {
     pub fn label(self) -> &'static str {
         match self {
@@ -284,7 +279,6 @@ fn image_info_for_png_path(path: PathBuf) -> Result<(PathBuf, PastedImageInfo), 
 ///
 /// Supports file URLs, Windows/UNC paths, simple quoted paths, and a single
 /// shell-escaped path.
-#[cfg(test)]
 pub fn normalize_pasted_path(pasted: &str) -> Option<PathBuf> {
     let pasted = pasted.trim();
     let unquoted = pasted
@@ -327,7 +321,7 @@ pub(crate) fn is_probably_wsl() -> bool {
     std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some()
 }
 
-#[cfg(all(any(test, feature = "image"), target_os = "linux"))]
+#[cfg(target_os = "linux")]
 fn convert_windows_path_to_wsl(input: &str) -> Option<PathBuf> {
     if input.starts_with("\\\\") {
         return None;
@@ -354,7 +348,6 @@ fn convert_windows_path_to_wsl(input: &str) -> Option<PathBuf> {
     Some(result)
 }
 
-#[cfg(test)]
 fn normalize_windows_path(input: &str) -> Option<PathBuf> {
     let drive = input
         .chars()
@@ -384,7 +377,6 @@ fn normalize_windows_path(input: &str) -> Option<PathBuf> {
 }
 
 /// Infer an image format for a pasted path based on its extension.
-#[cfg(test)]
 pub fn pasted_image_format(path: &Path) -> EncodedImageFormat {
     match path
         .extension()

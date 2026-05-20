@@ -42,10 +42,11 @@ fn section(label: &str, body: String) -> String {
 fn agents_surface_switches_between_list_and_detail() {
     let mut surface = CommandSurface::Agents(AgentsSurface::new(Path::new(".")));
     assert!(surface.render().contains("Agents"));
-    assert!(!surface.render().contains("Create new agent"));
+    assert!(surface.render().contains("Create new agent"));
 
     surface.handle_key(key(KeyCode::Right));
     assert!(surface.render().contains("> Built-in agents"));
+    assert!(!surface.render().contains("Create new agent"));
     assert!(surface.render().contains("general-purpose"));
 
     assert_eq!(

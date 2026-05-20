@@ -19,9 +19,7 @@ pub enum AppEvent {
         level: String,
         timeout_ms: Option<u64>,
     },
-    #[cfg(test)]
     Tick,
-    #[cfg(test)]
     Shutdown,
 }
 

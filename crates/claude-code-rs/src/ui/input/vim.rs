@@ -35,7 +35,6 @@ impl VimMode {
     }
 
     /// Short single-char indicator.
-    #[cfg(test)]
     pub fn short_indicator(&self) -> char {
         match self {
             VimMode::Normal => 'N',
@@ -59,7 +58,6 @@ impl EditorModeSetting {
         }
     }
 
-    #[cfg(test)]
     pub fn as_str(self) -> &'static str {
         match self {
             EditorModeSetting::Normal => "normal",
@@ -156,7 +154,6 @@ impl VimState {
         }
     }
 
-    #[cfg(test)]
     pub fn editor_mode_setting(&self) -> EditorModeSetting {
         if self.enabled {
             EditorModeSetting::Vim

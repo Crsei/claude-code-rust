@@ -81,7 +81,6 @@ impl TabbedFormState {
         self.tabs.get(self.active_tab)
     }
 
-    #[cfg(test)]
     pub fn selected_option(&self) -> Option<&FormOption> {
         self.active_tab()
             .and_then(|tab| tab.options.get(self.selected_index))

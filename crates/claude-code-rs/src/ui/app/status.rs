@@ -101,7 +101,6 @@ impl App {
 
     /// Shared handle to the status-line runner. `/statusline` calls this
     /// to inspect / reset the runner without owning the App.
-    #[cfg(test)]
     pub fn status_line_runner(&self) -> StatusLineRunner {
         self.status_line_runner.clone()
     }
@@ -155,6 +154,8 @@ impl App {
             .refresh(&self.status_line_settings, &payload);
     }
 }
+
+const _: fn(&App) -> StatusLineRunner = App::status_line_runner;
 
 fn remote_indicator_label(state: &cc_engine::types::app_state::AppState) -> Option<String> {
     if !state.kairos_active {

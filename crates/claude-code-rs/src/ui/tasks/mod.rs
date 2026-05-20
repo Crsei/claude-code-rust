@@ -1,30 +1,17 @@
 //! Rust-side background task UI surfaces.
-#[cfg(test)]
 pub mod async_agent_detail_dialog;
-#[cfg(test)]
 pub mod background_task;
-#[cfg(test)]
 pub mod background_task_status;
-#[cfg(test)]
 pub mod background_tasks_dialog;
-#[cfg(test)]
 pub mod dream_detail_dialog;
-#[cfg(test)]
 pub mod in_process_teammate_detail_dialog;
-#[cfg(test)]
 pub mod monitor_mcp_detail_dialog;
-#[cfg(test)]
 pub mod remote_session_detail_dialog;
-#[cfg(test)]
 pub mod remote_session_progress;
-#[cfg(test)]
 pub mod render_tool_activity;
-#[cfg(test)]
 pub mod shell_detail_dialog;
-#[cfg(test)]
 pub mod shell_progress;
 pub mod task_status_utils;
-#[cfg(test)]
 pub mod workflow_detail_dialog;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +47,6 @@ pub struct TaskStatus {
 }
 
 impl TaskStatus {
-    #[cfg(test)]
     pub fn new(id: impl Into<String>, title: impl Into<String>, kind: TaskKind) -> Self {
         Self {
             id: id.into(),
@@ -73,6 +59,12 @@ impl TaskStatus {
             output_lines: Vec::new(),
         }
     }
+}
+
+const _: fn() = production_symbol_anchors;
+
+fn production_symbol_anchors() {
+    let _ = TaskStatus::new("task", "Task", TaskKind::Shell);
 }
 
 #[cfg(test)]

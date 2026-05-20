@@ -2,6 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::utils::selection_marker;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ToolBucketKind {
     ReadOnly,
@@ -78,6 +80,30 @@ impl ToolSelectorState {
         }
     }
 
+    pub fn move_next(&mut self) {
+        if !self.tools.is_empty() {
+            self.focus_index = (self.focus_index + 1) % self.tools.len();
+        }
+    }
+
+    pub fn move_prev(&mut self) {
+        if self.tools.is_empty() {
+            return;
+        }
+        self.focus_index = if self.focus_index == 0 {
+            self.tools.len() - 1
+        } else {
+            self.focus_index - 1
+        };
+    }
+
+    pub fn toggle_focused(&mut self) {
+        if let Some(tool) = self.tools.get(self.focus_index) {
+            let name = tool.name.clone();
+            self.toggle_tool(&name);
+        }
+    }
+
     pub fn render(&self) -> String {
         let mut lines = vec![format!(
             "{} of {} tools selected",
@@ -103,7 +129,16 @@ impl ToolSelectorState {
                     } else {
                         "[ ]"
                     };
-                    lines.push(format!("  {mark} {:<18} {}", tool.name, tool.description));
+                    let selected = self
+                        .tools
+                        .get(self.focus_index)
+                        .is_some_and(|focused| focused.name == tool.name);
+                    lines.push(format!(
+                        "{} {mark} {:<18} {}",
+                        selection_marker(selected),
+                        tool.name,
+                        tool.description
+                    ));
                 }
             }
         }

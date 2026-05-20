@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use cc_types::hooks::{HookEvent, HOOK_EVENTS};
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::Value;
 
@@ -12,7 +11,10 @@ use crate::ui::command_surface::adapters::hooks::{
     HooksByEventAndMatcher, IndividualHookConfig,
 };
 use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
-use crate::ui::hooks::select_event_mode::{render_select_event_mode, HookEventRow};
+use crate::ui::hooks::hooks_config_menu::{render_hooks_config_menu, HookConfigSummary};
+use crate::ui::hooks::select_event_mode::{
+    render_select_event_mode, HookEvent, HookEventRow, HOOK_EVENTS,
+};
 use crate::ui::hooks::select_hook_mode::{render_select_hook_mode, HookListItem};
 use crate::ui::hooks::select_matcher_mode::{render_select_matcher_mode, HookMatcher};
 use crate::ui::hooks::view_hook_mode::{render_view_hook_mode, HookView};
@@ -169,6 +171,20 @@ impl HooksSurface {
 
     fn render_event_mode(&self) -> String {
         let counts = hooks_by_event_count(&self.grouped);
+        let summaries = HOOK_EVENTS
+            .iter()
+            .copied()
+            .map(|event| {
+                let matchers = self.grouped.get(&event);
+                HookConfigSummary {
+                    event,
+                    matcher_count: matchers.map_or(0, HashMap::len),
+                    hook_count: matchers
+                        .map(|by_matcher| by_matcher.values().map(Vec::len).sum())
+                        .unwrap_or(0),
+                }
+            })
+            .collect::<Vec<_>>();
         let rows = HOOK_EVENTS
             .iter()
             .copied()
@@ -181,11 +197,15 @@ impl HooksSurface {
                 )
             })
             .collect::<Vec<_>>();
-        render_select_event_mode(
-            &rows,
-            self.selected_event_index,
-            self.total_hooks_count(),
-            false,
+        format!(
+            "{}\n\n{}",
+            render_hooks_config_menu(&summaries, self.selected_event_index),
+            render_select_event_mode(
+                &rows,
+                self.selected_event_index,
+                self.total_hooks_count(),
+                false
+            )
         )
     }
 
@@ -246,11 +266,14 @@ impl HooksSurface {
                         sources.push(label);
                     }
                 }
-                HookMatcher {
-                    matcher,
-                    sources,
-                    hook_count: hooks.len(),
-                }
+                let mut row = if matcher.is_empty() {
+                    HookMatcher::all_tools()
+                } else {
+                    HookMatcher::for_tool(matcher)
+                };
+                row.sources = sources;
+                row.hook_count = hooks.len();
+                row
             })
             .collect()
     }
@@ -258,10 +281,11 @@ impl HooksSurface {
     fn hook_items(&self, event: HookEvent, matcher: &str) -> Vec<HookListItem> {
         get_hooks_for_matcher(&self.grouped, event, matcher)
             .into_iter()
-            .map(|hook| HookListItem {
-                hook_type: hook_type(&hook.config),
-                display_text: hook_display_text(&hook.config),
-                source: hook_source_header(hook.source).to_string(),
+            .map(|hook| {
+                let mut item =
+                    HookListItem::new(hook_type(&hook.config), hook_display_text(&hook.config));
+                item.source = hook_source_header(hook.source).to_string();
+                item
             })
             .collect()
     }

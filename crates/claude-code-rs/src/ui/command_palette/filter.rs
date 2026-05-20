@@ -280,7 +280,6 @@ pub(super) fn command_from_argument_input(input: &str, cwd: &Path) -> Option<Com
 ///
 /// Given input like `look at /help for docs` with cursor at position 14,
 /// this returns the `/help` command.
-#[cfg(test)]
 pub(crate) fn find_mid_input_slash_command(
     input: &str,
     cursor_pos: usize,

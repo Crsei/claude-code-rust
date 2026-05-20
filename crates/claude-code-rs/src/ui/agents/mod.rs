@@ -1,26 +1,145 @@
 //! Rust-side agent management surfaces mirrored from upstream agents.
 pub mod agent_detail;
-#[cfg(test)]
 pub mod agent_editor;
 pub mod agent_file_utils;
-#[cfg(test)]
 pub mod agent_navigation_footer;
 pub mod agents_list;
 pub mod agents_menu;
-#[cfg(test)]
 pub mod color_picker;
-#[cfg(test)]
 pub mod generate_agent;
-#[cfg(test)]
 pub mod model_selector;
-#[cfg(test)]
 pub mod new_agent_creation;
-#[cfg(test)]
 pub mod tool_selector;
 pub mod types;
 pub mod utils;
-#[cfg(test)]
 pub mod validate_agent;
+
+const _: fn() = production_symbol_anchors;
+
+fn production_symbol_anchors() {
+    use std::path::Path;
+
+    use agent_editor::AgentEditMode;
+    use agent_file_utils::{
+        format_agent_as_markdown, get_new_agent_file_path, render_agent_file_summary,
+        sanitize_agent_filename,
+    };
+    use agent_navigation_footer::AgentNavigationFooter;
+    use agents_list::AgentsListState;
+    use agents_menu::AgentsMenuState;
+    use new_agent_creation::wizard_steps::{
+        color_step::render_color_step, confirm_step::render_confirm_step,
+        confirm_step_wrapper::render_confirm_step_wrapper,
+        description_step::render_description_step, generate_step::render_generate_step,
+        location_step::render_location_step, memory_step::render_memory_step,
+        method_step::render_method_step, model_step::render_model_step,
+        prompt_step::render_prompt_step, render_step_frame, tools_step::render_tools_step,
+        type_step::render_type_step,
+    };
+    use new_agent_creation::{AgentCreationMethod, AgentWizardData};
+    use tool_selector::{ToolBucketKind, ToolOption};
+    use types::{
+        AgentDefinition, AgentMemoryScope, AgentModeState, AgentSource, AgentSourceFilter,
+    };
+    use utils::{group_agents_by_source, indent_lines, truncate_middle};
+
+    let agent = AgentDefinition::new(
+        "anchor",
+        "Use for anchor checks.",
+        "Anchor prompt.",
+        AgentSource::Project,
+    )
+    .with_tools(["Read"])
+    .with_model("MOTA")
+    .with_memory(AgentMemoryScope::Project)
+    .with_color("blue")
+    .with_base_dir(".cc-rust/agents")
+    .with_filename("anchor");
+    let _ = agent.is_plugin();
+    let _ = AgentMemoryScope::None.display_name();
+    let _ = [
+        AgentEditMode::Menu,
+        AgentEditMode::EditTools,
+        AgentEditMode::EditColor,
+        AgentEditMode::EditModel,
+    ];
+    let _ = format_agent_as_markdown(&agent);
+    let _ = get_new_agent_file_path(
+        AgentSource::Project,
+        "anchor",
+        Path::new("."),
+        Path::new("."),
+        Path::new("."),
+    );
+    let _ = render_agent_file_summary(&agent);
+    let _ = sanitize_agent_filename("Anchor Agent");
+    let _ = AgentNavigationFooter {
+        can_create: true,
+        can_edit: true,
+        can_delete: false,
+        in_selection: true,
+    }
+    .render();
+    let mut list = AgentsListState::new(AgentSourceFilter::All, vec![agent.clone()]);
+    list.show_create_new = false;
+    let _ = list.render();
+    let mut menu = AgentsMenuState::default_with_counts(1, 0, 0, 1);
+    menu.move_next();
+    menu.move_prev();
+    let _ = menu.selected_filter();
+    let _ = model_selector::render_model_selector(Some("MOTA"));
+    let mut wizard = AgentWizardData::empty();
+    wizard.location = Some(AgentSource::Project);
+    wizard.method = Some(AgentCreationMethod::Manual);
+    wizard.agent_type = Some("anchor".to_string());
+    wizard.when_to_use = Some("Use for anchor checks.".to_string());
+    wizard.system_prompt = Some("Anchor prompt with enough detail for validation.".to_string());
+    let _ = render_step_frame("Anchor", "body", true);
+    let _ = render_color_step("anchor", Some("blue"));
+    let _ = render_confirm_step(&agent);
+    let _ = render_confirm_step_wrapper(&wizard);
+    let _ = render_description_step(wizard.when_to_use.as_deref(), 40);
+    let _ = render_generate_step(Some("anchor goal"), true);
+    let _ = render_location_step(Some(AgentSource::Project));
+    let _ = render_memory_step(Some(AgentMemoryScope::None));
+    let _ = render_method_step(Some(AgentCreationMethod::Manual));
+    let _ = render_model_step(Some("MOTA"));
+    let _ = render_prompt_step(wizard.system_prompt.as_deref(), 40);
+    let _ = render_tools_step(Some(vec!["Read".to_string()]), true);
+    let _ = render_type_step(
+        wizard.agent_type.as_deref(),
+        &["existing".to_string()],
+        wizard.when_to_use.as_deref().unwrap_or_default(),
+        wizard.system_prompt.as_deref().unwrap_or_default(),
+    );
+    let _ = ToolOption::new("OtherTool", ToolBucketKind::Other);
+    let _ = [
+        AgentModeState::MainMenu,
+        AgentModeState::ListAgents {
+            source: AgentSourceFilter::All,
+        },
+        AgentModeState::AgentMenu {
+            agent_type: "anchor".to_string(),
+            previous: Box::new(AgentModeState::MainMenu),
+        },
+        AgentModeState::ViewAgent {
+            agent_type: "anchor".to_string(),
+            previous: Box::new(AgentModeState::MainMenu),
+        },
+        AgentModeState::CreateAgent,
+        AgentModeState::EditAgent {
+            agent_type: "anchor".to_string(),
+            previous: Box::new(AgentModeState::MainMenu),
+        },
+        AgentModeState::DeleteConfirm {
+            agent_type: "anchor".to_string(),
+            previous: Box::new(AgentModeState::MainMenu),
+        },
+    ];
+    let _ = group_agents_by_source(&[agent]);
+    let _ = truncate_middle("abcdefghijkl", 8);
+    let _ = indent_lines(["one".to_string()], 2);
+}
 
 #[cfg(test)]
 mod tests {

@@ -25,7 +25,6 @@ impl ApprovalKind {
         }
     }
 
-    #[cfg(test)]
     pub fn subject(&self) -> String {
         match self {
             ApprovalKind::Bash { command } => command.clone(),

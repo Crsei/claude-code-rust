@@ -8,7 +8,6 @@
 //! Dialog instances live inside an [`OverlayStack`] which manages z-ordering
 //! and event routing.
 
-#[cfg(test)]
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::style::Style;
 use ratatui::text::Line;
@@ -34,19 +33,16 @@ impl ExitGuard {
     }
 
     /// Arm the guard (first press detected).
-    #[cfg(test)]
     pub fn arm(&mut self) {
         self.armed = true;
     }
 
     /// Disarm (e.g. on any other key press or after timeout).
-    #[cfg(test)]
     pub fn disarm(&mut self) {
         self.armed = false;
     }
 
     /// Returns `true` if this press should trigger exit (second press).
-    #[cfg(test)]
     pub fn confirm(&mut self) -> bool {
         if self.armed {
             true
@@ -64,7 +60,6 @@ impl Default for ExitGuard {
 }
 
 /// Result of routing a key through a dialog.
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DialogEvent {
     /// The dialog did not consume the key.
@@ -127,7 +122,6 @@ impl<'a> Dialog<'a> {
     }
 
     /// Set the dialog subtitle.
-    #[cfg(test)]
     pub fn subtitle(mut self, v: &'a str) -> Self {
         self.subtitle = Some(v);
         self
@@ -140,7 +134,6 @@ impl<'a> Dialog<'a> {
     }
 
     /// Hide the top border / divider.
-    #[cfg(test)]
     pub fn hide_border(mut self) -> Self {
         self.hide_border = true;
         self
@@ -153,14 +146,12 @@ impl<'a> Dialog<'a> {
     }
 
     /// Set whether the cancel action is active (default: true).
-    #[cfg(test)]
     pub fn cancel_active(mut self, v: bool) -> Self {
         self.is_cancel_active = v;
         self
     }
 
     /// Replace the default input guide hints.
-    #[cfg(test)]
     pub fn input_guide(mut self, hints: Vec<ShortcutHint<'a>>) -> Self {
         self.input_guide_hints = Some(hints);
         self
@@ -252,7 +243,6 @@ impl<'a> Dialog<'a> {
     /// guard and is consumed, the second press returns [`DialogEvent::Exit`].
     /// Any other key disarms the guard so accidental exits require consecutive
     /// exit key presses.
-    #[cfg(test)]
     pub fn handle_key(&self, key: KeyEvent, exit_guard: &mut ExitGuard) -> DialogEvent {
         if key.kind != KeyEventKind::Press {
             return DialogEvent::None;

@@ -1,11 +1,7 @@
 //! Shared task status formatting helpers.
 
-#[cfg(test)]
 use super::TaskStatus;
 use super::{TaskKind, TaskState};
-#[cfg(test)]
-use crate::ui::progress_bar::{render_progress_bar, ProgressBar};
-#[cfg(test)]
 use crate::ui::theme::ThemeColors;
 
 pub fn state_label(state: TaskState) -> &'static str {
@@ -38,10 +34,9 @@ pub fn format_elapsed(ms: u64) -> String {
     }
 }
 
-#[cfg(test)]
 pub fn progress_bar(task: &TaskStatus, width: usize) -> String {
     let Some((done, total)) = task.progress else {
-        return render_progress_bar(0.0, width);
+        return render_plain_progress_bar(0.0, width);
     };
 
     let ratio = if total == 0 {
@@ -49,14 +44,12 @@ pub fn progress_bar(task: &TaskStatus, width: usize) -> String {
     } else {
         done.min(total) as f64 / total as f64
     };
-    render_progress_bar(ratio, width)
+    render_plain_progress_bar(ratio, width)
 }
 
 /// Theme-aware variant returning styled progress-bar spans.
 ///
-/// Uses the new `ProgressBar` widget with the provided theme colors.
 /// The progress bar uses accent color for the filled portion.
-#[cfg(test)]
 pub fn progress_bar_styled(
     task: &TaskStatus,
     width: usize,
@@ -69,10 +62,23 @@ pub fn progress_bar_styled(
             done.min(total) as f64 / total as f64
         }
     });
-    ProgressBar::new(ratio, width).render(colors)
+    let ratio = ratio.clamp(0.0, 1.0);
+    let filled = (ratio * width as f64).round() as usize;
+    let empty = width.saturating_sub(filled);
+    ratatui::text::Line::from(vec![
+        ratatui::text::Span::styled(
+            "█".repeat(filled),
+            ratatui::style::Style::default().fg(colors.accent),
+        ),
+        ratatui::text::Span::styled(
+            "░".repeat(empty),
+            ratatui::style::Style::default().fg(colors.inactive),
+        ),
+    ])
 }
 
-#[cfg(test)]
+const _: fn(&TaskStatus, usize, &ThemeColors) -> ratatui::text::Line<'static> = progress_bar_styled;
+
 pub fn progress_detail(task: &TaskStatus) -> String {
     let Some((done, total)) = task.progress else {
         return "no progress reported".to_string();
@@ -87,7 +93,6 @@ pub fn progress_detail(task: &TaskStatus) -> String {
     format!("{capped}/{total} steps ({percent:.0}%)")
 }
 
-#[cfg(test)]
 pub fn task_header(task: &TaskStatus) -> String {
     format!(
         "{} [{}] {} {}",
@@ -96,4 +101,11 @@ pub fn task_header(task: &TaskStatus) -> String {
         state_label(task.state),
         format_elapsed(task.elapsed_ms)
     )
+}
+
+fn render_plain_progress_bar(ratio: f64, width: usize) -> String {
+    let ratio = ratio.clamp(0.0, 1.0);
+    let filled = (ratio * width as f64).round() as usize;
+    let empty = width.saturating_sub(filled);
+    format!("{}{}", "█".repeat(filled), " ".repeat(empty))
 }

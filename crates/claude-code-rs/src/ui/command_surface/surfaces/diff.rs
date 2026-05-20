@@ -2,12 +2,9 @@ use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::ui::better_view_panel::{selected_row, BetterViewPanel};
 use crate::ui::command_surface::adapters::diff::build_diff_sources;
 use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
-use crate::ui::diff::diff_detail_view::render_diff_detail_view_lines;
-use crate::ui::diff::diff_dialog::{DiffDialogMode, DiffSource};
-use crate::ui::diff::diff_file_list::render_diff_file_list_lines;
+use crate::ui::diff::diff_dialog::{render_diff_dialog_lines, DiffDialogMode, DiffSource};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffSurface {
     pub(crate) sources: Vec<DiffSource>,
@@ -41,82 +38,21 @@ impl DiffSurface {
         if let Some(error) = &self.error {
             return format!("Diff\n{error}\n\nEsc close");
         }
-        let Some(source) = self.sources.get(self.source_index) else {
-            return BetterViewPanel::new("Uncommitted changes")
-                .summary("source=none files=0")
-                .sections_title("Sources")
-                .sections(Vec::new(), 0)
-                .detail_title("Files")
-                .detail_lines(vec!["Working tree is clean".to_string()])
-                .footer("Esc close")
-                .render();
-        };
-        let stats = source
-            .data
-            .stats
-            .as_ref()
-            .map(|stats| {
-                format!(
-                    "files={} +{} -{}",
-                    stats.files_count, stats.lines_added, stats.lines_removed
-                )
-            })
-            .unwrap_or_else(|| format!("files={}", source.data.files.len()));
-        let sections = self
+
+        let subtitle = self
             .sources
-            .iter()
-            .map(|source| source.label.clone())
-            .collect::<Vec<_>>();
-        match self.mode {
-            DiffDialogMode::List => {
-                let detail_lines = if source.data.files.is_empty() {
-                    vec!["Working tree is clean".to_string()]
-                } else {
-                    render_diff_file_list_lines(&source.data.files, self.selected_index, 60)
-                };
-                BetterViewPanel::new("Uncommitted changes")
-                    .summary(format!("source={} {}", source.label, stats))
-                    .sections_title("Sources")
-                    .sections(sections, self.source_index)
-                    .detail_title("Files")
-                    .detail_lines(detail_lines)
-                    .footer("Left/Right source | Up/Down file | Enter detail | Esc close")
-                    .render()
-            }
-            DiffDialogMode::Detail => {
-                let selected = source.data.files.get(self.selected_index);
-                let mut detail_lines = Vec::new();
-                if let Some(file) = selected {
-                    detail_lines.extend(render_diff_detail_view_lines(
-                        file,
-                        source.data.hunks_for_path(&file.path),
-                        72,
-                    ));
-                } else {
-                    detail_lines.push("No file selected".to_string());
-                }
-                BetterViewPanel::new(format!(
-                    "Uncommitted changes / {}",
-                    selected.map(|file| file.path.as_str()).unwrap_or("detail")
-                ))
-                .summary(format!("source={} {}", source.label, stats))
-                .sections_title("Diff")
-                .sections(
-                    selected
-                        .map(|file| vec![file.path.clone()])
-                        .unwrap_or_else(|| vec!["Diff".to_string()]),
-                    0,
-                )
-                .detail_title("Diff")
-                .detail_lines(if detail_lines.is_empty() {
-                    vec![selected_row("No diff", "", true)]
-                } else {
-                    detail_lines
-                })
-                .footer("b back | Up/Down scroll | Esc close")
-                .render()
-            }
-        }
+            .get(self.source_index)
+            .map(|source| source.label.as_str());
+        render_diff_dialog_lines(
+            "Uncommitted changes",
+            subtitle,
+            &self.sources,
+            self.source_index,
+            self.selected_index,
+            self.mode,
+            80,
+        )
+        .join("\n")
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyEvent) -> CommandSurfaceOutcome {

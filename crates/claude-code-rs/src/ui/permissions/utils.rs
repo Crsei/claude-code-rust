@@ -8,7 +8,6 @@ pub enum PermissionDecision {
     Deny,
     AlwaysAllow,
     Ask,
-    #[cfg(test)]
     Escalate,
 }
 
@@ -19,7 +18,6 @@ impl PermissionDecision {
             Self::Deny => "deny",
             Self::AlwaysAllow => "always allow",
             Self::Ask => "ask",
-            #[cfg(test)]
             Self::Escalate => "escalate",
         }
     }
@@ -136,7 +134,6 @@ impl PermissionRequestView {
         self
     }
 
-    #[cfg(test)]
     pub fn for_worker(mut self, worker_name: impl Into<String>) -> Self {
         let worker_name = worker_name.into();
         if !worker_name.trim().is_empty() {
@@ -165,6 +162,12 @@ pub fn default_permission_options() -> Vec<PermissionOption> {
             "save a reusable allow rule",
             PermissionDecision::AlwaysAllow,
             PermissionScope::Project,
+        ),
+        PermissionOption::new(
+            "Escalate",
+            "ask for a higher-level approval path",
+            PermissionDecision::Escalate,
+            PermissionScope::Session,
         ),
     ]
 }

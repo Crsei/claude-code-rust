@@ -62,6 +62,7 @@ use cc_types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
 
 use super::app::{app_event::AppEvent, app_event_sender, App, AppAction};
 use super::notifications::in_app::{InAppNotification, NotificationPriority, NotificationTone};
+use super::notifications::{detect_backend, DesktopNotificationBackend, NotificationMethod};
 use super::permissions::hooks::{render_permission_hook_event, PermissionHookEvent};
 use super::permissions::permission_decision_debug_info::render_permission_decision_debug_info;
 use super::permissions::BypassPermissionsModeChoice;
@@ -71,6 +72,26 @@ fn permission_event_notification(text: String, tone: NotificationTone) -> InAppN
         .with_tone(tone)
         .with_fold(true)
         .with_timeout_ms(5000)
+}
+
+fn notify_desktop(backend: &mut DesktopNotificationBackend, message: &str) {
+    if let Err(error) = backend.notify(message) {
+        debug!(error = %error, "TUI: desktop notification failed");
+    }
+}
+
+fn notify_desktop_for_app_event(backend: &mut DesktopNotificationBackend, event: &AppEvent) {
+    match event {
+        AppEvent::Notification { message, .. } | AppEvent::LocalNotice { message } => {
+            notify_desktop(backend, message);
+        }
+        AppEvent::Backend { message } => match message.as_ref() {
+            BackendMessage::NotificationSent { title, .. } => notify_desktop(backend, title),
+            BackendMessage::Error { message, .. } => notify_desktop(backend, message),
+            _ => {}
+        },
+        AppEvent::Tick | AppEvent::Shutdown => {}
+    }
 }
 
 fn persist_skip_dangerous_mode_prompt() -> anyhow::Result<()> {
@@ -226,6 +247,7 @@ pub async fn run_tui(
 
     // ── Create the App ─────────────────────────────────────────────
     let mut app = App::new();
+    let mut desktop_notifications = detect_backend(NotificationMethod::Auto);
     app.set_model_name(model_name.to_string());
     app.set_backend_name(engine.app_state().main_loop_backend.clone());
     app.set_session_id(engine.current_session_id().to_string());
@@ -561,11 +583,16 @@ pub async fn run_tui(
             }
 
             Some(app_event) = app_event_rx.recv() => {
+                notify_desktop_for_app_event(&mut desktop_notifications, &app_event);
                 app.handle_app_event(app_event);
             }
 
             // Engine events (query results)
-            Some(engine_event) = engine_rx.recv() => {
+            engine_event = engine_rx.recv() => {
+                let Some(engine_event) = engine_event else {
+                    app.handle_app_event(AppEvent::Shutdown);
+                    continue;
+                };
                 match engine_event {
                     EngineEvent::Sdk(sdk_msg) => {
                         handle_sdk_message(&mut app, *sdk_msg, &mut streaming_state);
@@ -592,7 +619,7 @@ pub async fn run_tui(
                         pending_question_response = Some(response_tx);
                     }
                     EngineEvent::HookPermissionDecision(event) => {
-                        app.add_notification(permission_event_notification(
+                        let notification = permission_event_notification(
                             render_permission_hook_event(&PermissionHookEvent {
                                 hook_name: event.hook_name,
                                 matcher: event.matcher,
@@ -600,10 +627,12 @@ pub async fn run_tui(
                                 notes: event.notes,
                             }),
                             NotificationTone::Info,
-                        ));
+                        );
+                        notify_desktop(&mut desktop_notifications, &notification.text);
+                        app.add_notification(notification);
                     }
                     EngineEvent::PermissionDecisionDebug(event) => {
-                        app.add_notification(permission_event_notification(
+                        let notification = permission_event_notification(
                             render_permission_decision_debug_info(
                                 &event.tool_name,
                                 &event.matcher,
@@ -611,7 +640,9 @@ pub async fn run_tui(
                                 event.matched_rule.as_deref(),
                             ),
                             NotificationTone::Dim,
-                        ));
+                        );
+                        notify_desktop(&mut desktop_notifications, &notification.text);
+                        app.add_notification(notification);
                     }
                     EngineEvent::Done => {
                         app.set_streaming(false);
@@ -637,7 +668,7 @@ pub async fn run_tui(
 
             // Tick timer (spinner animation, ~80ms)
             _ = tick_interval.tick() => {
-                app.tick();
+                app.handle_app_event(AppEvent::Tick);
                 // Drain any pending voice-controller events (issue #13).
                 // Returns true when something was inserted into the
                 // prompt or the state changed — both cases need a redraw.

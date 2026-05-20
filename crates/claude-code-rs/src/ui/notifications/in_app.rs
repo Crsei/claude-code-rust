@@ -68,7 +68,6 @@ impl InAppNotification {
         self.tone = tone;
         self
     }
-    #[cfg(test)]
     pub fn with_rendered(mut self, spans: Vec<Span<'static>>) -> Self {
         self.rendered = Some(spans);
         self
@@ -79,7 +78,6 @@ impl InAppNotification {
         self
     }
 
-    #[cfg(test)]
     pub fn with_invalidates(mut self, keys: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.invalidates = keys.into_iter().map(Into::into).collect();
         self
@@ -116,7 +114,6 @@ impl NotificationState {
         self.current.as_ref().map(|active| &active.notification)
     }
 
-    #[cfg(test)]
     pub fn queued_len(&self) -> usize {
         self.queue.len()
     }
@@ -253,6 +250,17 @@ impl NotificationState {
             .map(|(idx, _)| idx)?;
         Some(self.queue.remove(best_idx))
     }
+}
+
+const _: fn() = production_symbol_anchors;
+
+fn production_symbol_anchors() {
+    let notification = InAppNotification::new("anchor", NotificationPriority::Low, "ready")
+        .with_rendered(vec![Span::raw("ready")])
+        .with_invalidates(["anchor"]);
+    let mut state = NotificationState::default();
+    let _ = state.add_notification(notification);
+    let _ = state.queued_len();
 }
 
 #[cfg(test)]

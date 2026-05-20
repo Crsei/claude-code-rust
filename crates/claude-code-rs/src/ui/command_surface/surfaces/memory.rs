@@ -5,7 +5,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::ui::better_view_panel::{plain_row, BetterViewPanel};
 use crate::ui::command_surface::adapters::memory::{memory_options, selected_memory_open_command};
 use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
-use crate::ui::memory::memory_file_selector::MemoryFileSelectorState;
+use crate::ui::memory::memory_file_selector::{MemoryFileKind, MemoryFileSelectorState};
+use crate::ui::memory::memory_update_notification::render_memory_update_notification;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemorySurface {
     pub(crate) state: MemoryFileSelectorState,
@@ -17,8 +18,19 @@ pub struct MemorySurface {
 impl MemorySurface {
     pub(crate) fn new(cwd: &Path) -> Self {
         let home = cc_config::paths::data_root();
+        let project_memory = cwd.join("CLAUDE.md");
+        let options = memory_options(cwd, &home)
+            .into_iter()
+            .map(|option| {
+                if option.kind == MemoryFileKind::Nested && option.parent.is_none() {
+                    option.with_parent(project_memory.clone())
+                } else {
+                    option
+                }
+            })
+            .collect();
         Self {
-            state: MemoryFileSelectorState::new(memory_options(cwd, &home)),
+            state: MemoryFileSelectorState::new(options),
             cwd: cwd.to_path_buf(),
             home,
             action_index: 0,
@@ -47,6 +59,14 @@ impl MemorySurface {
             3 => plain_row("Enter:", "/memory open <target>"),
             _ => plain_row("Enter:", "select"),
         });
+        if self.action_index == 0 {
+            if let Some(path) = self.state.selected_path() {
+                detail_lines.push(plain_row(
+                    "After save:",
+                    render_memory_update_notification(path, &self.cwd, &self.home),
+                ));
+            }
+        }
         BetterViewPanel::new("Memory")
             .summary(format!(
                 "action={} targets={}",

@@ -29,7 +29,6 @@ impl AgentSource {
         }
     }
 
-    #[cfg(test)]
     pub fn is_editable(self) -> bool {
         matches!(
             self,
@@ -51,7 +50,6 @@ pub enum AgentMemoryScope {
     User,
     Project,
     Local,
-    #[cfg(test)]
     None,
 }
 
@@ -61,7 +59,6 @@ impl AgentMemoryScope {
             AgentMemoryScope::User => "user",
             AgentMemoryScope::Project => "project",
             AgentMemoryScope::Local => "local",
-            #[cfg(test)]
             AgentMemoryScope::None => "none",
         }
     }
@@ -114,37 +111,31 @@ impl AgentDefinition {
         }
     }
 
-    #[cfg(test)]
     pub fn with_tools(mut self, tools: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.tools = Some(tools.into_iter().map(Into::into).collect());
         self
     }
 
-    #[cfg(test)]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
         self
     }
 
-    #[cfg(test)]
     pub fn with_memory(mut self, memory: AgentMemoryScope) -> Self {
         self.memory = Some(memory);
         self
     }
 
-    #[cfg(test)]
     pub fn with_color(mut self, color: impl Into<String>) -> Self {
         self.color = Some(color.into());
         self
     }
 
-    #[cfg(test)]
     pub fn with_base_dir(mut self, base_dir: impl Into<String>) -> Self {
         self.base_dir = Some(base_dir.into());
         self
     }
 
-    #[cfg(test)]
     pub fn with_filename(mut self, filename: impl Into<String>) -> Self {
         self.filename = Some(filename.into());
         self
@@ -154,13 +145,11 @@ impl AgentDefinition {
         self.source == AgentSource::BuiltIn
     }
 
-    #[cfg(test)]
     pub fn is_plugin(&self) -> bool {
         self.source == AgentSource::Plugin
     }
 }
 
-#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentValidationResult {
     pub is_valid: bool,
@@ -168,7 +157,6 @@ pub struct AgentValidationResult {
     pub errors: Vec<String>,
 }
 
-#[cfg(test)]
 impl AgentValidationResult {
     pub fn ok() -> Self {
         Self {
@@ -190,7 +178,6 @@ impl AgentValidationResult {
     }
 }
 
-#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentModeState {
     MainMenu,

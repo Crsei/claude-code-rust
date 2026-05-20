@@ -8,7 +8,6 @@ pub struct HookListItem {
 }
 
 impl HookListItem {
-    #[cfg(test)]
     pub fn new(hook_type: impl Into<String>, display_text: impl Into<String>) -> Self {
         Self {
             hook_type: hook_type.into(),

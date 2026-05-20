@@ -31,25 +31,21 @@ impl<'a> SearchBox<'a> {
         self
     }
 
-    #[cfg(test)]
     pub fn focused(mut self, is_focused: bool) -> Self {
         self.is_focused = is_focused;
         self
     }
 
-    #[cfg(test)]
     pub fn terminal_focused(mut self, is_terminal_focused: bool) -> Self {
         self.is_terminal_focused = is_terminal_focused;
         self
     }
 
-    #[cfg(test)]
     pub fn prefix(mut self, prefix: &'a str) -> Self {
         self.prefix = prefix;
         self
     }
 
-    #[cfg(test)]
     pub fn cursor_offset(mut self, cursor_offset: usize) -> Self {
         self.cursor_offset = Some(cursor_offset);
         self
@@ -60,7 +56,6 @@ impl<'a> SearchBox<'a> {
         self
     }
 
-    #[cfg(test)]
     pub fn width(mut self, width: usize) -> Self {
         self.width = Some(width);
         self

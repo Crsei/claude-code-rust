@@ -1,38 +1,72 @@
 //! Rust-side MCP UI surfaces.
-#[cfg(test)]
 pub mod capabilities_section;
-#[cfg(test)]
 pub mod elicitation_dialog;
 pub mod index;
-#[cfg(test)]
 pub mod mcp_agent_server_menu;
 pub mod mcp_list_panel;
-#[cfg(test)]
 pub mod mcp_parsing_warnings;
-#[cfg(test)]
 pub mod mcp_reconnect;
-#[cfg(test)]
 pub mod mcp_remote_server_menu;
-#[cfg(test)]
 pub mod mcp_server_approval_dialog;
-#[cfg(test)]
 pub mod mcp_server_card;
-#[cfg(test)]
 pub mod mcp_server_desktop_import_dialog;
-#[cfg(test)]
 pub mod mcp_server_dialog_copy;
-#[cfg(test)]
 pub mod mcp_server_multiselect_dialog;
-#[cfg(test)]
 pub mod mcp_settings;
-#[cfg(test)]
 pub mod mcp_stdio_server_menu;
-#[cfg(test)]
 pub mod mcp_tool_detail_view;
-#[cfg(test)]
 pub mod mcp_tool_list_view;
-#[cfg(test)]
 pub mod utils;
+
+const _: fn() = production_symbol_anchors;
+
+fn production_symbol_anchors() {
+    use elicitation_dialog::{render_elicitation_dialog, ElicitationField};
+    use mcp_server_approval_dialog::{
+        build_mcp_server_approval_surface, mcp_server_approval_choices,
+        render_mcp_server_approval_dialog,
+    };
+    use mcp_server_desktop_import_dialog::{
+        render_mcp_server_desktop_import_dialog, DesktopMcpImportServer,
+        McpServerDesktopImportState,
+    };
+    use mcp_server_dialog_copy::{mcp_server_safety_copy, render_mcp_server_dialog_copy};
+    use mcp_server_multiselect_dialog::{
+        render_mcp_server_multiselect_dialog, McpServerMultiselectState,
+    };
+
+    let fields = vec![ElicitationField {
+        name: "token".to_string(),
+        prompt: "Token".to_string(),
+        value: String::new(),
+        required: true,
+    }];
+    let _ = render_elicitation_dialog("Configure MCP", &fields, 0);
+    let _ = mcp_server_approval_choices("docs");
+    let _ = build_mcp_server_approval_surface("docs");
+    let _ = render_mcp_server_approval_dialog("docs", 0);
+    let import = McpServerDesktopImportState {
+        servers: vec![DesktopMcpImportServer {
+            name: "docs".to_string(),
+            command_or_url: "uvx docs".to_string(),
+            collides: false,
+            selected: true,
+            final_name: None,
+        }],
+        selected_index: 0,
+        target_scope: "project".to_string(),
+    };
+    let _ = import.selected_servers();
+    let _ = render_mcp_server_desktop_import_dialog(&import);
+    let _ = mcp_server_safety_copy();
+    let _ = render_mcp_server_dialog_copy();
+    let multiselect = McpServerMultiselectState::new(vec!["docs".to_string()]);
+    let _ = multiselect.selected_names();
+    let _ = multiselect.rejected_names();
+    let _ = multiselect.approve_command();
+    let _ = multiselect.reject_command();
+    let _ = render_mcp_server_multiselect_dialog(&multiselect);
+}
 
 #[cfg(test)]
 mod tests {

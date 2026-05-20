@@ -8,7 +8,6 @@ pub struct HookMatcher {
 }
 
 impl HookMatcher {
-    #[cfg(test)]
     pub fn all_tools() -> Self {
         Self {
             matcher: String::new(),
@@ -17,7 +16,6 @@ impl HookMatcher {
         }
     }
 
-    #[cfg(test)]
     pub fn for_tool(tool_name: impl Into<String>) -> Self {
         Self {
             matcher: tool_name.into(),

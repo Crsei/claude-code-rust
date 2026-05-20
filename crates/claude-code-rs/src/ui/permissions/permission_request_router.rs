@@ -4,6 +4,7 @@ use cc_types::callbacks::PermissionRequestPayload;
 use serde_json::Value;
 
 use super::bash_permission_request::bash_permission_request::render_bash_permission_request;
+use super::bash_permission_request::bash_tool_use_options::render_bash_tool_use_options;
 use super::computer_use_approval::computer_use_approval::render_computer_use_approval;
 use super::enter_plan_mode_permission_request::enter_plan_mode_permission_request::render_enter_plan_mode_permission_request;
 use super::exit_plan_mode_permission_request::exit_plan_mode_permission_request::render_exit_plan_mode_permission_request;
@@ -13,7 +14,13 @@ use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
 use super::file_edit_permission_request::file_edit_permission_request::{
     render_file_edit_permission_request, render_file_edit_permission_request_with_diff,
 };
+use super::file_permission_dialog::file_permission_dialog::render_file_permission_dialog;
+use super::file_permission_dialog::ide_diff_config::{render_ide_diff_config, IdeDiffConfig};
 use super::file_permission_dialog::permission_options::file_permission_options;
+use super::file_permission_dialog::use_file_permission_dialog::FilePermissionDialogState;
+use super::file_permission_dialog::use_permission_handler::{
+    describe_file_permission_decision, FilePermissionDecision,
+};
 use super::file_write_permission_request::file_write_permission_request::{
     render_file_write_permission_request, render_file_write_permission_request_with_diff,
 };
@@ -21,12 +28,13 @@ use super::filesystem_permission_request::filesystem_permission_request::render_
 use super::monitor_permission_request::monitor_permission_request::render_monitor_permission_request;
 use super::notebook_edit_permission_request::notebook_edit_permission_request::render_notebook_edit_permission_request;
 use super::power_shell_permission_request::power_shell_permission_request::render_power_shell_permission_request;
+use super::power_shell_permission_request::powershell_tool_use_options::render_powershell_tool_use_options;
 use super::review_artifact_permission_request::review_artifact_permission_request::render_review_artifact_permission_request;
 use super::sandbox_permission_request::render_sandbox_permission_request;
 use super::sed_edit_permission_request::sed_edit_permission_request::render_sed_edit_permission_request;
 use super::shell_permission_helpers::shell_permission_options;
 use super::skill_permission_request::skill_permission_request::render_skill_permission_request;
-use super::utils::default_permission_options;
+use super::utils::{default_permission_options, render_permission_request, PermissionRequestView};
 use super::web_fetch_permission_request::web_fetch_permission_request::render_web_fetch_permission_request;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,7 +57,6 @@ impl PermissionDialogRequest {
         }
     }
 
-    #[cfg(test)]
     pub fn legacy(tool_name: &str, input: &str, message: &str) -> Self {
         let tool_input =
             serde_json::from_str(input).unwrap_or_else(|_| Value::String(input.trim().to_string()));
@@ -185,10 +192,16 @@ fn route_shell(
     let command = string_or_legacy_field(&request.tool_input, &["command", "cmd", "script"])?;
     let options = option_labels(shell_permission_options(&command));
     let rendered = match kind {
-        PermissionRouteKind::PowerShell => {
-            render_power_shell_permission_request(&command, selected_index)
-        }
-        _ => render_bash_permission_request(&command, selected_index),
+        PermissionRouteKind::PowerShell => format!(
+            "{}\n\nOptions\n{}",
+            render_power_shell_permission_request(&command, selected_index),
+            render_powershell_tool_use_options(&command, selected_index),
+        ),
+        _ => format!(
+            "{}\n\nOptions\n{}",
+            render_bash_permission_request(&command, selected_index),
+            render_bash_tool_use_options(&command, selected_index),
+        ),
     };
     Some(RoutedPermissionRequest {
         kind,
@@ -237,6 +250,21 @@ fn route_file_write(
         .unwrap_or(0);
     let replaced_lines =
         usize_field(&request.tool_input, &["replaced_lines", "old_lines"]).unwrap_or(0);
+    if new_lines == 0 && replaced_lines == 0 {
+        return Some(RoutedPermissionRequest {
+            kind: PermissionRouteKind::FileWrite,
+            rendered: render_file_dialog_for_path(
+                &path,
+                "write",
+                "no diff supplied",
+                selected_index,
+            ),
+            options: merge_options(
+                request,
+                option_labels(file_permission_options(&path, false)),
+            ),
+        });
+    }
     Some(RoutedPermissionRequest {
         kind: PermissionRouteKind::FileWrite,
         rendered: render_file_write_permission_request(
@@ -277,7 +305,11 @@ fn route_file_edit(
     }
     Some(RoutedPermissionRequest {
         kind: PermissionRouteKind::FileEdit,
-        rendered: render_file_edit_permission_request(&path, &operation, selected_index),
+        rendered: if operation == "edit" {
+            render_file_dialog_for_path(&path, &operation, "no diff supplied", selected_index)
+        } else {
+            render_file_edit_permission_request(&path, &operation, selected_index)
+        },
         options: merge_options(
             request,
             option_labels(file_permission_options(&path, false)),
@@ -462,6 +494,19 @@ fn route_sandbox(
 fn fallback(request: &PermissionDialogRequest, _selected_index: usize) -> RoutedPermissionRequest {
     let summary = request.input_summary();
     let details = fallback_details(request, &summary);
+    if let Some(worker_name) = worker_name_field(&request.tool_input) {
+        let rendered = render_permission_request(
+            &PermissionRequestView::new("Permission required", &request.tool_name, summary)
+                .with_details(details.iter().cloned())
+                .with_risk("unknown tool behavior")
+                .for_worker(worker_name),
+        );
+        return RoutedPermissionRequest {
+            kind: PermissionRouteKind::Fallback,
+            rendered,
+            options: merge_options(request, option_labels(default_permission_options())),
+        };
+    }
     RoutedPermissionRequest {
         kind: PermissionRouteKind::Fallback,
         rendered: render_fallback_permission_request(&request.tool_name, &summary, &details),
@@ -573,6 +618,52 @@ fn path_field(input: &Value) -> Option<String> {
     string_or_legacy_field(
         input,
         &["path", "file_path", "filepath", "file", "notebook_path"],
+    )
+}
+
+fn render_file_dialog_for_path(
+    path: &str,
+    action: &str,
+    diff_summary: &str,
+    selected_index: usize,
+) -> String {
+    let mut state = FilePermissionDialogState::new(path);
+    let options = file_permission_options(path, false);
+    for _ in 0..selected_index.min(options.len().saturating_sub(1)) {
+        state.select_next(options.len());
+    }
+    state.show_diff = !diff_summary.trim().is_empty();
+    let mut rendered = render_file_permission_dialog(&state, action, diff_summary);
+    rendered.push_str("\n\n");
+    rendered.push_str(&render_ide_diff_config(&IdeDiffConfig {
+        enabled: state.show_diff,
+        editor: "default".to_string(),
+        supports_inline_diff: true,
+    }));
+    if let Some(option) = options.get(state.selected_index.min(options.len().saturating_sub(1))) {
+        rendered.push('\n');
+        rendered.push_str(&describe_file_permission_decision(
+            &FilePermissionDecision {
+                decision: option.decision,
+                path: path.to_string(),
+                save_rule: matches!(option.scope, super::utils::PermissionScope::Project),
+            },
+        ));
+    }
+    rendered
+}
+
+fn worker_name_field(input: &Value) -> Option<String> {
+    string_field(
+        input,
+        &[
+            "worker",
+            "worker_name",
+            "workerName",
+            "agent",
+            "agent_name",
+            "agentName",
+        ],
     )
 }
 

@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use super::completions::{CompletionContext, CompletionItem, CompletionKind, CompletionProvider};
 
 /// Maximum number of cached search queries.
-#[cfg(test)]
 const MAX_CACHED_QUERIES: usize = 50;
+const _: usize = MAX_CACHED_QUERIES;
 
 /// Cache TTL for MCP query results.
 const MCP_CACHE_TTL: Duration = Duration::from_secs(120);

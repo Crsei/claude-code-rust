@@ -84,7 +84,7 @@ Model determines the agent's reasoning capabilities and speed.
 ## tools
 2 of 8 tools selected
 Read-only tools (1/4)
-  [x] Read               Read can inspect context
+> [x] Read               Read can inspect context
   [ ] Grep               Grep can inspect context
   [ ] Glob               Glob can inspect context
   [ ] WebFetch           WebFetch can inspect context

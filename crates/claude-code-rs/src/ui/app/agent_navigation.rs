@@ -157,8 +157,7 @@ impl AgentNavigationState {
     }
 }
 
-#[cfg(test)]
-fn short_thread_id(thread_id: &str) -> &str {
+pub(super) fn short_thread_id(thread_id: &str) -> &str {
     thread_id.get(..8).unwrap_or(thread_id)
 }
 

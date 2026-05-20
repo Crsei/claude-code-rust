@@ -3,7 +3,7 @@ use ratatui::text::{Line, Span};
 
 use crate::ui::theme::Theme;
 
-use super::agent_navigation::{AgentNavigationDirection, AgentNavigationState};
+use super::agent_navigation::{short_thread_id, AgentNavigationDirection, AgentNavigationState};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentTreeDialog {
@@ -127,8 +127,4 @@ impl AgentTreeDialog {
             .first()
             .map(|entry| entry.thread_id.clone());
     }
-}
-
-fn short_thread_id(thread_id: &str) -> &str {
-    thread_id.get(..8).unwrap_or(thread_id)
 }

@@ -22,12 +22,12 @@ expression: render_interactive_ui_surfaces()
             ┌ Permission Required - Edit file? ────────────┐
             │Tool: Write                                   │
             │Kind: Edit file                               │
-            ││Request                        src/ui/comm...│
-            ││write diff: src/ui/command_...               │
-            ││new lines: 0                                 │
-            ││replaced lines: 0                            │
+            ││Request                        write src/u...│
+            ││diff: no diff supplied                       │
             ││> Allow edit                   allow  perm...│
             ││Deny edit                    deny  leave f...│
+            ││Always allow path            always allow ...│
+            ││IDE diff: true                               │
             ││                                             │
             │  Allow (y)    Deny (n)    Always path (a)    │
             │ Arrows/hotkeys. Enter confirms. Esc denies.  │

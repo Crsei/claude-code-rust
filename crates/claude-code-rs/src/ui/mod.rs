@@ -215,3 +215,103 @@ pub mod theme;
 
 // Overlay / modal infrastructure.
 pub mod overlays;
+
+const _: fn() = production_symbol_anchors;
+
+fn production_symbol_anchors() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+    use ratatui::text::Line;
+
+    let colors = theme::get_theme(&theme::ThemeName::Dark);
+    let render_theme = theme::Theme::default();
+
+    let _ = approval_overlay::ApprovalKind::Bash {
+        command: "echo ok".to_string(),
+    }
+    .subject();
+    let _ = better_view_panel::key_value_row("key", "value");
+    let _ = divider::Divider::new().char('-').padding(1).title("Title");
+    let _ =
+        fuzzy_match::weighted_fuzzy_match("name", &["alias"], "description", "na", 1.0, 0.75, 0.5);
+    let history = history_search_dialog::HistorySearchDialog::loading("", 0);
+    let _ = history.query();
+    let hint = keyboard_shortcut::ShortcutHint::new("Enter", "select")
+        .with_bold_key()
+        .with_color("accent");
+    let _ = keyboard_shortcut::render_byline(&[hint], colors);
+    let byline = keyboard_shortcut::Byline::new()
+        .hint("Esc", "close")
+        .push(hint);
+    let _ = byline.len();
+    let _ = byline.is_empty();
+    let _ = byline.render(colors);
+    let _ = search_box::SearchBox::new("agent")
+        .focused(true)
+        .terminal_focused(true)
+        .prefix("/")
+        .cursor_offset(1)
+        .width(20);
+    let tab = tabs::Tab::new("overview", "Overview");
+    let _ = tab.id.as_str();
+    let mut tabs = tabs::Tabs::new(vec![tab]);
+    tabs.select_next();
+    tabs.select_prev();
+    let _ = tabs.selected();
+    let _ = tabs.selected_tab();
+    let _ = tabs
+        .color("accent")
+        .use_full_width()
+        .content_height(3)
+        .header_focus(true)
+        .render_header(colors, 40);
+
+    let completer = completions::CombinedCompleter::new();
+    let _ = completer.is_empty();
+    let _ = completer.provider_count();
+    let _ = completions::find_command_token_range("run /help", 9);
+    let form = form_navigation::TabbedFormState::new(
+        "Form",
+        vec![form_navigation::FormTab::new(
+            "main",
+            "Main",
+            vec![form_navigation::FormOption::new("yes", "Yes")],
+        )],
+    );
+    let _ = form.selected_option();
+    let vim = vim::VimState::from_editor_mode(Some("vim"));
+    let _ = vim.editor_mode_setting().as_str();
+    let _ = vim::VimMode::Insert.short_indicator();
+
+    let _ = messages::assistant_tool_use_message::ToolUseState::Queued;
+    let _ = messages::assistant_tool_use_message::ToolUseState::WaitingForPermission;
+    let _ = messages::assistant_tool_use_message::ToolUseState::ClassifierChecking;
+    let _ = messages::user_tool_result_message::utils::line_to_text(&Line::from("tool output"));
+
+    let mut activity = tool_activity::ToolActivity::new("Read", tool_activity::ToolState::Running);
+    activity.progress = Some((1, 2));
+    let _ = activity.compact_line();
+    let _ = tool_activity::render_grouped_styled_activity(&[activity.clone()], &render_theme);
+    let _ = tool_activity::render_grouped_activity(&[activity]);
+    let scroll = virtual_scroll::VirtualScroll::new();
+    let _ = scroll.total_lines();
+    let _ = scroll.visible_range(0, 10);
+    let _ = scroll.visual_height_of(0);
+    let _ = scroll.cached_width();
+    let _ = scroll.offset_of(0);
+
+    let mut exit_guard = overlays::dialog::ExitGuard::new();
+    let dialog = overlays::dialog::Dialog::new()
+        .subtitle("Subtitle")
+        .hide_border()
+        .cancel_active(true)
+        .input_guide(vec![hint]);
+    let _ = dialog.handle_key(
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        },
+        &mut exit_guard,
+    );
+}

@@ -1,5 +1,4 @@
 //! Rust-side team UI surfaces.
-#[cfg(test)]
 pub mod team_status;
 pub mod teams_dialog;
 

@@ -247,6 +247,7 @@ pub(super) fn permission_choice_to_response(
         crate::ui::permissions::PermissionDecisionChoice::Allow => "allow",
         crate::ui::permissions::PermissionDecisionChoice::Deny => "deny",
         crate::ui::permissions::PermissionDecisionChoice::AlwaysAllow => "always_allow",
+        crate::ui::permissions::PermissionDecisionChoice::Escalate => "escalate",
     };
     PermissionResponsePayload::new(decision, Some(choice.feedback.clone()))
 }

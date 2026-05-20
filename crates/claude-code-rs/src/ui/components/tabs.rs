@@ -2,27 +2,22 @@
 //!
 //! Mirrors the upstream TypeScript `Tabs.tsx` design-system component.
 
-#[cfg(test)]
 use ratatui::style::{Modifier, Style};
-#[cfg(test)]
 use ratatui::text::{Line, Span};
 
-#[cfg(test)]
 use crate::ui::theme::ThemeColors;
 
 /// A single tab entry.
 #[derive(Debug, Clone)]
 pub struct Tab {
-    #[cfg(test)]
     pub id: String,
     pub title: String,
 }
 
 impl Tab {
-    pub fn new(_id: impl Into<String>, title: impl Into<String>) -> Self {
+    pub fn new(id: impl Into<String>, title: impl Into<String>) -> Self {
         Self {
-            #[cfg(test)]
-            id: _id.into(),
+            id: id.into(),
             title: title.into(),
         }
     }
@@ -38,16 +33,12 @@ pub struct Tabs {
     /// Index of the currently selected tab.
     selected: usize,
     /// Optional theme colour key for the active tab indicator (default: `accent`).
-    #[cfg(test)]
     color: Option<&'static str>,
     /// Whether to use full terminal width for the header.
-    #[cfg(test)]
     use_full_width: bool,
     /// Optional fixed content height in rows.
-    #[cfg(test)]
     content_height: Option<usize>,
     /// Whether the header is focused (keyboard navigation active).
-    #[cfg(test)]
     header_focused: bool,
 }
 
@@ -56,13 +47,9 @@ impl Tabs {
         Self {
             tabs,
             selected: 0,
-            #[cfg(test)]
             color: None,
-            #[cfg(test)]
             use_full_width: false,
-            #[cfg(test)]
             content_height: None,
-            #[cfg(test)]
             header_focused: false,
         }
     }
@@ -75,7 +62,6 @@ impl Tabs {
     }
 
     /// Select the next tab (wrapping around).
-    #[cfg(test)]
     pub fn select_next(&mut self) {
         if !self.tabs.is_empty() {
             self.selected = (self.selected + 1) % self.tabs.len();
@@ -83,7 +69,6 @@ impl Tabs {
     }
 
     /// Select the previous tab (wrapping around).
-    #[cfg(test)]
     pub fn select_prev(&mut self) {
         if !self.tabs.is_empty() {
             self.selected = if self.selected == 0 {
@@ -94,44 +79,39 @@ impl Tabs {
         }
     }
 
-    #[cfg(test)]
     pub fn selected(&self) -> usize {
         self.selected
     }
 
-    #[cfg(test)]
     pub fn selected_tab(&self) -> Option<&Tab> {
         self.tabs.get(self.selected)
     }
 
     // Builder setters.
-    #[cfg(test)]
     pub fn color(mut self, v: &'static str) -> Self {
         self.color = Some(v);
         self
     }
 
-    #[cfg(test)]
     pub fn use_full_width(mut self) -> Self {
         self.use_full_width = true;
         self
     }
 
-    #[cfg(test)]
     pub fn content_height(mut self, v: usize) -> Self {
         self.content_height = Some(v);
         self
     }
 
-    #[cfg(test)]
     pub fn header_focus(mut self, v: bool) -> Self {
         self.header_focused = v;
         self
     }
 
     /// Render the tab header row.
-    #[cfg(test)]
     pub fn render_header(&self, colors: &ThemeColors, term_width: usize) -> Line<'static> {
+        let _ = self.content_height;
+        let _ = self.header_focused;
         let accent = self
             .color
             .and_then(|k| crate::ui::theme::color::resolve_color(k, colors))

@@ -20,6 +20,8 @@ pub enum PermissionDecisionChoice {
     Deny,
     /// Always allow this tool (add a permanent rule).
     AlwaysAllow,
+    /// Escalate this request to the next approval path.
+    Escalate,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,7 +46,7 @@ impl PermissionChoice {
     }
 }
 
-const DEFAULT_OPTIONS: [&str; 3] = ["Allow", "Deny", "Always Allow"];
+const DEFAULT_OPTIONS: [&str; 4] = ["Allow", "Deny", "Always Allow", "Escalate"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PermissionDialogMode {
@@ -68,7 +70,6 @@ pub struct PermissionDialog {
 }
 
 impl PermissionDialog {
-    #[cfg(test)]
     pub fn new(tool_name: &str, input: &str, message: &str) -> Self {
         Self::from_request(PermissionDialogRequest::legacy(tool_name, input, message))
     }
@@ -146,6 +147,11 @@ impl PermissionDialog {
             (_, KeyCode::Char('a')) | (_, KeyCode::Char('A')) => {
                 return Some(PermissionChoice::from_decision(
                     PermissionDecisionChoice::AlwaysAllow,
+                ));
+            }
+            (_, KeyCode::Char('e')) | (_, KeyCode::Char('E')) => {
+                return Some(PermissionChoice::from_decision(
+                    PermissionDecisionChoice::Escalate,
                 ));
             }
             (_, KeyCode::Esc) => {
@@ -371,6 +377,7 @@ impl PermissionDialog {
             PermissionDecisionChoice::Allow => &self.accept_feedback,
             PermissionDecisionChoice::Deny => &self.reject_feedback,
             PermissionDecisionChoice::AlwaysAllow => "",
+            PermissionDecisionChoice::Escalate => "",
         }
     }
 
@@ -379,6 +386,7 @@ impl PermissionDialog {
             PermissionDecisionChoice::Allow => &mut self.accept_feedback,
             PermissionDecisionChoice::Deny => &mut self.reject_feedback,
             PermissionDecisionChoice::AlwaysAllow => &mut self.accept_feedback,
+            PermissionDecisionChoice::Escalate => &mut self.reject_feedback,
         }
     }
 
@@ -403,6 +411,7 @@ fn choice_for_label(label: &str) -> Option<PermissionDecisionChoice> {
         "deny" | "no" | "deny edit" | "deny write" => Some(PermissionDecisionChoice::Deny),
         "always allow" | "always_allow" | "always" | "always allow path" | "always path"
         | "always exact" => Some(PermissionDecisionChoice::AlwaysAllow),
+        "escalate" | "escalate request" | "ask lead" => Some(PermissionDecisionChoice::Escalate),
         _ => None,
     }
 }
@@ -708,6 +717,7 @@ fn shortcut_for_label(label: &str) -> Option<&'static str> {
         Some(PermissionDecisionChoice::Allow) => Some("y"),
         Some(PermissionDecisionChoice::Deny) => Some("n"),
         Some(PermissionDecisionChoice::AlwaysAllow) => Some("a"),
+        Some(PermissionDecisionChoice::Escalate) => Some("e"),
         None => None,
     }
 }
@@ -772,6 +782,8 @@ fn button_bar_label(label: &str) -> &'static str {
         "Always path"
     } else if lower.contains("always") {
         "Always"
+    } else if lower.contains("escalate") {
+        "Escalate"
     } else if lower.contains("allow") {
         "Allow"
     } else if lower.contains("deny") || lower.contains("reject") || lower == "no" {

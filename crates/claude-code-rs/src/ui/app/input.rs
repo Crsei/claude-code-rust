@@ -1,5 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 
+use crate::ui::clipboard_paste::{normalize_pasted_path, pasted_image_format, EncodedImageFormat};
+use crate::ui::command_palette::CommandAction;
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::completions::{
     CombinedCompleter, CommandCompletionProvider, CompletionContext, CompletionItem,
@@ -64,10 +66,9 @@ impl CompletionState {
     }
 
     /// Move selection down (toward later items).
-    #[cfg(test)]
     pub fn select_next(&mut self) {
-        if self.selected + 1 < self.items.len() {
-            self.selected += 1;
+        if !self.items.is_empty() {
+            self.selected = (self.selected + 1) % self.items.len();
         }
     }
 
@@ -102,7 +103,7 @@ mod completion_state_tests {
         state.select_next();
         assert_eq!(state.selected, 1);
         state.select_next();
-        assert_eq!(state.selected, 1);
+        assert_eq!(state.selected, 0);
         state.select_prev();
         assert_eq!(state.selected, 0);
     }
@@ -220,7 +221,23 @@ impl App {
                 }
                 (_, KeyCode::Enter) => {
                     if let Some(command_input) = self.command_palette.selected_command_input() {
-                        self.prompt.input = command_input;
+                        let item = self.command_palette.selected_item().cloned();
+                        if let Some(item) = item {
+                            match self.command_palette.apply_command_suggestion(&item, true) {
+                                Some(CommandAction::Execute(command)) => {
+                                    self.command_palette.close();
+                                    return AppAction::Submit(command);
+                                }
+                                Some(CommandAction::Insert(command)) => {
+                                    self.prompt.input = command;
+                                }
+                                None => {
+                                    self.prompt.input = command_input;
+                                }
+                            }
+                        } else {
+                            self.prompt.input = command_input;
+                        }
                         self.prompt.cursor_position = self.prompt.input.len();
                     }
                     self.command_palette.close();
@@ -247,25 +264,45 @@ impl App {
         match (key.modifiers, key.code) {
             (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
                 if self.is_streaming {
+                    self.exit_guard.disarm();
                     return AppAction::Abort;
-                } else {
+                } else if self.exit_guard.confirm() {
                     self.should_quit = true;
                     return AppAction::Quit;
+                } else {
+                    self.add_notification(super::notification_from_app_event(
+                        "exit-guard".to_string(),
+                        "Press Ctrl+C again to exit".to_string(),
+                        "low".to_string(),
+                        Some(2500),
+                    ));
+                    return AppAction::None;
                 }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('d'))
                 if self.view_mode == ViewMode::Prompt
                     && (self.prompt.is_active || !self.is_streaming) =>
             {
-                self.should_quit = true;
-                return AppAction::Quit;
+                if self.exit_guard.confirm() {
+                    self.should_quit = true;
+                    return AppAction::Quit;
+                } else {
+                    self.add_notification(super::notification_from_app_event(
+                        "exit-guard".to_string(),
+                        "Press Ctrl+D again to exit".to_string(),
+                        "low".to_string(),
+                        Some(2500),
+                    ));
+                    return AppAction::None;
+                }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
+                self.exit_guard.disarm();
                 // Cycle `Prompt -> Transcript -> Focus -> Prompt`.
                 self.cycle_view_mode();
                 return AppAction::None;
             }
-            _ => {}
+            _ => self.exit_guard.disarm(),
         }
 
         // Transcript / focus modes take over all remaining keystrokes.
@@ -325,20 +362,16 @@ impl App {
         if self.prompt.is_active && !self.is_streaming {
             match (key.modifiers, key.code) {
                 (KeyModifiers::NONE, KeyCode::Tab) => {
-                    // If completion is already active, accept the selected item
+                    // If completion is already active, cycle through candidates.
                     if self.completion_state.active {
                         if let Some(item) = self.completion_state.selected_item() {
-                            // Replace the range with insert_text
-                            let range = &item.range;
-                            let insert = &item.insert_text;
-                            if range.end <= self.prompt.input.len() {
-                                self.prompt.input.replace_range(range.clone(), insert);
-                                self.prompt.cursor_position = range.start + insert.len();
-                            }
+                            self.prompt.set_ghost_suffix(item.ghost_suffix.clone());
                         }
-                        self.completion_state.close();
-                        self.prompt.set_ghost_suffix(None);
-                        self.prompt.set_show_ghost(false);
+                        self.completion_state.select_next();
+                        if let Some(item) = self.completion_state.selected_item() {
+                            self.prompt.set_ghost_suffix(item.ghost_suffix.clone());
+                            self.prompt.set_show_ghost(true);
+                        }
                         self.sync_command_palette();
                         self.dirty = true;
                         return AppAction::None;
@@ -379,6 +412,23 @@ impl App {
                 }
                 _ => {}
             }
+        }
+
+        if self.completion_state.active && matches!(key.code, KeyCode::Enter) {
+            if let Some(item) = self.completion_state.selected_item() {
+                let range = &item.range;
+                let insert = &item.insert_text;
+                if range.end <= self.prompt.input.len() {
+                    self.prompt.input.replace_range(range.clone(), insert);
+                    self.prompt.cursor_position = range.start + insert.len();
+                }
+            }
+            self.completion_state.close();
+            self.prompt.set_ghost_suffix(None);
+            self.prompt.set_show_ghost(false);
+            self.sync_command_palette();
+            self.dirty = true;
+            return AppAction::None;
         }
 
         if let Some(submitted) = self.prompt.handle_key(key) {
@@ -531,7 +581,22 @@ impl App {
         if self.view_mode != ViewMode::Prompt || !self.prompt.is_active {
             return AppAction::None;
         }
-        self.prompt.paste_text(&text);
+        let paste_text = if let Some(path) = normalize_pasted_path(&text) {
+            let format = pasted_image_format(&path);
+            let path_text = path.to_string_lossy().into_owned();
+            if format != EncodedImageFormat::Other {
+                self.add_notification(super::notification_from_app_event(
+                    "pasted-image-path".to_string(),
+                    format!("Pasted {} image path: {path_text}", format.label()),
+                    "low".to_string(),
+                    Some(3500),
+                ));
+            }
+            path_text
+        } else {
+            text
+        };
+        self.prompt.paste_text(&paste_text);
         self.history_index = None;
         self.saved_input.clear();
         self.sync_command_palette();
@@ -672,17 +737,36 @@ impl App {
         match action.as_str() {
             "app:interrupt" => {
                 if self.is_streaming {
+                    self.exit_guard.disarm();
                     return Some(AppAction::Abort);
                 }
-                self.should_quit = true;
-                return Some(AppAction::Quit);
+                if self.exit_guard.confirm() {
+                    self.should_quit = true;
+                    return Some(AppAction::Quit);
+                }
+                self.add_notification(super::notification_from_app_event(
+                    "exit-guard".to_string(),
+                    "Press Ctrl+C again to exit".to_string(),
+                    "low".to_string(),
+                    Some(2500),
+                ));
+                return Some(AppAction::None);
             }
             "app:exit" => {
                 if self.view_mode == ViewMode::Prompt
                     && (self.prompt.is_active || !self.is_streaming)
                 {
-                    self.should_quit = true;
-                    return Some(AppAction::Quit);
+                    if self.exit_guard.confirm() {
+                        self.should_quit = true;
+                        return Some(AppAction::Quit);
+                    }
+                    self.add_notification(super::notification_from_app_event(
+                        "exit-guard".to_string(),
+                        "Press Ctrl+D again to exit".to_string(),
+                        "low".to_string(),
+                        Some(2500),
+                    ));
+                    return Some(AppAction::None);
                 }
                 return Some(AppAction::None);
             }
