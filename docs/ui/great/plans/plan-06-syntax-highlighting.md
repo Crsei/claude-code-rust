@@ -242,3 +242,14 @@ syntect = ["dep:syntect"]
 - syntect 的 `fancy-regex` 依赖可能在极端正则表达式上出现性能退化（罕见）
 - 语言标识符映射: `pulldown_cmark` 提取的语言字符串需映射至 syntect 语法名（如 `js` → `JavaScript`、`py` → `Python`）
 - 长代码块（>500 行）首次高亮可能产生可观延迟，缓存可缓解
+
+## 实施后遗留问题（2026-05-20）
+
+本计划的 Markdown fenced code block 高亮已接入：代码块语言会从 fence info string 提取，常见别名会映射到 syntect 语法，失败时回退到 `theme.code`，并保留缓存/快照测试覆盖。`cargo check -p claude-code-rs` 和 `cargo build --workspace --release` 未产生 Rust 生产警告。
+
+仍需在后续计划中跟踪：
+
+1. 差异视图的令牌级语法高亮尚未作为生产路径完成；当前差异 UI 仍以行级 add/remove/context 样式为主，需要单独把文件扩展名语言推断与 diff 前景色叠加策略接入。
+2. 语言选择器 UI 与用户覆盖语言的交互尚未实现；当前语言仅来自 Markdown fence。
+3. 流式代码块仍按现有 Markdown 渲染路径刷新，没有实现 syntect `HighlightLines` 的逐行增量复用；长代码块性能需要后续基准验证。
+4. 测试目标中可能继续出现与语言枚举/未来 UI 入口相关的 `dead_code` 警告；生产构建路径保持干净。

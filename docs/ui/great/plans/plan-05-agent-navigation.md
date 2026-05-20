@@ -194,3 +194,13 @@ spinner (流式时) → suggestions → paste_notice → input → command_palet
 ### 注意事项
 - 代理编辑器和创建向导（`new_agent_creation/` 中的 11 步向导）**不在本计划范围内** — 它们已有独立实现，本计划聚焦导航和列表渲染
 - 本计划完成后，`agents/` 目录中所有组件应编入渲染管线，数据模型不再有 `dead_code`
+
+## 实施后遗留问题（2026-05-20）
+
+本计划的核心接线已经完成：`AgentNavigationState` 已进入 `App` 状态，agent 树覆盖层、导航页脚、按键动作和相关渲染测试已接入生产路径。`cargo check -p claude-code-rs` 和 `cargo build --workspace --release` 未产生 Rust 生产警告。
+
+仍需在后续计划中跟踪：
+
+1. `agents/` 中的列表、菜单、详情和编辑器仍主要作为上游镜像/辅助表面存在，当前落地重点是导航树和页脚；若要求完整 TS parity，需要继续把 `AgentsList`、`AgentsMenu`、`AgentDetail`、`AgentEditor` 的完整交互接入覆盖层或命令表面。
+2. 协调器/队友状态目前只覆盖导航所需的线程标签和状态摘要；TS 侧更完整的队友摘要、工具计数和协调器面板仍是后续 UI parity 工作。
+3. `cargo test -p claude-code-rs ui:: -- --nocapture` 仍会在测试目标中暴露部分 agent 辅助/编辑模块的 `dead_code` 警告；这不影响生产构建，但需要在相关表面真正接线或显式测试门控时继续收敛。

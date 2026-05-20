@@ -240,3 +240,14 @@ Rust 对应：完全缺失。
 5. **BypassPermissionsModeDialog 的设置持久化**：需要将其链接到设置系统（`updateSettingsForSource` 的 Rust 等价物）。检查 `cc-settings` crate 是否已有 `skipDangerousModePermissionPrompt` 配置键。
 
 6. **测试风险**：当前唯一的测试覆盖率来自 `permissions.rs` 中的 snapshot 测试（`snapshot_permission_component_helpers`）。接入后，这些都需要更新或扩展以测试交互流程。建议为每个交互阶段（渲染 → 选择 → 反馈）分别新建测试。
+
+## 实施后遗留问题（2026-05-20）
+
+本计划的第一阶段接线已经完成：新增 `PermissionRequestRouter`，常见工具权限请求会进入专用渲染路径，通用 `PermissionDialog` 会展示路由结果，并移除了已接线模块上的 `dead_code` 宽限。`cargo check -p claude-code-rs` 和 `cargo build --workspace --release` 未产生 Rust 生产警告。
+
+仍需在后续计划中跟踪：
+
+1. 反馈输入、IDE diff 交互、`BypassPermissionsModeDialog` 和权限分析事件尚未完成；这些仍对应原计划 Phase 2-4 与 Phase 6。
+2. 路由器已覆盖 bash、PowerShell、文件写入/编辑、WebFetch 等高频工具；较低频或复杂权限类型仍可能走 fallback/通用布局，需要逐个补齐 TS 对应组件语义。
+3. 权限对话框底部操作在极窄宽度下会降级为紧凑文案；最终 review 未发现阻塞问题，但宽度非常小时选中态可读性仍应通过后续快照或 viewport 测试继续覆盖。
+4. `cargo test -p claude-code-rs ui:: -- --nocapture` 仍可能在测试目标中暴露权限规则/辅助模块的 `dead_code` 警告；生产构建路径保持干净。

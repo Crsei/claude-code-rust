@@ -254,3 +254,14 @@ Phase 1 (permissions) ── 由 plan-07 覆盖（依赖关系在那边处理）
 5. **`agent_navigation.rs` 接线后可能需要 UI 布局变更**：agent 树面板将占用屏幕空间。确保已有布局槽位或新增加载方案。
 
 6. **不要在 Phase 5 中意外删除 "保留但仅测试用" 的模块**：某些模块可能被 `#[cfg(test)]` 测试引用但不在生产代码中引用。这些应该用 `#[cfg(any(test, feature = "tui"))]` 保护，而不是删除。
+
+## 实施后遗留问题（2026-05-20）
+
+本计划的生产路径清理已经完成：`crates/claude-code-rs/src/ui/` 下不再保留 `dead_code` 相关 allow，`messages/metadata.rs` 已删除，生产 `cargo check -p claude-code-rs` 与 `cargo build --workspace --release` 未产生 Rust 警告。
+
+仍需在后续计划中跟踪：
+
+1. `cargo test -p claude-code-rs ui:: -- --nocapture` 仍会在测试目标中报告若干 `dead_code` 警告，主要来自仅测试引用或尚未完整接线的 UI 镜像表面；本次清理目标是生产构建零 `dead_code` 宽限，而不是测试目标全 lint 归零。
+2. 部分 API 通过 `#[cfg(test)]`、小型 marker/helper 方法或集中测试引用保留，以避免未完成表面被误删；后续当这些表面进入生产渲染路径时，应移除测试门控并用真实调用替代。
+3. 本计划未覆盖 `unused_imports`、`unused` 或测试 target 下的所有普通 warning；如果后续要做全 workspace/all-targets warning budget，需要单独开计划。
+4. `mod.rs` 的模块暴露已经收敛到当前生产入口可接受的形态，但 Rust UI 仍保留大量上游 parity 模块；新增模块时应优先接线、删除或显式 `cfg(test)`，不要重新引入无说明的 `#[allow(dead_code)]`。
