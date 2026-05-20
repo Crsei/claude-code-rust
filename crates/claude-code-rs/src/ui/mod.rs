@@ -2,8 +2,7 @@
 // live in responsibility folders below, while their public module names remain
 // `crate::ui::<name>` for compatibility.
 //
-// Rust TUI source stays owned by the root binary crate. The workspace keeps a
-// placeholder `cc-ui` crate only as a migration boundary marker.
+// Rust TUI source stays owned by the root binary crate.
 pub mod agents;
 pub mod app;
 pub mod diff;

@@ -157,7 +157,6 @@ cc-ipc-protocol = { path = "crates/cc-ipc-protocol" }
 cc-ipc-transport = { path = "crates/cc-ipc-transport" }
 cc-ipc-adapters = { path = "crates/cc-ipc-adapters" }
 cc-ipc-client = { path = "crates/cc-ipc-client" }
-cc-ui = { path = "crates/cc-ui" }
 cc-startup = { path = "crates/start-up" }
 cc-voice = { path = "crates/voice" }
 cc-web = { path = "crates/web" }

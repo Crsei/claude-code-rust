@@ -51,7 +51,7 @@
 | cc-services | services (src 层) | ~60% | 基础服务完成，部分高级功能缺失 |
 | cc-engine/shell | bash/, shell/ | ~40% | Bash 解析器未移植，Shell Provider 未移植 |
 | cc-engine/hooks | hooks/ | ~50% | Hook 执行框架部分移植 |
-| cc-ui | (Ink UI 层) | ~5% | 仅占位 crate |
+| Rust TUI | (Ink UI 层) | ~5% | 实现在 `crates/claude-code-rs/src/ui/`，无单独 `cc-ui` crate |
 
 ## 完全未移植的模块 (Rust 中无对应)
 

@@ -213,7 +213,7 @@ Each Bun `src/utils/` file is classified by **owner crate** and **implementation
 
 ---
 
-### `cc-ui` / TUI — Terminal Rendering
+### Root TUI — Terminal Rendering
 
 | Bun file | Rust equivalent | Status | Notes |
 |---|---|---|---|
@@ -397,4 +397,4 @@ Remaining:
 | P2 | Session persistence | `cc-session` | Large |
 | P2 | Telemetry | `cc-observability` | Medium |
 | P3 | MCP utilities | `cc-mcp` | Medium |
-| P3 | Terminal rendering | `cc-ui` | Large |
+| P3 | Terminal rendering | `crates/claude-code-rs/src/ui/` | Large |

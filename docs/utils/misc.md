@@ -75,7 +75,7 @@ Bun 的查询循环和引擎层大部分已移植到 Rust 的 `cc-engine` 和 `c
 
 5. **设置变更检测**: Bun 使用 chokidar 文件监控；Rust 的 cc-config 似乎使用更简单的加载策略。
 
-6. **UI 层**: Bun 使用 React/Ink 的完整 TUI；Rust 的 cc-ui 是空占位 crate，实际 UI 在根 crate 中。这表明 Rust 可能使用了不同的终端 UI 框架。
+6. **UI 层**: Bun 使用 React/Ink 的完整 TUI；Rust TUI 实现在 `crates/claude-code-rs/src/ui/`，不再保留单独的 `cc-ui` 占位 crate。这表明 Rust 使用了不同的终端 UI 框架。
 
 ## 文件清单
 
