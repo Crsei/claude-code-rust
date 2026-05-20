@@ -1,6 +1,6 @@
 # cc-rust 当前问题汇总
 
-> 更新日期: 2026-05-18
+> 更新日期: 2026-05-21
 
 本文是当前开放问题、代码审查发现和文档状态问题的唯一活跃入口。已修复、已失效或只具历史价值的问题已迁移到：
 
@@ -47,15 +47,16 @@
 | UI-003 | 中 | Fixed | Rust TUI Ctrl+R | Ctrl+R 现在按当前 workspace 读取跨会话持久 prompt history，条目带 session/title/cwd 来源和时间；无后端数据时显示明确空态。 | 历史 #22 |
 | UI-004 | 中 | Evidence pending | Browser MCP | Browser MCP / Chrome native host / Chrome MCP bridge 已有 fake bridge/native-host 端到端证据；真实第三方 Browser MCP server 与 Chrome extension 仍是 release 手动证据，缺失时不声称 live server 已验证。 | 历史 Browser MCP |
 | UI-006 | 中 | Open | Rust TUI theme parity | 组件层主题接线已补齐，但 `/config theme` 允许的 `solarized`、`monokai`、`nord` 等主题名尚未映射到新的 design theme palette。 | 当前未知主题会按 fallback 主题渲染；完成组件 parity 前需要补齐所有配置主题名到 `ThemeProvider`/design palette 的映射与快照覆盖。 |
-| UI-007 | 中 | Open | Rust TUI dialog overlays | 通用 `Dialog` 已有按键处理 helper，但 overlay stack 仍主要保存 overlay metadata，尚未集中派发实际 dialog key events。 | 真实弹窗路径需要接入 Esc/取消/确认与连续 Ctrl+C/Ctrl+D 保护逻辑后，才能声明 dialog component parity 完整覆盖 runtime 行为。 |
-| UI-008 | 中 | Open | Rust TUI tabs parity | `Tabs` 当前覆盖 header/selection 渲染，但尚未覆盖 content panes、受控 selection callback、键盘切换、content height 与 header focus effects。 | 这些行为在上游组件 parity 文档中属于 tabs 的交互契约；后续应在具体调用方和组件测试中补齐。 |
+| UI-007 | 低 | Review | Rust TUI dialog overlays | `Dialog::handle_key()`、`ExitGuard`、直接 dialog 路径和 Ctrl+C/Ctrl+D exit guard 已进入生产构建；overlay stack 仍主要保存 overlay metadata。 | 当前真实弹窗路径已有 Esc/取消/确认和 exit guard；只有需要多 overlay z-index/集中 dispatch 时，才继续补 overlay-stack runtime contract。 |
+| UI-008 | 低 | Review | Rust TUI tabs parity | `Tabs` production API、header/navigation helpers、content height/header focus 读路径和 snapshots 已接入；content-pane callback parity 仍是组件增强项。 | 已不属于 cfg-test 未接线问题；后续如调用方需要受控 pane callbacks，再按具体 surface 补测试。 |
+| UI-009 | 中 | Fixed | Rust TUI cfg-test production wiring | Phase 1-16 已完成：`CommandSurface`、agent create/edit、MCP detail/tools、permissions、tasks/team、dialog/tabs helpers 和 runtime snapshots 已进入生产构建。 | 验证: `cargo test -p claude-code-rs ui::`、`cargo build --workspace --release`、`git diff --check`；实现提交 `9ac3ae5`。 |
 
 ## 6. 文档状态问题
 
 | ID | 严重度 | 状态 | 范围 | 摘要 | 详情 |
 | --- | --- | --- | --- | --- | --- |
 | DOC-002 | 中 | Open | Extensibility implementation map | Phase 5/6 closure 与旧“部分实现”状态冲突；Phase 5 实施记录、future fields、WebSocket/out-of-scope 口径需收口。 | [2026-05-07 review](archive/issues/2026-05-07-code-review-findings.md) §五 |
-| DOC-003 | 中 | Review | stale Lite wording | 顶层 release/current-state/CLI docs 已改为 Full Build 与当前 crate 路径口径；plan/archive/mvp 文档中的历史 Lite 文字只按历史上下文保留，后续成为活跃 release reference 时继续清理。 | 本轮文档清理发现 |
+| DOC-003 | 中 | Review | stale Lite wording | 顶层 release/current-state/CLI docs 已改为 Full Build 与当前 crate 路径口径；command reference、TUI command UI reference、final release plan、implementation gaps 已同步 2026-05-21 production wiring 状态。plan/archive/mvp 文档中的历史 Lite 文字只按历史上下文保留，后续成为活跃 release reference 时继续清理。 | 本轮文档清理发现 |
 
 ## 7. 更新规则
 

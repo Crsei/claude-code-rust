@@ -2,9 +2,11 @@
 
 > 本文按当前源码实现整理：
 > - 命令注册表：`crates/cc-commands/src/lib.rs`
-> - 每个命令的参数解析：`src/commands/*.rs`
+> - 每个命令的参数解析：`crates/cc-commands/src/*.rs` 与 `crates/cc-commands/src/mcp/*.rs`
 >
 > 与旧文档不同，这里优先描述“当前代码实际支持什么”，而不是历史设计目标。
+>
+> 更新日期: 2026-05-21
 
 ## 约定
 
@@ -12,6 +14,7 @@
 - 别名和主命令等价，例如 `/help`、`/h`、`/?`
 - 若某命令没有写明子参数，表示当前实现只支持“无参数”或“把整段参数当自由文本”
 - KAIROS / proactive / notification 相关命令受 feature gate 控制；未启用时会直接返回提示文本
+- Rust TUI 中，部分命令在“无参数”时会先打开 `CommandSurface`；带参数时才直接进入普通命令处理器。本文同时记录命令处理器语义和无参数 TUI surface 行为。
 
 ## Core Commands
 
@@ -203,27 +206,63 @@
 - Syntax:
   - `/permissions`
   - `/permissions mode <mode>`
-  - `/permissions allow <tool>`
-  - `/permissions deny <tool>`
+  - `/permissions allow <rule> [--user|--project|--local|--session]`
+  - `/permissions ask <rule> [--user|--project|--local|--session]`
+  - `/permissions deny <rule> [--user|--project|--local|--session]`
+  - `/permissions session-grant <tool>`
+  - `/permissions clear-session-grants`
   - `/permissions reset`
 - Supported modes:
   - `default`
   - `auto`
   - `bypass`
   - `plan`
+  - `acceptEdits`
+  - `dontAsk`
 - Mode aliases:
   - `ask` → `default`
   - `readonly` → `plan`
 - Notes:
   - `bypass` 还会检查 `is_bypass_permissions_mode_available`
-  - `allow` / `deny` 当前只接收一个工具名 token
+  - 无参数在 Rust TUI 中打开 `PermissionsSurface`，可浏览 mode、workspace/permission rules，并填充常用 `/permissions ...` 命令
+  - `allow` / `ask` / `deny` 默认写 user scope；显式 `--session` 只改当前会话
 - Examples:
   - `/permissions`
   - `/permissions mode auto`
   - `/permissions mode readonly`
   - `/permissions allow Bash`
+  - `/permissions ask Edit --project`
   - `/permissions deny Write`
+  - `/permissions session-grant Bash`
+  - `/permissions clear-session-grants`
   - `/permissions reset`
+
+### `/sandbox`
+
+- Aliases: none
+- Syntax:
+  - `/sandbox`
+  - `/sandbox status`
+  - `/sandbox on`
+  - `/sandbox off`
+  - `/sandbox mode <read-only|workspace|full>`
+  - `/sandbox require`
+  - `/sandbox optional`
+  - `/sandbox no-network`
+  - `/sandbox network <on|off>`
+- Behavior:
+  - 显示或切换当前进程内 sandbox/network policy
+  - `mode full` 会关闭 OS-level sandbox；`require` 会在 OS-level primitive 不可用时 fail closed
+  - 无参数在 Rust TUI 中打开 `SandboxSurface`，用 tabbed selector 填充 toggle/mode/network 命令
+- Notes:
+  - 命令修改当前 runtime settings snapshot；持久化配置仍应通过 `/config set sandbox.*` 或 settings 文件完成
+  - Windows OS-level sandbox primitive 是 intentional crop，`require` 在不可用平台保持 fail-closed 诊断
+- Examples:
+  - `/sandbox`
+  - `/sandbox on`
+  - `/sandbox mode workspace`
+  - `/sandbox require`
+  - `/sandbox network off`
 
 ## Session / Context / Workspace
 
@@ -389,6 +428,28 @@
   - `/skills`
   - `/skills list`
   - `/skills review`
+
+### `/agents`
+
+- Aliases: none
+- Syntax:
+  - `/agents`
+  - `/agents list`
+  - `/agents show <name>`
+  - `/agents info <name>`
+  - `/agents sources`
+- Behavior:
+  - 普通命令路径按 source 分组列出 built-in、bundled/user/project/plugin/MCP skill-backed agents 和 active team members
+  - `show` / `info` 展示同名 agent 的详细定义、来源、shadowing/active 状态
+  - `sources` 显示 agent 加载路径
+  - 无参数在 Rust TUI 中打开 `AgentsSurface`，支持 source tab、list/detail、User/Project agent 创建与可编辑 agent 的 tools/model/color 编辑
+- Notes:
+  - `/agent` 不是别名；保留 `/agents` 作为唯一入口，避免 help/palette 路由歧义
+  - TUI 创建/编辑持久化通过 `AgentSettingsCommand::Upsert` 写入 user/project agent definitions；built-in/plugin/MCP/team source 不作为可写目标
+- Examples:
+  - `/agents`
+  - `/agents show reviewer`
+  - `/agents sources`
 
 ## Auth Commands
 
@@ -556,6 +617,27 @@
 
 ## MCP / Plugin Commands
 
+### `/hooks`
+
+- Aliases: none
+- Syntax:
+  - `/hooks`
+  - `/hooks list`
+  - `/hooks list <event>`
+  - `/hooks path <managed|user|project|local>`
+  - `/hooks open <managed|user|project|local>`
+- Behavior:
+  - 展示合并后的 hook tree，按 event → matcher → hook 分组
+  - `list <event>` 只显示指定 hook event
+  - `path` 输出对应 settings 文件路径
+  - `open` 创建缺失文件后通过 `$VISUAL` / `$EDITOR` 打开
+  - 无参数在 Rust TUI 中打开 `HooksSurface`，可浏览 settings scope、event、matcher 和 hook 列表
+- Examples:
+  - `/hooks`
+  - `/hooks list PreToolUse`
+  - `/hooks path project`
+  - `/hooks open user`
+
 ### `/mcp`
 
 - Aliases: none
@@ -568,6 +650,7 @@
   - `/mcp connect <name>`
   - `/mcp disconnect <name>`
   - `/mcp reconnect <name>`
+  - `/mcp remove <name> [--scope=<user|project|local>]`
   - `/mcp auth start <name>`
   - `/mcp auth complete <name> --code=<code> [--state=<state>]`
   - `/mcp auth status <name>`
@@ -578,15 +661,66 @@
   - `auth status` / `auth clear` show redacted credential state or remove stored OAuth state.
   - `streamable-http` is the current standard MCP HTTP transport; legacy `sse` remains supported for compatibility.
 - Behavior:
-  - 无参数时显示帮助和 `mcpServers` 配置示例
+  - 普通命令无参数时显示帮助和 `mcpServers` 配置示例；Rust TUI 无参数时打开 `McpSurface`
   - `list`：列出当前发现到的 MCP servers
   - `status`：输出 discovery 视图，运行态提示转到 SystemStatus / headless IPC
+  - TUI surface 支持 server list、server detail、kind/settings view、tool list、tool detail 和 reconnect/status actions
 - Examples:
   - `/mcp`
   - `/mcp list`
   - `/mcp status`
   - `/mcp add remote --transport=streamable-http --url=https://mcp.example.com/mcp`
+  - `/mcp remove remote --scope=user`
   - `/mcp auth status context7`
+
+## Agent Teams / Background Tasks
+
+### `/tasks`
+
+- Aliases: none
+- Syntax:
+  - `/tasks`
+  - `/tasks show <id>`
+  - `/tasks stop <id>`
+  - `/tasks delete <id>`
+- Behavior:
+  - 聚合 tool-driven tasks 和 in-process teammate tasks
+  - `show` 展示单个 task 的 retained output、metadata、remote/team detail
+  - `stop` 只取消 tool task；team task 会提示改用 `/team kill <name>`
+  - `delete` 删除 persisted tool task；team task 是 runtime-only，不能从 tool storage 删除
+  - 无参数在 Rust TUI 中打开 `TasksSurface`，支持 task list/detail、shell/remote/agent/team/MCP/dream/workflow detail renderers，以及 stop/delete/refresh action
+- Examples:
+  - `/tasks`
+  - `/tasks show task-123`
+  - `/tasks stop task-123`
+  - `/tasks delete task-123`
+
+### `/team`
+
+- Aliases: `/teams`
+- Syntax:
+  - `/team`
+  - `/team status`
+  - `/team list`
+  - `/team create <name> [description]`
+  - `/team spawn <name> <prompt>`
+  - `/team send <name> <message>`
+  - `/team kill <name>`
+  - `/team leave`
+  - `/team delete <name>`
+- Behavior:
+  - 管理 Agent Teams：创建/激活 team、spawn in-process teammate、发送 mailbox 消息、强制停止 teammate、离开或删除 team
+  - 无参数在 Rust TUI 中打开 `TeamSurface`，显示 team status 概览和 teams dialog detail；`s` 填充 send prompt，`k` kill 选中 teammate，`p`/`c` 填充 spawn/create prompt
+- Notes:
+  - `leave` 只清除当前 session 的 active team context，不删除磁盘数据
+  - `delete` 会删除 team config/mailbox 并尝试停止非 lead teammate
+- Examples:
+  - `/team`
+  - `/team create ui-port Finish UI wiring`
+  - `/team spawn builder Implement task panel`
+  - `/team send builder please summarize status`
+  - `/team kill builder`
+  - `/teams list`
 
 ### `/plugin`
 
@@ -707,7 +841,8 @@
   - `/channels status`
 - Behavior:
   - 无参数默认等价于 `list`
-  - 当前实现只返回占位状态文本
+  - feature gate 开启后显示 gateway-backed outbound adapter status/control
+  - Telegram/Lark 当前仅支持 adapter 连接状态、健康检查和 allowlisted test-message；不表示 inbound channel session 已接通
 - Feature gate:
   - 需要 `FEATURE_KAIROS_CHANNELS=1`
 - Examples:
@@ -740,7 +875,7 @@
 - `/commit`：当前不会自动 stage，只在有 message 时跑 `git commit -m`
 - `/effort`：当前只支持 `low|medium|high`
 - `/copy`：当前不真正写系统剪贴板
-- `/notify`、`/channels`、`/daemon stop`：目前偏状态/占位接口
+- `/notify`、`/daemon stop`：目前偏状态/占位接口
 - `/channels`：2026-05-10 起在 feature gate 打开后显示 gateway-backed outbound adapter status；inbound channel sessions / `/teleport` 仍为 deferred，不应当作已接通能力。
 - `/mcp status`：当前偏 discovery 视图，不是实时连接面板
 

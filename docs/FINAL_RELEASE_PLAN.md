@@ -1,6 +1,6 @@
 # cc-rust 最终发布计划
 
-> 更新日期: 2026-05-17
+> 更新日期: 2026-05-21
 > 范围: `F:\AIclassmanager\cc\rust`
 > 阶段: 全量构建 / Full Build 发布收口
 
@@ -22,6 +22,7 @@
 | --- | --- | --- |
 | Crate 重构 / owner migration | `claude-code-rs/src/engine/**` 与 `claude-code-rs/src/ipc/**` 已删除；engine/agent 实现由 `cc-engine` 拥有，IPC JSONL runtime、agent settings 与共享 protocol/handler facade 由 `cc-ipc` / `cc-ipc-client` / `cc-ipc-protocol` 拥有；root binary 仅保留 startup、Rust TUI 和 runtime adapter glue。2026-05-14 默认 workspace gates 已 green。 | 关闭 thin-binary source guards：剩余 cross-crate UI path shims、root-style imports、allow attributes、Codex compatibility path hits 需要清零或登记为 intentional residual；完成后把 crate migration 计划迁入 archive，并补 [archive/COMPLETED_FULL.md](archive/COMPLETED_FULL.md)。 |
 | Ratatui UI 美化 / P0-P1 parity | OMX closeout 已确认共享 UI primitives、settings/safety surfaces、message/composer surfaces、agent/team/task/search/integration surfaces 和对应 snapshot 更新已落地；P0/P1 基础面不再作为发布阻塞主线。 | 保留 runtime residual 跟踪：最新 shell output 自动展开、跨会话 history 质量、真实 Browser MCP/IDE/PR 数据路径，以及最终 UI snapshot / e2e release gate。 |
+| Rust TUI cfg-test production wiring | 2026-05-21 Phase 1-16 已完成：`CommandSurface`、`CommandSurfaceDialog`、`Dialog`/`Tabs` helpers、agent create/edit wizard、MCP detail/tool panes、permissions、tasks/team、snapshot/runtime hooks 都已进入生产构建；验证通过 `cargo test -p claude-code-rs ui::`、`cargo build --workspace --release`、`git diff --check`；实现提交 `9ac3ae5`。 | 不再把这些 surface 作为“test-only 未接线”发布缺口；剩余只跟踪真实 backend 数据路径、live Browser/remote 证据和最终 release gate。 |
 | Auto mode enable policy | `SAFETY-001` 已修复：`permissions.enableAutoMode=false` 现在由统一的 permission transition helper 强制执行，启动配置、Web settings、`/permissions`、`/config` 与子上下文不能绕过进入 Auto mode。 | 发布证据保留新增回归测试：`cc-permissions auto_mode`、`cc-commands auto_respects_disabled_policy`、`cc-startup build_tool_permission_context_blocks_startup_auto_when_disabled`、`cc-web set_permission_mode_auto_respects_disabled_policy`、`claude-code-rs --test e2e_permissions`；[KNOWN_ISSUES.md](KNOWN_ISSUES.md) 中保持 `SAFETY-001` Fixed。 |
 | Safety closeout | `SAFETY-002` 到 `SAFETY-005` 已修复：Plan `allowedPrompts` 在 Auto mode 恢复后立即剥离危险 transient allow；Plan approval UI 展示具体去重规则；sandbox `allowedCommands` 对 sandbox availability 和 compound shell argv fail-closed；classifier redaction 覆盖 JSON secret 字段。 | 发布证据保留本轮验证：`cargo test -p cc-tools plan_mode -- --nocapture`、`cargo test -p cc-sandbox allowed_command -- --nocapture`、`cargo test -p cc-engine sandbox_allowed_command -- --nocapture`、`cargo test -p cc-safety redaction -- --nocapture`、`cargo fmt --check`；[KNOWN_ISSUES.md](KNOWN_ISSUES.md) 中保持 `SAFETY-002` 到 `SAFETY-005` Fixed。 |
 
@@ -94,7 +95,7 @@ cargo test -p claude-code-rs query::loop_helpers
 
 ### G4 UI 与运行时门禁
 
-- Ratatui 主交互路径、headless IPC、MCP 面板、权限对话框、配置面板必须能完成真实工作流。
+- Ratatui 主交互路径、headless IPC、MCP 面板、权限对话框、配置面板、`/agents` 创建/编辑、`/permissions`、`/tasks`、`/team` 必须能完成真实工作流。
 - UI snapshot、message suite、关键 e2e 覆盖 shell output、file edit、permission、task、MCP、history/search、resize。
 - Browser MCP 与 Computer Use 至少有一条真实或 fake-server e2e，证明图片/tool result 不丢失。
 
@@ -136,7 +137,7 @@ cargo test -p claude-code-rs query::loop_helpers
 
 | 范围 | 当前状态 | 预期发布效果 | 证据入口 |
 | --- | --- | --- | --- |
-| Ratatui UI polish baseline | P0/P1 基础与美化已完成：共享 primitives、settings/safety、message/composer、agent/team/task/search/integration surfaces 以及 snapshot 更新已收口。 | 发布前保持 snapshot gate；新增 UI 只能作为真实 surface 接入，不再引入空占位。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md) `Ratatui UI parity OMX closeout`, [archive/ratatui-ui-parity-omx-execution-report-2026-05-08.md](archive/ratatui-ui-parity-omx-execution-report-2026-05-08.md) |
+| Ratatui UI polish baseline | P0/P1 基础与美化已完成：共享 primitives、settings/safety、message/composer、agent/team/task/search/integration surfaces 以及 snapshot 更新已收口；cfg-test production wiring 已把 `/agents` create/edit、`/mcp` detail/tools、`/permissions`、`/tasks`、`/team`、dialog/tabs helpers 接入生产构建。 | 发布前保持 snapshot gate；新增 UI 只能作为真实 surface 接入，不再引入空占位。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md) `Ratatui UI parity OMX closeout`, [archive/ratatui-ui-parity-omx-execution-report-2026-05-08.md](archive/ratatui-ui-parity-omx-execution-report-2026-05-08.md), [plan/cfg-test-production-wiring-plan-2026-05-21.md](plan/cfg-test-production-wiring-plan-2026-05-21.md); 验证: `cargo test -p claude-code-rs ui::`, `cargo build --workspace --release` |
 | Ratatui shell output residual | 最新 Bash/PowerShell tool result 已由 runtime context 自动展开；历史 shell 长输出默认折叠，选中后可展开/折叠查看 detail。 | 长输出默认策略符合上游体验，用户能快速展开、折叠、查看细节。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-002` |
 | Ratatui history residual | Ctrl+R 按当前 workspace 读取跨会话持久 prompt history，条目带 session/title/cwd 来源与时间；空态明确。 | 跨会话 prompt history 结果稳定带来源和时间；缺少后端数据时给出清晰空状态。 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-003` |
 | Ratatui backend-gated surfaces | LSP/IDE/Chrome/channel/Claude Desktop MCP 等 UI surface 已有状态入口或 snapshot 覆盖；Browser/Chrome fake e2e 存在，真实第三方 Browser MCP 证据仍待 release 手动补充。 | live backend 不可用时显示诊断；可用时有真实 e2e 或 fake-server 证据。 | [RATATUI_UI_PARITY.md](RATATUI_UI_PARITY.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) `UI-004` |
@@ -161,7 +162,7 @@ cargo test -p claude-code-rs query::loop_helpers
 
 1. 重验 P0 闭环：`TEST-001`、CONTEXT、MODEL、critical hook 保持已关闭状态，活跃问题入口不再列为发布阻塞。
 2. 收 P1 核心链路：API provider e2e、PlanMode、TaskTools、Team Memory、Daemon ownership、Session Export、Computer Use、Browser MCP。
-3. 收 P2 用户体验：Ratatui runtime residuals、remote channel 决策、voice/browser/LSP/branch/terminal setup。
+3. 收 P2 用户体验：Ratatui runtime residuals、remote channel 决策、voice/browser/LSP/branch/terminal setup；cfg-test production wiring 已完成，不再作为待执行主线。
 4. 做全仓文档收口：迁移完成历史到 archive，清理 Lite/mojibake，补最终发布说明草稿。
 5. 跑 release candidate 门禁：完整 cargo gate、真实 provider smoke、daemon soak、TUI snapshot、headless/Web/Brower MCP e2e。
 

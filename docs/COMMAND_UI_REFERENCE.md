@@ -1,16 +1,16 @@
 # TUI Command UI Reference
 
-日期: 2026-05-08
+日期: 2026-05-21
 
 本文按当前 Rust TUI 源码整理 slash command 的 UI 行为，重点回答“哪些命令会打开
 设置面板、选择器、向导、外部页面/App，或触发确认/审批”。
 
 主要来源:
 
-- `crates/claude-code-rs/src/ui/components/command_surface/mod.rs`
-- `crates/claude-code-rs/src/ui/components/command_surface/surfaces/*.rs`
-- `crates/claude-code-rs/src/ui/components/command_palette/*.rs`
-- `crates/claude-code-rs/src/commands/*.rs`
+- `crates/claude-code-rs/src/ui/command_surface/mod.rs`
+- `crates/claude-code-rs/src/ui/command_surface/surfaces/*.rs`
+- `crates/claude-code-rs/src/ui/command_palette/*.rs`
+- `crates/cc-commands/src/*.rs`
 - `crates/claude-code-rs/src/ui/permissions/**`
 - `crates/claude-code-rs/src/ui/mcp/**`
 
@@ -26,6 +26,8 @@
   打开的外部编辑器。
 - 当前 Rust 版 `/session` 明确不显示 TypeScript 版的远程 session QR code，只显示
   文本 session 列表。
+- 2026-05-21 cfg-test production wiring 已完成：`CommandSurface`、agent create/edit、
+  MCP detail、permissions、tasks/team、dialog/tabs helpers 不再依赖 test-only cfg 才能进入生产构建。
 
 ## 一、设置类
 
@@ -36,9 +38,9 @@
 | `/config` (`/settings`) | 无参数打开 `ConfigSurface` | effective config、sources、schema、model、theme、effort、editorMode | Model/Theme/Effort tab 是 picker；Config tab 可填充 `/config set ...` |
 | `/sandbox` | 无参数打开 `SandboxSurface` | sandbox enabled、mode、network | Enter 会提交 `/sandbox on/off`、`/sandbox mode ...`、`/sandbox network ...` |
 | `/hooks` | 无参数打开 `HooksSurface` | user/project hook settings scope、hook event tree | 面板本身只读；`/hooks open <layer>` 会打开 settings 文件 |
-| `/mcp` | 无参数打开 `McpSurface` | MCP server status/edit/reconnect/remove/add | 同时是选择器类；`.mcp.json` approval 另见确认/审批类 |
+| `/mcp` | 无参数打开 `McpSurface` | MCP server status/edit/reconnect/remove/add、server kind/settings、tool list/detail | 同时是选择器类；`.mcp.json` approval 另见确认/审批类 |
 | `/login` | 无参数打开 `LoginSurface` | API key、Claude.ai OAuth、Console OAuth、OpenAI Codex OAuth、Codex CLI import | OAuth 会给出外部授权 URL，并用 `/login-code` 完成 |
-| `/permissions` (`/perms`) | 当前无专用 `CommandSurface`，走文本命令 | permission mode、allow/ask/deny rules、session grants | 会持久化 user/project/local settings；实际工具审批由权限 dialog 处理 |
+| `/permissions` (`/perms`) | 无参数打开 `PermissionsSurface` | permission mode、workspace/user/project/local/session allow/ask/deny rules、session grants | Enter 填充 `/permissions mode ...`、`allow/ask/deny ... --scope`、`session-grant`、`clear-session-grants` 等命令；实际工具审批由权限 dialog 处理 |
 | `/keybindings` | 当前无专用 `CommandSurface`，默认创建并打开文件 | `~/.cc-rust/keybindings.json` | 通过 `$VISUAL`/`$EDITOR` 打开；command palette 会显示 edit target |
 | `/statusline` | 当前无专用 `CommandSurface`，走文本命令 | `statusLine.command`、enabled、refresh、timeout、padding | 写入 user settings，并同步当前 TUI runtime snapshot |
 | `/plugin` | 当前无专用 `CommandSurface`，走文本命令 | installed/enabled/active plugin 状态 | `/plugin` UI surface 仍是计划项；当前支持 list/status/enable/disable/uninstall |
@@ -49,6 +51,7 @@
 | `/advisor` | 普通文本命令 | advisor model | 无单独面板 |
 | `/experimental` | 普通文本命令 | feature gates | 无单独面板 |
 | `/ide` | 普通文本命令 | selected IDE + MCP bridge reconnect | `/ide select <id>` 持久化 `selectedIde` |
+| `/remote` | 无参数打开 `RemoteSurface` | local gateway status、adapters、runs、events、doctor/stop action | 只表示本地 gateway/control-plane surface；远程 inbound channel session 不在本轮能力内 |
 | `/notify` | 普通文本命令 | push notification settings | 受 feature gate/后端能力影响 |
 | `/voice` | 普通文本命令 | voiceEnabled/language runtime snapshot | 当前描述为兼容设置，runtime voice 可能不可用 |
 | `/memory` | 无参数打开 `MemorySurface` | CLAUDE.md、memory scopes、auto-memory toggle/path | 更像 memory 管理器；`/memory auto on/off` 会写 user settings |
@@ -61,24 +64,25 @@
 | --- | --- | --- |
 | 输入 `/` | `CommandPalette` | 上下选择命令，Enter 插入 `/<command> ` |
 | command palette 的 `Ctrl+E` | edit target picker | 对支持 edit targets 的命令插入目标参数 |
-| `/agents` | agent source tabs + in-surface list/detail view | Enter opens detail; detail Enter preserves text behavior by submitting `/agents show <agent>` |
+| `/agents` | agent source tabs + list/detail/create/edit wizard | Enter opens detail；`n`/`c` 在 User/Project source 创建 agent；detail `e` 编辑可写 agent；detail Enter 提交 `/agents show <agent>` |
 | `/config` | tabbed form + model/theme/effort pickers | Enter 提交 `/config show`、`/config set ...` 等 |
 | `/diff` | diff source/file selector + detail view | Enter 从文件列表进入 detail；`b` 返回列表 |
 | `/hooks` | settings scope tabs + hook event list | Enter 提交 `/hooks list <event>`；`o` 打开当前 scope |
 | `/login` | login method selector | Enter/数字提交 `/login status`、`/login 2` 等 |
-| `/mcp` | MCP server list + action tabs | Enter 按当前 action 提交 status/edit/reconnect/remove |
+| `/mcp` | MCP server list/detail + kind/settings/tool list/tool detail | Enter 按当前 action 提交 status/edit/reconnect/remove；detail panes 展示 redacted settings、transport kind、tools 与 auth/status hints |
 | `/memory` | memory file/scope selector | Enter 按当前 action 提交 edit/show/path/open |
+| `/permissions` (`/perms`) | permission mode/rules/session-grants surface | Enter 填充 mode/rule/session 命令；workspace entry 可生成当前 cwd scope 的 allow/ask/deny rule |
+| `/remote` | gateway status/adapters/runs/events selector | Enter 根据当前 action 填充或提交 status、runs、events、stop、doctor 等 `/remote` 命令 |
 | `/sandbox` | tabbed option selector | Enter 提交 sandbox toggle/mode/network command |
 | `/skills` | filterable skill list | Enter 提交 `/skills <name>`；`r` reload；`d` diagnostics |
-| `/tasks` | background tasks dialog/list | Enter 提交 `/tasks show <id>`；`s/k` stop；`d` delete |
-| `/team` (`/teams`) | team/teammate dialog/list | Enter status；`s` fill send prompt；`k` kill selected teammate |
+| `/tasks` | background tasks list/detail surface | `o`/Right 打开 detail；Enter 提交 `/tasks show <id>`；`s/k` stop 或 team kill；`d` 删除 tool task；`r` refresh |
+| `/team` (`/teams`) | team status + teams/teammate dialog | Enter/Right 打开 detail；`l` list；`c` create；`p` spawn；`s` fill send prompt；`k` kill selected teammate |
 | LSP plugin recommendation event | recommendation picker | Yes/No/Never/Disable；Yes 当前填充 `/plugin install <name> `，但当前 `/plugin` handler 尚未列出 `install` 子命令 |
 | `Ctrl+R` history search | history search dialog | 过滤历史 prompt，Enter 填回输入框 |
 
 已存在但当前未作为 slash command 接线的选择组件:
 
 - `ResumePicker`: Rust `/resume` 当前直接恢复最近 session 或按 id/prefix 恢复，不弹交互选择器。
-- `ui/agents/new_agent_creation/**`: create-agent wizard components exist, but `/agents` keeps the entry hidden until save/cancel can reuse existing safe `AgentSettingsCommand` User/Project settings paths.
 - `/agent` alias decision: do not add a singular alias; `/agents` remains the canonical list/detail surface to keep help and palette routing unambiguous.
 
 ## 三、向导类
@@ -89,10 +93,10 @@
 | 命令/入口 | 向导形态 | 当前步骤 |
 | --- | --- | --- |
 | `/login` | TUI 方法选择 + 文本式后续步骤 | 选择 API key/OAuth/Codex CLI/Bedrock/Vertex；OAuth 后用 `/login-code <code>` 完成 |
+| `/agents` | TUI create/edit wizard | location、method、generation goal、agent name、system prompt、description、tools、model、color、confirm；User/Project agent 通过 `AgentSettingsCommand::Upsert` 保存 |
 | `/mcp auth start <name>` | 文本式 OAuth 流程 | 输出授权 URL、redirect URI、state；然后 `/mcp auth complete <name> --code=...` |
 | `/plan` / `/plan enter` | durable plan workflow | 进入 plan mode，`/plan open` 编辑，`/plan approve` 或 `/plan reject` 完成审批 |
 | `/permissions mode plan` | plan workflow 入口 | 进入 plan permission mode，并写 plan workflow state |
-| create-agent wizard components | 尚未接线的 TUI wizard | method、generate、type、description、prompt、tools、model、location、memory、color、confirm |
 
 不应误判为向导的命令:
 
@@ -169,6 +173,9 @@ confirm dialog 的候选对象，但不要在文档中暗示当前已经有确�
 /login
 /mcp
 /memory
+/permissions
+/perms
+/remote
 /sandbox
 /skills
 /tasks
