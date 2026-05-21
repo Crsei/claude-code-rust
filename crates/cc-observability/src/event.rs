@@ -75,6 +75,17 @@ pub enum EventKind {
     StreamStop,
     StreamDelta,
 
+    // Plugin lifecycle
+    PluginInstalled,
+    PluginUninstalled,
+    PluginUpdated,
+    PluginDisabled,
+    PluginError,
+
+    // Telemetry
+    TelemetryFlush,
+    TelemetryExport,
+
     // Forward compat
     #[serde(other)]
     Unknown,
@@ -109,6 +120,7 @@ pub enum Stage {
     Daemon,
     BackgroundAgent,
     Stream,
+    Plugin,
 }
 
 // ---------------------------------------------------------------------------

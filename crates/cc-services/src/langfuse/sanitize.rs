@@ -88,6 +88,16 @@ pub fn serialize_sanitized_value(value: &Value) -> String {
     }
 }
 
+/// Apply telemetry redaction configuration to a sanitized value.
+///
+/// Called during telemetry export to apply additional redaction rules
+/// on top of the default sanitization.
+#[cfg(feature = "telemetry")]
+pub fn apply_redaction_config(value: &mut Value, config: &crate::telemetry::TelemetryRedaction) {
+    // Delegate to the telemetry privacy module for redaction
+    crate::telemetry::privacy::redact_for_telemetry(value, config);
+}
+
 #[cfg(feature = "telemetry")]
 pub fn metadata_json(entries: Vec<(&str, Value)>) -> String {
     let mut map = Map::new();

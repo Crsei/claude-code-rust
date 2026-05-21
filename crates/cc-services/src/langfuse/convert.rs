@@ -206,6 +206,21 @@ fn convert_messages(messages: &[Message], system_prompt: &[String]) -> Value {
     Value::Array(converted)
 }
 
+/// Convert an `InteractionSpan` to a Langfuse-compatible JSON value.
+#[cfg(feature = "telemetry")]
+impl From<&crate::telemetry::instrumentation::InteractionSpan> for serde_json::Value {
+    fn from(span: &crate::telemetry::instrumentation::InteractionSpan) -> Self {
+        serde_json::json!({
+            "interaction_id": span.interaction_id(),
+            "session_id": span.session_id(),
+            "submit_id": span.submit_id(),
+            "model": span.model(),
+            "duration_ms": span.duration_ms(),
+            "error": span.error(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

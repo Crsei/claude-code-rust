@@ -4,6 +4,8 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use cc_types::message::Usage;
 
+use crate::telemetry::TelemetryHandle;
+
 use super::sanitize::{
     metadata_json, sanitize_global, sanitize_global_string, sanitize_tool_input,
     sanitize_tool_output, serialize_sanitized_value,
@@ -296,6 +298,32 @@ pub fn end_trace(trace: Option<LangfuseTrace>, output: Option<&str>, status: Opt
         Some(TraceStatus::Error) => trace.span.set_status(Status::error("error".to_string())),
         None => {}
     }
+}
+
+/// Bridge from a `TelemetryHandle` to Langfuse tracing.
+///
+/// Creates a Langfuse trace from an active telemetry session. Returns `None`
+/// if Langfuse is not enabled (no credentials configured).
+pub fn bridge_from_telemetry(
+    telemetry_handle: &TelemetryHandle,
+    session_id: &str,
+    model: &str,
+    provider: &str,
+    input: &str,
+    query_source: Option<&str>,
+) -> Option<LangfuseTrace> {
+    // Flush any pending telemetry events first
+    telemetry_handle.flush();
+
+    // Delegate to the standard trace creation
+    create_trace(session_id, model, provider, input, query_source)
+}
+
+/// Flush telemetry events to Langfuse.
+///
+/// Exports any buffered telemetry events through the Langfuse exporter.
+pub fn flush_telemetry_to_langfuse(telemetry_handle: &TelemetryHandle) {
+    telemetry_handle.flush();
 }
 
 fn apply_trace_identity(span: &tracing::Span, session_id: &str, user_id: Option<&str>) {

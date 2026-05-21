@@ -168,7 +168,7 @@ impl AuditSink {
     }
 
     /// Create a no-op sink that discards all events.
-    fn noop(config: AuditConfig) -> Self {
+    pub fn noop(config: AuditConfig) -> Self {
         Self {
             inner: Arc::new(SinkInner {
                 runs_dir: PathBuf::new(),
@@ -204,6 +204,25 @@ impl AuditSink {
                 warn!(error = %e, event_id = %event.event_id, "failed to serialize audit event");
             }
         }
+    }
+
+    /// Emit multiple events in batch.
+    ///
+    /// Each event is emitted individually (same as calling `emit()` in a loop).
+    /// This is a convenience method for bulk emission paths.
+    pub fn emit_batch(&self, events: &[AuditEvent]) {
+        for event in events {
+            self.emit(event.clone());
+        }
+    }
+
+    /// Emit an event with an explicit timestamp.
+    ///
+    /// Useful for replay, backfill, or cross-process event alignment where
+    /// the original timestamp should be preserved rather than set to `now()`.
+    pub fn emit_with_ts(&self, mut event: AuditEvent, timestamp: chrono::DateTime<chrono::Utc>) {
+        event.ts = timestamp;
+        self.emit(event);
     }
 
     /// Flush buffered events to disk.

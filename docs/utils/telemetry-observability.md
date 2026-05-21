@@ -20,11 +20,24 @@ Rust 对应: `cc-observability/`
 
 ## Rust 已实现
 
-### cc-observability/ (完整度 ~20%)
+### cc-observability/ (完整度 ~25%)
 - `lib.rs`: 模块声明
 - `event.rs`: 基础事件类型
 - `context.rs`: 可观测性上下文
 - `sink.rs`: 事件接收器
+
+### cc-engine telemetry bridge (新增 Phase 2)
+- `telemetry_bridge.rs`: 引擎与 telemetry 服务之间的特质桥接
+  - `EngineTelemetry` trait: `start_submit` / `end_submit` / `start_hook` / `end_hook`
+  - `install()` / `with_bridge()` / `is_active()` 全局接口
+  - `SpanId` (u64) 用于跨调用关联
+  - 通过 `#[cfg(feature = "telemetry")]` 特性控制，禁用时为无操作
+
+### 会话追踪 — 部分实现 (Phase 2)
+- `submit_message.rs` 中已接入 Interaction 和 Hook 遥测 span：
+  - `start_submit` 在 Phase A 完成后调用（跳过本地命令等快速路径）
+  - `end_submit` 在所有退出路径调用（正常完成、错误、预算超限等）
+  - `start_hook` / `end_hook` 围绕 `UserPromptSubmit` 回调执行
 
 ## Rust 缺失的主要功能
 
@@ -36,12 +49,12 @@ Rust 对应: `cc-observability/`
 - mTLS 配置
 - 多导出器: OTLP, Prometheus, BigQuery, Console
 
-### 2. 会话追踪 (927 行) — 完全缺失
-- Interaction spans (每个用户输入的根 span)
-- LLM 请求 spans
-- Tool spans (blocked_on_user, execution)
-- Hook spans
-- AsyncLocalStorage 上下文管理
+### 2. 会话追踪 (927 行) — 部分实现 (Phase 2)
+- Interaction spans (每个用户输入的根 span) — 桥接就绪，`submit_message.rs` 中已接入
+- LLM 请求 spans — 计划中
+- Tool spans (blocked_on_user, execution) — 计划中
+- Hook spans — `UserPromptSubmit` 已接入
+- AsyncLocalStorage 上下文管理 — 使用全局 `OnceLock<Box<dyn EngineTelemetry>>` 模式
 - Beta 增强遥测集成
 
 ### 3. Perfetto 追踪 (1,120 行) — 完全缺失

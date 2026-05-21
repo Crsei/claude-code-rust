@@ -92,3 +92,11 @@ pub fn end_trace(
     _status: Option<TraceStatus>,
 ) {
 }
+
+/// Stub: no-op when telemetry feature is disabled.
+pub fn bridge_from_telemetry() -> Option<LangfuseTrace> {
+    None
+}
+
+/// Stub: no-op when telemetry feature is disabled.
+pub fn flush_telemetry_to_langfuse() {}

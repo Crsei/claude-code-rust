@@ -1,6 +1,7 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
+use opentelemetry::trace::Tracer;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::KeyValue;
 use opentelemetry_langfuse::ExporterBuilder;
@@ -9,6 +10,8 @@ use opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProces
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracer, SdkTracerProvider};
 use opentelemetry_sdk::Resource;
 use parking_lot::Mutex;
+
+use crate::telemetry::TelemetryEvent;
 
 static LANGFUSE_PROVIDER: OnceLock<Mutex<Option<SdkTracerProvider>>> = OnceLock::new();
 
@@ -90,6 +93,139 @@ pub fn shutdown_langfuse() {
             tracing::warn!(error = %error, "failed to shutdown langfuse tracer provider");
         }
     }
+}
+
+/// Export telemetry events to Langfuse.
+///
+/// Converts cc-rust telemetry events to Langfuse-compatible OpenTelemetry
+/// spans and sends them through the configured exporter.
+pub fn export_telemetry_events(events: Vec<TelemetryEvent>) {
+    if events.is_empty() {
+        return;
+    }
+
+    let slot = match LANGFUSE_PROVIDER.get() {
+        Some(slot) => slot,
+        None => {
+            tracing::debug!("langfuse not initialized, dropping telemetry events");
+            return;
+        }
+    };
+
+    let provider_guard = slot.lock();
+    let provider = match provider_guard.as_ref() {
+        Some(p) => p,
+        None => {
+            tracing::debug!("langfuse provider not available, dropping telemetry events");
+            return;
+        }
+    };
+
+    let tracer = provider.tracer("cc-rust-langfuse-telemetry");
+    let count = events.len();
+
+    for event in events {
+        let (span_name, attrs) = match event {
+            TelemetryEvent::Interaction {
+                interaction_id,
+                duration_ms,
+                model,
+                error,
+                ..
+            } => {
+                let mut attrs = vec![
+                    KeyValue::new("service.name", "cc-rust"),
+                    KeyValue::new("event.type", "interaction"),
+                ];
+                if let Some(ref model) = model {
+                    attrs.push(KeyValue::new("llm.model", model.clone()));
+                }
+                if let Some(dur) = duration_ms {
+                    attrs.push(KeyValue::new("duration_ms", dur as i64));
+                }
+                if let Some(ref error) = error {
+                    attrs.push(KeyValue::new("error", error.clone()));
+                }
+                (format!("interaction:{}", interaction_id), attrs)
+            }
+            TelemetryEvent::ModelCall {
+                span_id,
+                model,
+                duration_ms,
+                request_tokens,
+                response_tokens,
+                error,
+                ..
+            } => {
+                let mut attrs = vec![
+                    KeyValue::new("service.name", "cc-rust"),
+                    KeyValue::new("event.type", "model_call"),
+                    KeyValue::new("span.id", span_id.clone()),
+                ];
+                if let Some(dur) = duration_ms {
+                    attrs.push(KeyValue::new("duration_ms", dur as i64));
+                }
+                if let Some(tok) = request_tokens {
+                    attrs.push(KeyValue::new("tokens.in", tok as i64));
+                }
+                if let Some(tok) = response_tokens {
+                    attrs.push(KeyValue::new("tokens.out", tok as i64));
+                }
+                if let Some(ref error) = error {
+                    attrs.push(KeyValue::new("error", error.clone()));
+                }
+                (format!("model:{}", model), attrs)
+            }
+            TelemetryEvent::ToolExecution {
+                tool_name,
+                duration_ms,
+                result,
+                ..
+            } => {
+                let mut attrs = vec![
+                    KeyValue::new("service.name", "cc-rust"),
+                    KeyValue::new("event.type", "tool_execution"),
+                ];
+                if let Some(dur) = duration_ms {
+                    attrs.push(KeyValue::new("duration_ms", dur as i64));
+                }
+                attrs.push(KeyValue::new("tool.result", result.clone()));
+                (format!("tool:{}", tool_name), attrs)
+            }
+            TelemetryEvent::HookExecution {
+                hook_name,
+                duration_ms,
+                result,
+            } => {
+                let mut attrs = vec![
+                    KeyValue::new("service.name", "cc-rust"),
+                    KeyValue::new("event.type", "hook_execution"),
+                ];
+                if let Some(dur) = duration_ms {
+                    attrs.push(KeyValue::new("duration_ms", dur as i64));
+                }
+                attrs.push(KeyValue::new("hook.result", result));
+                (format!("hook:{}", hook_name), attrs)
+            }
+            TelemetryEvent::InputEvent {
+                input_summary,
+                input_type,
+            } => {
+                let attrs = vec![
+                    KeyValue::new("service.name", "cc-rust"),
+                    KeyValue::new("event.type", "input_event"),
+                    KeyValue::new("input.type", input_type.clone()),
+                    KeyValue::new("input.summary", input_summary),
+                ];
+                (format!("input:{}", input_type), attrs)
+            }
+        };
+
+        let span_builder = tracer.span_builder(span_name).with_attributes(attrs);
+        tracer.build_with_context(span_builder, &opentelemetry::Context::new());
+    }
+
+    tracing::debug!(count = count, "exported telemetry events to langfuse");
 }
 
 fn env_var(key: &str) -> Option<String> {
