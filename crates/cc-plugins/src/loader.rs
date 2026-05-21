@@ -609,6 +609,9 @@ mod tests {
             commands: vec![],
             dependencies: HashMap::new(),
             configuration: None,
+            agents: None,
+            hooks: None,
+            output_styles: None,
         };
 
         let entry = manifest_to_entry(

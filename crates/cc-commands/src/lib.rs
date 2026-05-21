@@ -23,6 +23,7 @@ pub mod daemon_cmd;
 pub mod diff;
 pub mod doctor;
 pub mod dream;
+pub mod dynamic_registry;
 pub mod effort;
 pub mod exit;
 pub mod experimental;
@@ -51,6 +52,7 @@ pub mod permissions_cmd;
 pub mod plan;
 pub mod plan_workflow;
 pub mod plugin_cmd;
+pub mod plugin_commands;
 pub mod rate_limit;
 pub mod recap;
 pub mod reload_plugins_cmd;
@@ -78,6 +80,7 @@ pub mod version;
 pub mod voice_cmd;
 
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -103,6 +106,7 @@ pub mod runtime {
     type Installer = fn();
     type LspServersProvider = fn() -> Vec<LspServerInfo>;
     type LspRecommendationSettingsProvider = fn() -> LspRecommendationSettings;
+    type LspRecommendationsProvider = fn() -> Vec<LspPluginRecommendationInfo>;
     type BuiltinAgentsProvider = fn() -> Vec<BuiltinAgentEntry>;
     type BuiltinAgentPromptProvider = fn(&str) -> Option<String>;
     type TaskListProvider = fn() -> Vec<TaskEntry>;
@@ -116,6 +120,7 @@ pub mod runtime {
     type RemoteTokenPathProvider = fn() -> PathBuf;
     type ToolPolicyNamesProvider = fn(CommandToolPolicy) -> Vec<String>;
     type ToolListProvider = fn() -> Tools;
+    type TeamContextForSessionProvider = fn(&str) -> Option<cc_types::teams::TeamContext>;
     type ForkRunner = fn(
         CommandForkParams,
     ) -> Pin<
@@ -182,9 +187,23 @@ pub mod runtime {
         pub permission_mode: String,
     }
 
+    /// Lightweight recommendation info returned by the LSP recommendation provider.
+    #[derive(Debug, Clone)]
+    pub struct LspPluginRecommendationInfo {
+        pub plugin_id: String,
+        pub plugin_name: String,
+        pub description: String,
+        pub languages: Vec<String>,
+        pub confidence: f64,
+        pub is_already_installed: bool,
+        pub is_dismissed: bool,
+    }
+
     static INSTALLER: OnceLock<RwLock<Option<Installer>>> = OnceLock::new();
     static LSP_SERVERS_PROVIDER: OnceLock<RwLock<Option<LspServersProvider>>> = OnceLock::new();
     static LSP_SETTINGS_PROVIDER: OnceLock<RwLock<Option<LspRecommendationSettingsProvider>>> =
+        OnceLock::new();
+    static LSP_RECOMMENDATIONS_PROVIDER: OnceLock<RwLock<Option<LspRecommendationsProvider>>> =
         OnceLock::new();
     static BUILTIN_AGENTS_PROVIDER: OnceLock<RwLock<Option<BuiltinAgentsProvider>>> =
         OnceLock::new();
@@ -207,6 +226,9 @@ pub mod runtime {
     static TOOL_POLICY_NAMES_PROVIDER: OnceLock<RwLock<Option<ToolPolicyNamesProvider>>> =
         OnceLock::new();
     static TOOL_LIST_PROVIDER: OnceLock<RwLock<Option<ToolListProvider>>> = OnceLock::new();
+    static TEAM_CONTEXT_FOR_SESSION_PROVIDER: OnceLock<
+        RwLock<Option<TeamContextForSessionProvider>>,
+    > = OnceLock::new();
     static FORK_RUNNER: OnceLock<RwLock<Option<ForkRunner>>> = OnceLock::new();
     static TEAM_COMMAND_EXECUTOR: OnceLock<RwLock<Option<TeamCommandExecutor>>> = OnceLock::new();
 
@@ -229,6 +251,13 @@ pub mod runtime {
         let settings_slot = LSP_SETTINGS_PROVIDER.get_or_init(|| RwLock::new(None));
         if let Ok(mut guard) = settings_slot.write() {
             *guard = Some(settings);
+        }
+    }
+
+    pub fn set_lsp_recommendations_provider(provider: LspRecommendationsProvider) {
+        let slot = LSP_RECOMMENDATIONS_PROVIDER.get_or_init(|| RwLock::new(None));
+        if let Ok(mut guard) = slot.write() {
+            *guard = Some(provider);
         }
     }
 
@@ -282,6 +311,10 @@ pub mod runtime {
         set_provider(&TOOL_LIST_PROVIDER, provider);
     }
 
+    pub fn set_team_context_for_session_provider(provider: TeamContextForSessionProvider) {
+        set_provider(&TEAM_CONTEXT_FOR_SESSION_PROVIDER, provider);
+    }
+
     pub fn set_fork_runner(runner: ForkRunner) {
         set_provider(&FORK_RUNNER, runner);
     }
@@ -317,6 +350,15 @@ pub mod runtime {
     pub(crate) fn lsp_recommendation_settings() -> LspRecommendationSettings {
         ensure_runtime_installed();
         LSP_SETTINGS_PROVIDER
+            .get()
+            .and_then(|slot| slot.read().ok().and_then(|guard| *guard))
+            .map(|provider| provider())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn lsp_recommendations() -> Vec<LspPluginRecommendationInfo> {
+        ensure_runtime_installed();
+        LSP_RECOMMENDATIONS_PROVIDER
             .get()
             .and_then(|slot| slot.read().ok().and_then(|guard| *guard))
             .map(|provider| provider())
@@ -407,6 +449,13 @@ pub mod runtime {
         get_provider(&TOOL_LIST_PROVIDER)
             .map(|provider| provider())
             .unwrap_or_default()
+    }
+
+    pub(crate) fn team_context_for_session(
+        session_id: &str,
+    ) -> Option<cc_types::teams::TeamContext> {
+        ensure_runtime_installed();
+        get_provider(&TEAM_CONTEXT_FOR_SESSION_PROVIDER).and_then(|provider| provider(session_id))
     }
 
     pub(crate) async fn run_fork(params: CommandForkParams) -> anyhow::Result<CommandForkOutcome> {
@@ -520,6 +569,33 @@ pub fn sort_commands_for_display(commands: &mut [Command]) {
         (_, "init") => std::cmp::Ordering::Greater,
         _ => a.name.cmp(&b.name),
     });
+}
+
+/// Global dynamic command registry shared across the application.
+///
+/// This registry stores dynamically-registered commands from user, project,
+/// plugin, and skill sources alongside builtin commands.
+pub static DYNAMIC_REGISTRY: LazyLock<parking_lot::Mutex<dynamic_registry::DynamicRegistry>> =
+    LazyLock::new(|| parking_lot::Mutex::new(dynamic_registry::DynamicRegistry::new()));
+
+/// Get merged command metadata from both builtin commands and the dynamic
+/// registry. This is the primary lookup source for command resolution.
+pub fn get_dynamic_metadata() -> Vec<CommandMetadata> {
+    let mut metadata = command_metadata(&get_all_commands());
+
+    let registry = DYNAMIC_REGISTRY.lock();
+    for entry in registry.list_all() {
+        // Avoid adding entries that shadow builtin with the same name
+        if !metadata.iter().any(|m| m.name == entry.name) {
+            metadata.push(CommandMetadata {
+                name: entry.name.clone(),
+                aliases: entry.aliases.clone(),
+                description: entry.description.clone(),
+            });
+        }
+    }
+
+    metadata
 }
 
 pub fn command_metadata(commands: &[Command]) -> Vec<CommandMetadata> {

@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
+use tracing::{info, warn};
 
 use cc_tools::exec::truncate_output;
 use cc_tools::tool::{
@@ -94,6 +95,13 @@ impl PluginToolWrapper {
         runtime: &StdioToolRuntime,
         input: Value,
     ) -> Result<ToolResult> {
+        info!(
+            plugin_id = %self.plugin_id,
+            tool_name = %self.contribution.name,
+            command = %runtime.command,
+            "Plugin tool execution started"
+        );
+
         let command = self.resolved_command(&runtime.command);
         let command_display = command.display().to_string();
         let input_json =
@@ -181,6 +189,14 @@ impl PluginToolWrapper {
         let exit_code = status.code().unwrap_or(-1);
 
         if !status.success() {
+            warn!(
+                plugin_id = %self.plugin_id,
+                tool_name = %self.contribution.name,
+                exit_code = exit_code,
+                stderr = %truncate_output(&stderr_text, 500),
+                "Plugin tool exited with non-zero status"
+            );
+
             return Ok(ToolResult {
                 data: json!({
                     "error": format!("Plugin tool '{}' exited with status {}", self.name(), exit_code),
@@ -328,16 +344,23 @@ impl Tool for PluginToolWrapper {
     ) -> Result<ToolResult> {
         match self.runtime() {
             Some(ToolRuntime::Stdio(runtime)) => self.run_stdio_runtime(runtime, input).await,
-            None => Ok(ToolResult {
-                data: json!({
-                    "error": format!(
-                        "Plugin tool '{}' is metadata-only and has no runtime configured",
-                        self.name()
-                    )
-                }),
-                new_messages: vec![],
-                ..Default::default()
-            }),
+            None => {
+                warn!(
+                    plugin_id = %self.plugin_id,
+                    tool_name = %self.contribution.name,
+                    "Plugin tool is metadata-only: no runtime configured"
+                );
+                Ok(ToolResult {
+                    data: json!({
+                        "error": format!(
+                            "Plugin tool '{}' is metadata-only and has no runtime configured",
+                            self.name()
+                        )
+                    }),
+                    new_messages: vec![],
+                    ..Default::default()
+                })
+            }
         }
     }
 

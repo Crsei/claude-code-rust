@@ -28,6 +28,33 @@ pub enum PluginSubsystemEvent {
         status: String,
         error: Option<String>,
     },
+    /// A plugin was installed.
+    Installed {
+        plugin_id: String,
+        name: String,
+        version: String,
+    },
+    /// A plugin was updated to a new version.
+    Updated {
+        plugin_id: String,
+        name: String,
+        old_version: String,
+        new_version: String,
+    },
+    /// A plugin was uninstalled.
+    Uninstalled {
+        plugin_id: String,
+        name: String,
+    },
+    /// Plugin validation failed.
+    ValidationFailed {
+        plugin_id: String,
+        errors: Vec<String>,
+    },
+    /// Plugin configuration changed.
+    ConfigChanged {
+        plugin_id: String,
+    },
 }
 
 pub trait PluginEventSink: Send + Sync {

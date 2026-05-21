@@ -32,69 +32,46 @@ Rust 对应: `cc-plugins/`
 
 ## Rust 已实现
 
-### cc-plugins/ (完整度 ~40%)
+### cc-plugins/ (完整度 ~60%)
 - **manifest**: 完整 `plugin.json` 模式 (`PluginManifest`)
 - **loader**: 从 `installed_plugins.json` 加载 (V1/V2 兼容)
 - **refresh**: 热重载插件注册表，事件驱动
 - **tools**: `PluginToolWrapper` — 插件工具包装器 (子进程执行)
-- 事件系统: `PluginSubsystemEvent` (Reloaded, RefreshNeeded, StatusChanged)
+- **installation**: 插件安装、更新、卸载（支持 marketplace/URL/GitHub/npm/file 来源）
+- **marketplace**: 多来源市场管理、本地缓存、市场发现
+- **validation**: 插件清单和目录结构验证
+- **lsp**: LSP 服务器声明收集
+- **blocklist/policy**: 插件块列表和策略管理
+- **commands/agents/hooks/output_styles**: 声明式命令、Agent、Hook、输出样式加载
+- **mcpb**: MCP Bundle 二进制插件格式支持
+- **dependency_resolver/reconciler/autoupdate/versioning/zip_cache**: 依赖解析、状态同步、自动更新、版本管理、ZIP 缓存
+- 事件系统: `PluginSubsystemEvent` (Reloaded, RefreshNeeded, StatusChanged, Installed, Updated, Uninstalled, ValidationFailed, ConfigChanged)
+
+### IPC 集成 (Phase 1+2)
+- `PluginSubsystemEvent` → IPC `PluginEvent` 映射（全 8 变体）
+- `PluginCommandRuntime` 扩展了 `install_plugin`/`list_marketplace`/`refresh_marketplace_cache`/`update_plugin`/`validate_plugin`/`get_plugin_info`
+- 插件命令注册到 `DynamicRegistry`（优先级 40）
+- LSP 推荐 "yes" 决策触发真实插件安装
 
 ## Rust 缺失的主要功能
 
-### 1. Marketplace 管理 (2,643 行) — 完全缺失
-- 多来源市场: URL、GitHub、npm、file
-- 本地缓存管理
-- 安装/更新/删除
-- 自动更新
-- 策略、块列表/允许列表
-- GCS 启动检查
-- 市场发现和浏览
-
-### 2. MCPB Handler (966 行) — 完全缺失
+### 1. MCPB Handler (966 行) — 部分实现
 - MCP Bundle 二进制插件格式
 - 下载、解压、清单提取
 - 用户配置输入处理
 - 内容哈希和缓存
 
-### 3. 命令/Agent/Hook/输出样式加载 (~1,800 行) — 完全缺失
-- `loadPluginCommands.ts`: 插件命令加载、Markdown frontmatter 解析
-- `loadPluginAgents.ts`: Agent 定义加载
-- `loadPluginHooks.ts`: Hook 配置加载
-- `loadPluginOutputStyles.ts`: 输出样式加载
+### 2. LSP 插件集成和推荐 — 部分实现
+- `lspPluginIntegration.ts`: LSP 服务器配置（`lsp.rs` 已实现）
+- `lspRecommendation.ts`: 基于使用的推荐（IPC `LspRecommendations` 已添加，推荐安装逻辑已接入）
 
-### 4. 插件验证 (903 行) — 缺失
-- 清单字段验证
-- 目录结构检查
-- 文件类型验证
-- YAML frontmatter 验证
-
-### 5. 安装管理 (1,268 行) — 缺失
-- `installed_plugins.json` V1→V2 迁移
-- 安装追踪 (全局)
-- 作用域管理 (user/project/local)
-- Git 感知的检出路径检测
-
-### 6. MCPB 插件集成 (634 行) — 缺失
-- MCP 服务器配置
-- 集成到 MCP 管理器
-
-### 7. LSP 插件集成和推荐 — 缺失
-- `lspPluginIntegration.ts`: LSP 服务器配置
-- `lspRecommendation.ts`: 基于使用的推荐
-
-### 8. 插件生命周期功能 — 缺失
+### 3. 插件生命周期功能 — 部分实现
 - `pluginAutoupdate.ts`: 自动更新调度和检查
 - `pluginVersioning.ts`: 版本兼容性检查
 - `zipCache.ts`: ZIP 下载缓存
 - `reconciler.ts`: 状态同步
 
-### 9. 策略和安全 — 缺失
-- `pluginBlocklist.ts`: 插件块列表
-- `pluginFlagging.ts`: 插件标记
-- `pluginPolicy.ts`: 策略管理
-- `orphanedPluginFilter.ts`: 孤立插件过滤
-
-### 10. 遥测和统计 — 缺失
+### 4. 遥测和统计 — 缺失
 - `installCounts.ts`: 安装计数
 - `fetchTelemetry.ts`: 遥测获取
 - `hintRecommendation.ts`: 推荐提示
@@ -104,18 +81,19 @@ Rust 对应: `cc-plugins/`
 | 功能 | Bun | Rust | 差距 |
 |------|-----|------|------|
 | Plugin manifest schema | Zod schemas (1,683 行) | PluginManifest | ✅ 已移植 |
-| 插件加载 | pluginLoader.ts (3,305 行) | loader.rs | ✅ 部分移植 |
+| 插件加载 | pluginLoader.ts (3,305 行) | loader.rs | ✅ 已移植 |
 | 热重载 | refresh.ts | refresh.rs | ✅ 已移植 |
 | 工具包装器 | 直接执行 JS | PluginToolWrapper | ⚠️ 仅子进程 |
-| **Marketplace** | **完整市场 (2,643 行)** | **无** | **核心缺口** |
-| **MCPB Handler** | **完整处理 (966 行)** | **无** | **核心缺口** |
-| **命令加载** | **loadPluginCommands (946 行)** | **无** | **功能缺口** |
-| **Agent 加载** | **loadPluginAgents (348 行)** | **无** | **功能缺口** |
-| **插件验证** | **validatePlugin (903 行)** | **无** | **功能缺口** |
-| **安装管理** | **~1,200 行** | **无** | **功能缺口** |
-| 自动更新 | pluginAutoupdate.ts | 无 | 功能缺口 |
-| LSP 集成 | lspPluginIntegration.ts | 无 | 功能缺口 |
-| 策略/块列表 | ~5 文件 | 无 | 安全缺口 |
+| **Marketplace** | **完整市场 (2,643 行)** | **marketplace.rs** | **✅ 已移植** |
+| **插件安装/更新** | **pluginInstallationHelpers** | **installation.rs** | **✅ 已移植** |
+| **插件验证** | **validatePlugin (903 行)** | **validation.rs** | **✅ 已移植** |
+| **命令/Agent/Hook 加载** | **3 文件 ~1,600 行** | **commands.rs/agents.rs/hooks.rs** | **✅ 已移植** |
+| **策略/块列表** | **~5 文件** | **blocklist.rs/policy.rs** | **✅ 已移植** |
+| **MCPB Handler** | **完整处理 (966 行)** | **mcpb.rs** | **⚠️ 部分实现** |
+| **MCP 插件集成** | **mcpPluginIntegration (634 行)** | **mcpb.rs** | **⚠️ 部分实现** |
+| 自动更新 | pluginAutoupdate.ts | autoupdate.rs | ⚠️ 部分实现 |
+| LSP 集成 | lspPluginIntegration.ts | lsp.rs | ✅ 已移植 |
+| 遥测/统计 | 3 文件 ~500 行 | 无 | 缺失 |
 
 ## 插件运行时差异
 

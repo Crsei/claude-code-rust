@@ -1,6 +1,26 @@
-//! cc-plugins — plugin registry, manifest loading, and contribution discovery.
+//! cc-plugins — plugin registry, manifest loading, marketplace, installation,
+//! and contribution discovery.
 
+pub mod agents;
+pub mod autoupdate;
+pub mod blocklist;
+pub mod commands;
+pub mod configuration;
+pub mod dependency_resolver;
+pub mod flagging;
+pub mod hooks;
+pub mod installation;
+pub mod lsp;
 pub mod manifest;
+pub mod marketplace;
+pub mod mcpb;
+pub mod output_styles;
+pub mod policy;
+pub mod reconciler;
+pub mod sources;
+pub mod validation;
+pub mod versioning;
+pub mod zip_cache;
 
 #[path = "mod.rs"]
 mod runtime;
