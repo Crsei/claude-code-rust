@@ -459,7 +459,12 @@
 - Syntax:
   - `/login`
   - `/login status`
+  - `/login anthropic_method`
+  - `/login openai_codex`
+  - `/login openai_api`
+  - `/login openai_api sk-...`
   - `/login sk-ant-...`
+  - `/login sk-...`
   - `/login 1`
   - `/login 2`
   - `/login 3`
@@ -470,7 +475,11 @@
   - `/login bedrock`
   - `/login vertex`
   - `/login cloud`
-- Meaning of numbered entries:
+- Top-level entries:
+  - `anthropic_method`：Anthropic API Key / Claude.ai OAuth / Console OAuth
+  - `openai_codex`：OpenAI Codex OAuth / Codex CLI credentials import
+  - `openai_api`：OpenAI Platform API Key，写入 cc-rust 的 OpenAI keychain account
+- Meaning of numbered compatibility entries:
   - `1`：手动粘贴 Anthropic API Key
   - `2`：Claude.ai OAuth
   - `3`：Console OAuth
@@ -482,6 +491,7 @@
   - `/login`
   - `/login status`
   - `/login sk-ant-api03-...`
+  - `/login openai_api sk-proj-...`
   - `/login 4`
   - `/login codex-cli`
   - `/login bedrock`

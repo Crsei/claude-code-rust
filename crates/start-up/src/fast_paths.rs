@@ -12,7 +12,6 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use crate::runtime_config::{chrome_requested, resolve_cwd};
-use cc_config::settings;
 use cc_engine::types::tool::Tool;
 
 use crate::runtime_config::StartupCli;
@@ -88,6 +87,24 @@ pub fn run_export_ui_snapshots(
 /// language/style) without running the full Phase B pipeline.
 pub fn run_dump_system_prompt(cli: &impl DumpSystemPromptCli, tools: &[Arc<dyn Tool>]) -> ExitCode {
     cc_plugins::init_plugins();
+    let cwd = resolve_cwd(cli);
+    let cwd_path = std::path::Path::new(&cwd);
+
+    let dump_settings = match cc_config::settings::load_effective(cwd_path) {
+        Ok(mut loaded) => {
+            if let Err(e) = cc_config::settings::apply_runtime_env(&loaded.effective.env) {
+                eprintln!("settings.env error: {e:#}");
+                return ExitCode::FAILURE;
+            }
+            cc_config::settings::refresh_process_env_overrides(&mut loaded);
+            Some(loaded.effective)
+        }
+        Err(e) => {
+            eprintln!("settings error: {e:#}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     let provider_default = cc_api::api::client::ApiClient::from_env().and_then(|client| {
         matches!(
             client.config().provider,
@@ -101,13 +118,11 @@ pub fn run_dump_system_prompt(cli: &impl DumpSystemPromptCli, tools: &[Arc<dyn T
         .or(provider_default)
         .unwrap_or_else(cc_models::default_model_id);
     let model = model_owned.as_str();
-    let cwd = resolve_cwd(cli);
 
     // Populate the browser MCP server registry from config alone (no live
     // connection). Config-flagged servers (`"browserMcp": true`) are
     // authoritative; the heuristic half would need connected tools and
     // isn't exercised here; use `--init-only` for that path.
-    let cwd_path = std::path::Path::new(&cwd);
     let server_configs = match discover_mcp_servers_for_fast_path(cwd_path) {
         Ok(configs) => configs,
         Err(e) => {
@@ -119,19 +134,14 @@ pub fn run_dump_system_prompt(cli: &impl DumpSystemPromptCli, tools: &[Arc<dyn T
     // Mirror the full-init path: when Chrome subsystem is requested via
     // CLI / env, pre-register the first-party server name so the
     // `# Browser Automation` prompt fires under --dump-system-prompt too.
-    let chrome_config_default = settings::load_and_merge(&cwd)
-        .ok()
+    let chrome_config_default = dump_settings
+        .as_ref()
         .and_then(|cfg| cfg.claude_in_chrome_default_enabled);
     if chrome_requested(cli, chrome_config_default) {
         browser_servers.insert(cc_browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string());
     }
     cc_browser::detection::install_browser_servers(browser_servers);
 
-    // Best-effort: load merged settings so --dump-system-prompt reflects
-    // language/output_style overrides without requiring full bootstrap.
-    let dump_settings = cc_config::settings::load_effective(std::path::Path::new(&cwd))
-        .ok()
-        .map(|loaded| loaded.effective);
     let dump_lang = dump_settings.as_ref().and_then(|s| s.language.clone());
     let dump_style = dump_settings.as_ref().and_then(|s| s.output_style.clone());
     let include_auto_memory = dump_settings

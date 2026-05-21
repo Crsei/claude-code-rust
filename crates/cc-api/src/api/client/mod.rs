@@ -25,6 +25,7 @@ pub(crate) use stream::parse_sse_byte_stream;
 use stream::parse_sse_text;
 
 pub const OPENAI_CODEX_PROVIDER_NAME: &str = "openai-codex";
+pub const OPENAI_PROVIDER_NAME: &str = "openai";
 pub const OPENAI_CODEX_TOKEN_ENV: &str = "OPENAI_CODEX_AUTH_TOKEN";
 pub const OPENAI_CODEX_BASE_URL_ENV: &str = "OPENAI_CODEX_BASE_URL";
 pub const OPENAI_CODEX_MODEL_ENV: &str = "OPENAI_CODEX_MODEL";
@@ -141,12 +142,24 @@ fn is_env_value(name: &str, expected: &str) -> bool {
 }
 
 pub(crate) fn build_openai_compat_url(base_url: &str, provider_name: &str) -> String {
-    let endpoint = if provider_name.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_NAME) {
-        "/conversation"
-    } else {
-        "/chat/completions"
-    };
+    if provider_name.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_NAME) {
+        let base_url = base_url.trim_end_matches('/');
+        let endpoint = if base_url.ends_with("/responses") {
+            ""
+        } else if base_url.ends_with("/codex") {
+            "/responses"
+        } else {
+            "/codex/responses"
+        };
+        return format!("{base_url}{endpoint}");
+    }
+
+    let endpoint = "/chat/completions";
     format!("{}{}", base_url.trim_end_matches('/'), endpoint)
+}
+
+pub(crate) fn is_openai_codex_provider(provider_name: &str) -> bool {
+    provider_name.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_NAME)
 }
 
 /// API provider enum 鈥?determines wire protocol and auth method.
@@ -595,6 +608,22 @@ fn non_empty_env(name: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn selected_api_provider_from_settings() -> Result<Option<String>> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let loaded = cc_config::settings::load_effective(&cwd)?;
+    let Some(raw) = loaded.effective.api_provider else {
+        return Ok(None);
+    };
+    let Some(provider) = cc_config::settings::normalize_api_provider(&raw) else {
+        bail!(
+            "Unknown apiProvider `{}`. Known providers: {}.",
+            raw,
+            cc_config::settings::VALID_API_PROVIDERS.join(", ")
+        );
+    };
+    Ok(Some(provider.to_string()))
 }
 
 fn warn_legacy_anthropic_model_env_once(legacy_env: &str, default_env: &str) {
@@ -1358,6 +1387,29 @@ impl ApiClient {
         .map(Some)
     }
 
+    /// Construct an OpenAI-compatible client from the provider-scoped OpenAI
+    /// Platform API key stored in cc-rust's keychain.
+    pub fn from_openai_api_keychain_result() -> Result<Option<Self>> {
+        let Some(info) = crate::api::providers::get_provider(OPENAI_PROVIDER_NAME) else {
+            return Ok(None);
+        };
+        let Some(api_key) = cc_auth::try_resolve_openai_api_key()? else {
+            return Ok(None);
+        };
+        Self::try_new(ApiClientConfig {
+            provider: ApiProvider::OpenAiCompat {
+                name: info.name.to_string(),
+                api_key,
+                base_url: info.base_url.to_string(),
+                default_model: info.default_model.to_string(),
+            },
+            default_model: info.default_model.to_string(),
+            max_retries: 3,
+            timeout_secs: 120,
+        })
+        .map(Some)
+    }
+
     /// Construct an `ApiClient` for a specific backend.
     ///
     /// - `codex` backend: force the OpenAI Codex auth path.
@@ -1393,7 +1445,20 @@ impl ApiClient {
             return Ok(Some(client));
         }
 
-        // 2. Fall back to auth resolution (keychain, external token, OAuth)
+        // 2. With no provider env, honor the persisted provider selection.
+        match selected_api_provider_from_settings()? {
+            Some(provider) if provider == cc_config::settings::API_PROVIDER_OPENAI => {
+                return Self::from_openai_api_keychain_result();
+            }
+            Some(provider) if provider == cc_config::settings::API_PROVIDER_OPENAI_CODEX => {
+                return Self::from_codex_auth_result();
+            }
+            Some(provider) if provider == cc_config::settings::API_PROVIDER_ANTHROPIC => {}
+            Some(provider) => bail!("unsupported apiProvider `{provider}`"),
+            None => {}
+        }
+
+        // 3. Fall back to Anthropic auth resolution (keychain, external token, OAuth)
         let auth = cc_auth::try_resolve_auth()?;
         let auth = match auth {
             cc_auth::AuthMethod::ApiKey(api_key) => AnthropicAuth::ApiKey(api_key),

@@ -3,12 +3,13 @@
 //! Usage:
 //!   /login                  - interactive login (choose method)
 //!   /login status           - show current auth status
-//!   /login sk-ant-...       - store API key directly
+//!   /login sk-...           - store Anthropic/OpenAI API key directly
 //!   /login 1..7             - select login/provider method
 //!   /login bedrock|vertex   - enable a cloud provider for this process
 
 use anyhow::Result;
 use async_trait::async_trait;
+use cc_config::settings::{self, RawSettings};
 
 use super::login_code;
 use crate::{CommandContext, CommandHandler, CommandResult};
@@ -18,7 +19,7 @@ pub struct LoginHandler;
 
 #[async_trait]
 impl CommandHandler for LoginHandler {
-    async fn execute(&self, args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
+    async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
         let args = args.trim();
 
         if args == "status" {
@@ -26,16 +27,39 @@ impl CommandHandler for LoginHandler {
         }
 
         if args.starts_with("sk-ant-") {
-            return Ok(CommandResult::Output(store_api_key(args)));
+            return Ok(CommandResult::Output(store_anthropic_api_key(args, ctx)));
+        }
+
+        if args.starts_with("sk-") {
+            return Ok(CommandResult::Output(store_openai_api_key(args, ctx)));
         }
 
         if args.is_empty() {
             return Ok(CommandResult::Output(login_menu()));
         }
 
-        match args {
+        let mut parts = args.split_whitespace();
+        let head = parts.next().unwrap_or_default();
+        let rest = parts.collect::<Vec<_>>().join(" ");
+
+        match head {
+            "anthropic_method" | "anthropic-method" | "anthropic" => {
+                if rest.trim().is_empty() {
+                    Ok(CommandResult::Output(anthropic_login_menu()))
+                } else {
+                    execute_anthropic_method(&rest, ctx)
+                }
+            }
+            "openai_api" | "openai-api" | "openai" => {
+                if rest.trim().is_empty() {
+                    Ok(CommandResult::Output(openai_api_prompt()))
+                } else {
+                    Ok(CommandResult::Output(store_openai_api_key(&rest, ctx)))
+                }
+            }
+            "openai_codex" | "openai-codex" => Ok(CommandResult::Output(start_codex_oauth(ctx))),
             "1" => Ok(CommandResult::Output(
-                "Paste your API key:\n  /login sk-ant-api03-...".to_string(),
+                "Paste your Anthropic API key:\n  /login sk-ant-api03-...".to_string(),
             )),
             "2" => Ok(CommandResult::Output(login_code::start_pending(
                 OAuthMethod::ClaudeAi,
@@ -43,10 +67,8 @@ impl CommandHandler for LoginHandler {
             "3" => Ok(CommandResult::Output(login_code::start_pending(
                 OAuthMethod::Console,
             ))),
-            "4" | "codex" => Ok(CommandResult::Output(login_code::start_pending(
-                OAuthMethod::OpenAiCodex,
-            ))),
-            "5" | "codex-cli" => Ok(CommandResult::Output(check_codex_cli())),
+            "4" | "codex" => Ok(CommandResult::Output(start_codex_oauth(ctx))),
+            "5" | "codex-cli" => Ok(CommandResult::Output(check_codex_cli(ctx))),
             "6" | "bedrock" | "aws" => Ok(CommandResult::Output(enable_bedrock_session())),
             "7" | "vertex" | "vertex-ai" | "gcp" => {
                 Ok(CommandResult::Output(enable_vertex_session()))
@@ -63,20 +85,55 @@ impl CommandHandler for LoginHandler {
 
 fn login_menu() -> String {
     "Select login method:\n\
+     \n  anthropic_method  Anthropic API Key / Claude.ai OAuth / Console OAuth\
+     \n  openai_codex      OpenAI Codex OAuth / Codex CLI import\
+     \n  openai_api        OpenAI API Key\
+     \n\nCompatibility shortcuts: /login 1..7, /login codex, /login codex-cli, /login bedrock, /login vertex, /login cloud"
+        .to_string()
+}
+
+fn anthropic_login_menu() -> String {
+    "Anthropic login methods:\n\
      \n  [1] API Key (paste manually)\
      \n  [2] Claude.ai OAuth (Pro/Max subscription)\
      \n  [3] Console OAuth (API billing)\
-     \n  [4] OpenAI Codex OAuth (ChatGPT subscription)\
-     \n  [5] Import from Codex CLI (~/.codex/auth.json)\
-     \n  [6] AWS Bedrock (session env provider)\
-     \n  [7] GCP Vertex AI (session env provider)\
-     \n\nType /login 1..7, /login bedrock, /login vertex, or /login cloud"
+     \n\nType /login 1, /login 2, /login 3, or paste an Anthropic key with /login sk-ant-api03-..."
         .to_string()
+}
+
+fn openai_api_prompt() -> String {
+    "Paste your OpenAI API key:\n  /login openai_api sk-...".to_string()
+}
+
+fn execute_anthropic_method(args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
+    match args.trim() {
+        "1" | "api" | "api-key" | "api_key" => Ok(CommandResult::Output(
+            "Paste your Anthropic API key:\n  /login sk-ant-api03-...".to_string(),
+        )),
+        "2" | "claude" | "claude-ai" | "claude_ai" => Ok(CommandResult::Output(
+            login_code::start_pending(OAuthMethod::ClaudeAi),
+        )),
+        "3" | "console" => Ok(CommandResult::Output(login_code::start_pending(
+            OAuthMethod::Console,
+        ))),
+        key if key.starts_with("sk-ant-") => {
+            Ok(CommandResult::Output(store_anthropic_api_key(key, ctx)))
+        }
+        other => Ok(CommandResult::Output(format!(
+            "Unknown Anthropic login option: \"{}\"\n\n{}",
+            other,
+            anthropic_login_menu()
+        ))),
+    }
 }
 
 fn auth_status_text() -> String {
     if let Some(cloud_status) = cloud_auth_status_text() {
         return cloud_status;
+    }
+
+    if let Some(openai_status) = openai_api_status_text() {
+        return openai_status;
     }
 
     if let Some(codex_status) = codex_auth_status_text() {
@@ -110,6 +167,38 @@ fn auth_status_text() -> String {
             format!("Authenticated: OAuth ({})", method)
         }
         auth::AuthMethod::None => "Not authenticated".to_string(),
+    }
+}
+
+fn openai_api_status_text() -> Option<String> {
+    if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+        if !key.trim().is_empty() {
+            return Some(format!(
+                "Authenticated: OpenAI API Key {} (source: env OPENAI_API_KEY)",
+                mask_key(key.trim())
+            ));
+        }
+    }
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let provider = settings::load_effective(&cwd)
+        .ok()
+        .and_then(|loaded| loaded.effective.api_provider)
+        .and_then(|value| settings::normalize_api_provider(&value).map(str::to_string));
+    if provider.as_deref() != Some(settings::API_PROVIDER_OPENAI) {
+        return None;
+    }
+
+    match auth::api_key::load_openai_api_key() {
+        Ok(Some(key)) if auth::api_key::validate_openai_api_key(&key) => Some(format!(
+            "Authenticated: OpenAI API Key {} (source: system keychain)",
+            mask_key(key.trim())
+        )),
+        Ok(Some(_)) => Some("OpenAI API key in system keychain is invalid.".to_string()),
+        Ok(None) => {
+            Some("OpenAI API provider selected, but no OpenAI API key is stored.".to_string())
+        }
+        Err(error) => Some(format!("OpenAI API keychain is not usable: {error}")),
     }
 }
 
@@ -383,7 +472,20 @@ fn foundry_setup_text() -> String {
     )
 }
 
-fn check_codex_cli() -> String {
+fn start_codex_oauth(ctx: &mut CommandContext) -> String {
+    let mut msg = login_code::start_pending(OAuthMethod::OpenAiCodex);
+    if !msg.starts_with("Cannot start OAuth flow") {
+        let provider_msg =
+            persist_provider_selection(settings::API_PROVIDER_OPENAI_CODEX, Some("codex"), ctx);
+        if let Some(provider_msg) = provider_msg {
+            msg.push_str("\n\n");
+            msg.push_str(&provider_msg);
+        }
+    }
+    msg
+}
+
+fn check_codex_cli(ctx: &mut CommandContext) -> String {
     let cred = match auth::codex_cli::read_codex_cli_credential() {
         Ok(Some(c)) => c,
         Ok(None) => {
@@ -404,16 +506,32 @@ fn check_codex_cli() -> String {
     };
 
     if !auth::codex_cli::is_credential_expired(&cred) {
-        return "Codex CLI credentials detected and valid. \
+        let mut msg = "Codex CLI credentials detected and valid. \
                 cc-rust will use them automatically."
             .to_string();
+        if let Some(provider_msg) =
+            persist_provider_selection(settings::API_PROVIDER_OPENAI_CODEX, Some("codex"), ctx)
+        {
+            msg.push_str("\n\n");
+            msg.push_str(&provider_msg);
+        }
+        return msg;
     }
 
     // Expired — try to refresh now
     match auth::try_resolve_codex_auth_token() {
-        Ok(Some(_)) => "Codex CLI token was expired but has been refreshed successfully. \
-             cc-rust will use it automatically."
-            .to_string(),
+        Ok(Some(_)) => {
+            let mut msg = "Codex CLI token was expired but has been refreshed successfully. \
+                 cc-rust will use it automatically."
+                .to_string();
+            if let Some(provider_msg) =
+                persist_provider_selection(settings::API_PROVIDER_OPENAI_CODEX, Some("codex"), ctx)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&provider_msg);
+            }
+            msg
+        }
         Ok(None) => "Codex CLI token is expired and refresh failed. \
              Run /login 4 for a fresh OAuth login, or re-login in Codex CLI."
             .to_string(),
@@ -421,13 +539,97 @@ fn check_codex_cli() -> String {
     }
 }
 
-fn store_api_key(key: &str) -> String {
+fn store_anthropic_api_key(key: &str, ctx: &mut CommandContext) -> String {
     if !auth::api_key::validate_api_key(key) {
         return "Invalid API key format. Keys start with \"sk-ant-\" and are >20 chars.".into();
     }
     match auth::api_key::store_api_key(key) {
-        Ok(()) => format!("API Key {} stored to keychain.", mask_key(key)),
+        Ok(()) => {
+            let mut msg = format!("Anthropic API Key {} stored to keychain.", mask_key(key));
+            if let Some(provider_msg) =
+                persist_provider_selection(settings::API_PROVIDER_ANTHROPIC, Some("native"), ctx)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&provider_msg);
+            }
+            msg
+        }
         Err(e) => format!("Failed to store API key: {}", e),
+    }
+}
+
+fn store_openai_api_key(key: &str, ctx: &mut CommandContext) -> String {
+    if !auth::api_key::validate_openai_api_key(key) {
+        return "Invalid OpenAI API key format. Paste the full key after /login openai_api.".into();
+    }
+    match auth::api_key::store_openai_api_key(key) {
+        Ok(()) => {
+            let trimmed = key.trim();
+            let mut msg = format!("OpenAI API Key {} stored to keychain.", mask_key(trimmed));
+            if let Some(provider_msg) =
+                persist_provider_selection(settings::API_PROVIDER_OPENAI, Some("native"), ctx)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&provider_msg);
+            }
+            msg
+        }
+        Err(e) => format!("Failed to store OpenAI API key: {}", e),
+    }
+}
+
+fn persist_provider_selection(
+    api_provider: &str,
+    backend: Option<&str>,
+    ctx: &mut CommandContext,
+) -> Option<String> {
+    let path = settings::user_settings_path();
+    let mut raw = if path.exists() {
+        match std::fs::read_to_string(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|txt| serde_json::from_str::<RawSettings>(&txt).map_err(anyhow::Error::from))
+        {
+            Ok(raw) => raw,
+            Err(error) => {
+                return Some(format!(
+                    "Provider selected for this session, but user settings were not updated: {}",
+                    error
+                ));
+            }
+        }
+    } else {
+        RawSettings::default()
+    };
+
+    raw.api_provider = Some(api_provider.to_string());
+    if let Some(backend) = backend {
+        raw.backend = Some(backend.to_string());
+        ctx.app_state.main_loop_backend = backend.to_string();
+        ctx.app_state.settings.backend = Some(backend.to_string());
+        ctx.app_state
+            .settings
+            .sources
+            .insert("backend".to_string(), settings::SettingsSource::User);
+    }
+    ctx.app_state.settings.api_provider = Some(api_provider.to_string());
+    ctx.app_state
+        .settings
+        .sources
+        .insert("apiProvider".to_string(), settings::SettingsSource::User);
+
+    match settings::write_user_settings(&raw) {
+        Ok(path) => Some(format!(
+            "Selected apiProvider={}{} (persisted to {}).",
+            api_provider,
+            backend
+                .map(|value| format!(", backend={value}"))
+                .unwrap_or_default(),
+            path.display()
+        )),
+        Err(error) => Some(format!(
+            "Provider selected for this session, but user settings were not updated: {}",
+            error
+        )),
     }
 }
 
@@ -443,13 +645,16 @@ fn mask_key(key: &str) -> String {
     if key.len() > 12 {
         format!("{}...{}", &key[..7], &key[key.len() - 4..])
     } else {
-        "sk-ant-****".to_string()
+        "****".to_string()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cc_bootstrap::SessionId;
+    use cc_engine::types::app_state::AppState;
+    use std::path::PathBuf;
 
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -478,6 +683,15 @@ mod tests {
         }
     }
 
+    fn test_ctx() -> CommandContext {
+        CommandContext {
+            messages: Vec::new(),
+            cwd: PathBuf::from("/test"),
+            app_state: AppState::default(),
+            session_id: SessionId::from_string("test-session"),
+        }
+    }
+
     #[test]
     fn test_mask_key_long() {
         let key = "sk-ant-api03-abcdefghijklmnop";
@@ -490,24 +704,26 @@ mod tests {
     #[test]
     fn test_mask_key_short() {
         let masked = mask_key("short");
-        assert_eq!(masked, "sk-ant-****");
+        assert_eq!(masked, "****");
     }
 
     #[test]
     fn test_login_menu_contains_options() {
         let menu = login_menu();
+        assert!(menu.contains("anthropic_method"));
+        assert!(menu.contains("openai_codex"));
+        assert!(menu.contains("openai_api"));
+        assert!(menu.contains("/login 1..7"));
+        assert!(menu.contains("/login codex-cli"));
+    }
+
+    #[test]
+    fn test_anthropic_menu_contains_legacy_options() {
+        let menu = anthropic_login_menu();
         assert!(menu.contains("[1]"));
         assert!(menu.contains("[2]"));
         assert!(menu.contains("[3]"));
-        assert!(menu.contains("[4]"));
-        assert!(menu.contains("[5]"));
-        assert!(menu.contains("[6]"));
-        assert!(menu.contains("[7]"));
-        assert!(menu.contains("API Key"));
-        assert!(menu.contains("OAuth"));
-        assert!(menu.contains("Codex CLI"));
-        assert!(menu.contains("Bedrock"));
-        assert!(menu.contains("Vertex"));
+        assert!(menu.contains("sk-ant-api03"));
     }
 
     #[test]
@@ -583,7 +799,8 @@ mod tests {
         let prev = std::env::var("CODEX_HOME").ok();
         std::env::set_var("CODEX_HOME", empty_sub.to_str().unwrap());
 
-        let msg = check_codex_cli();
+        let mut ctx = test_ctx();
+        let msg = check_codex_cli(&mut ctx);
         assert!(
             msg.contains("not found"),
             "expected 'not found' message, got: {}",

@@ -34,6 +34,12 @@ pub(super) fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<Comman
         &mut lines,
     );
     row(
+        "apiProvider",
+        opt_str(state.settings.api_provider.clone()),
+        "apiProvider",
+        &mut lines,
+    );
+    row(
         "theme",
         state
             .settings

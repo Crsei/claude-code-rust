@@ -12,6 +12,8 @@
 //!   let `config::validation` read it without a reverse dep back into the
 //!   root crate).
 
+#![recursion_limit = "256"]
+
 pub mod change_detector;
 pub mod claude_md;
 pub mod constants;

@@ -16,7 +16,7 @@
 
 | 范围 | 当前状态 | 说明 |
 | --- | --- | --- |
-| API providers | 基线完成，真实凭据证据待补 | Bedrock 原生 AWS EventStream、Vertex direct service-account JWT exchange、provider capability DTO、Azure/OpenAI/Foundry 命名诊断、Foundry fail early、Anthropic-compatible bearer/custom base URL、SOTA/MOTA/FOTA 默认值和 provider smoke matrix 已接入；真实 provider smoke 仍按凭据门控收集发布证据。 |
+| API providers | 基线完成，真实凭据证据部分收口 | Bedrock 原生 AWS EventStream、Vertex direct service-account JWT exchange、provider capability DTO、Azure/OpenAI/Foundry 命名诊断、Foundry fail early、Anthropic-compatible bearer/custom base URL、SOTA/MOTA/FOTA 默认值和 provider smoke matrix 已接入；2026-05-21 真实 smoke 已通过 direct bearer、compatible custom base URL bearer、prompt-cache default 与 TTL/global gates，direct API key、Bedrock、Vertex 因缺少对应凭据跳过。 |
 | Team Memory 客户端同步 | 代码已接通，待验证/文档收口 | `ui/team-memory-server/sync.ts` / `watcher.ts` 与 Rust daemon spawn 参数已接通；仍需同步、断线恢复、冲突处理 e2e。 |
 | TaskTools remote/multi-type runtime | 本地与 UI production 完成，remote runtime parity 未完 | 持久化、依赖字段、输出保留、`TaskOutput` 阻塞/超时、task taxonomy、remote metadata、recoverable marker、restore timer reset、remote review timeout guard、local-agent 取消已完成；`/tasks` production surface 已接入 BackendMessage、task list/detail、shell/remote/agent/team/MCP/dream/workflow detail renderers、stop/delete/refresh actions。仍需 remote/multi-type poller/reconnect runtime parity。 |
 | PlanMode auto-mode parity | 基础完成，classifier parity 未完 | 保守 classifier、计划持久化、approval lifecycle、实现任务关联、团队审批 mailbox、plan file 写入白名单已落地；仍需 full auto-mode LLM classifier parity 和 `allowedPrompts` 语义分类收口。 |
@@ -57,7 +57,7 @@
 | Rust TUI Ctrl+R history | 已接 workspace 持久历史 | Ctrl+R 按当前 workspace 读取跨会话 prompt history，条目带 session/title/cwd 来源和时间；无数据时显示明确空态。 |
 | Rust TUI command surfaces | 已接 production runtime | cfg-test gated surface 已关闭：`/agents`、`/config`、`/diff`、`/hooks`、`/login`、`/mcp`、`/memory`、`/permissions`、`/remote`、`/sandbox`、`/skills`、`/tasks`、`/team` 等无参数入口在生产构建打开对应 `CommandSurface`；剩余风险是 live backend 数据和 release e2e 证据，不是空占位。 |
 | Browser MCP real-server path | fake/e2e 已有，真实 server 手动证据待补 | `e2e_browser_mcp`、`e2e_chrome_native_host`、`e2e_chrome_mcp_bridge` 覆盖 fake/unreachable/native-host 路径；真实第三方 Browser MCP server 截图/console/network 仍是 release 手动证据，不作为默认已验证声明。 |
-| Anthropic-compatible provider smoke | Mock matrix complete, real smoke credential-gated | `scripts/provider_smoke_matrix.py` 覆盖 direct API key、direct bearer、compatible bearer + custom base URL、Bedrock/Vertex model mapping、prompt-cache strip/enabled knobs；`real` 模式只在所需 env 存在时运行，并会 redact secrets/auth headers。 |
+| Anthropic-compatible provider smoke | Mock matrix complete, real smoke partially verified | `scripts/provider_smoke_matrix.py mock` 覆盖 direct API key、direct bearer、compatible bearer + custom base URL、Bedrock/Vertex model mapping、prompt-cache strip/enabled knobs；2026-05-21 `real` 模式通过 direct bearer、compatible custom base URL bearer、prompt-cache default 与 TTL/global gates，并因缺少 `ANTHROPIC_API_KEY`、AWS、Vertex 凭据跳过对应真实 provider。脚本会 redact secrets/auth headers。 |
 
 ## 4. 历史 Deferred 重评队列
 

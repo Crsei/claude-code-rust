@@ -26,6 +26,7 @@ pub struct SettingsJson {
     // -- Core identity --------------------------------------------------
     pub model: Option<String>,
     pub backend: Option<String>,
+    pub api_provider: Option<String>,
     pub theme: Option<String>,
     pub verbose: Option<bool>,
 

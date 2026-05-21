@@ -9,8 +9,52 @@
 //!
 //! Run with: `cargo test --test e2e_settings`
 
+use predicates::prelude::*;
 use serde_json::json;
 use serial_test::serial;
+
+fn remove_provider_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
+    for key in [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_DEFAULT_SOTA_MODEL",
+        "ANTHROPIC_DEFAULT_MOTA_MODEL",
+        "ANTHROPIC_DEFAULT_FOTA_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "AZURE_API_KEY",
+        "OPENAI_API_KEY",
+        "OPENAI_CODEX_AUTH_TOKEN",
+        "OPENAI_CODEX_BASE_URL",
+        "OPENAI_CODEX_MODEL",
+        "OPENROUTER_API_KEY",
+        "GOOGLE_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "GROQ_API_KEY",
+        "ZHIPU_API_KEY",
+        "DASHSCOPE_API_KEY",
+        "MOONSHOT_API_KEY",
+        "BAICHUAN_API_KEY",
+        "MINIMAX_API_KEY",
+        "YI_API_KEY",
+        "SILICONFLOW_API_KEY",
+        "STEPFUN_API_KEY",
+        "SPARK_API_KEY",
+        "CC_BACKEND",
+        "CLAUDE_BACKEND",
+        "CLAUDE_LANGUAGE",
+        "CLAUDE_OUTPUT_STYLE",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ] {
+        cmd.env_remove(key);
+    }
+    cmd
+}
 
 // The merge / source-tracking logic lives in `src/config/settings.rs` and
 // is fully covered by its `#[cfg(test)]` block. This integration test
@@ -107,4 +151,94 @@ fn cli_starts_with_extended_user_settings() {
     let assert = cmd.assert();
     // Just need a clean exit — the new settings file must parse.
     assert.success();
+}
+
+#[test]
+#[serial]
+fn settings_env_seeds_anthropic_provider_before_full_init_detection() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let user_settings = dir.path().join("settings.json");
+    let body = json!({
+        "env": {
+            "ANTHROPIC_API_KEY": "sk-ant-api03-settings-env",
+            "ANTHROPIC_BASE_URL": "https://compatible.example.com",
+            "ANTHROPIC_MODEL": "deepseek-v4-pro"
+        }
+    });
+    std::fs::write(&user_settings, serde_json::to_string_pretty(&body).unwrap())
+        .expect("write user settings");
+
+    let project = tempfile::tempdir().expect("project tmpdir");
+    let managed = dir.path().join("missing-managed.json");
+    let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
+    remove_provider_env(&mut cmd);
+    cmd.env("CC_RUST_HOME", dir.path())
+        .env("CC_RUST_MANAGED_SETTINGS", &managed)
+        .arg("--init-only")
+        .arg("--cwd")
+        .arg(project.path());
+
+    cmd.assert()
+        .success()
+        .stderr(predicates::str::contains("No API provider detected").not());
+}
+
+#[test]
+#[serial]
+fn settings_env_can_select_codex_backend_before_full_init_detection() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let user_settings = dir.path().join("settings.json");
+    let body = json!({
+        "env": {
+            "CC_BACKEND": "codex",
+            "OPENAI_CODEX_AUTH_TOKEN": "codex-settings-token",
+            "OPENAI_CODEX_MODEL": "gpt-5.3-codex-spark"
+        }
+    });
+    std::fs::write(&user_settings, serde_json::to_string_pretty(&body).unwrap())
+        .expect("write user settings");
+
+    let project = tempfile::tempdir().expect("project tmpdir");
+    let managed = dir.path().join("missing-managed.json");
+    let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
+    remove_provider_env(&mut cmd);
+    cmd.env("CC_RUST_HOME", dir.path())
+        .env("CC_RUST_MANAGED_SETTINGS", &managed)
+        .arg("--init-only")
+        .arg("--cwd")
+        .arg(project.path());
+
+    cmd.assert()
+        .success()
+        .stderr(predicates::str::contains("No OpenAI Codex auth detected").not())
+        .stderr(predicates::str::contains("No API provider detected").not());
+}
+
+#[test]
+#[serial]
+fn settings_env_is_applied_before_dump_system_prompt_fast_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let user_settings = dir.path().join("settings.json");
+    let body = json!({
+        "env": {
+            "CLAUDE_LANGUAGE": "Korean"
+        }
+    });
+    std::fs::write(&user_settings, serde_json::to_string_pretty(&body).unwrap())
+        .expect("write user settings");
+
+    let project = tempfile::tempdir().expect("project tmpdir");
+    let managed = dir.path().join("missing-managed.json");
+    let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
+    remove_provider_env(&mut cmd);
+    cmd.env("CC_RUST_HOME", dir.path())
+        .env("CC_RUST_MANAGED_SETTINGS", &managed)
+        .arg("--dump-system-prompt")
+        .arg("--cwd")
+        .arg(project.path());
+
+    let assert = cmd.assert().success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(out.contains("# Language"), "language section missing");
+    assert!(out.contains("Korean"), "language value missing");
 }

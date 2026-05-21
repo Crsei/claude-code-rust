@@ -169,6 +169,20 @@ pub fn try_resolve_codex_auth_token() -> anyhow::Result<Option<String>> {
     try_resolve_codex_cli()
 }
 
+/// Resolve an OpenAI Platform API key from cc-rust's provider-scoped keychain.
+///
+/// `OPENAI_API_KEY` is intentionally not read here; environment variables are
+/// handled by `cc-api` before provider-scoped keychain fallback runs.
+pub fn try_resolve_openai_api_key() -> anyhow::Result<Option<String>> {
+    let Some(key) = api_key::load_openai_api_key()? else {
+        return Ok(None);
+    };
+    if !api_key::validate_openai_api_key(&key) {
+        anyhow::bail!("system keychain contains an invalid OpenAI API key format");
+    }
+    Ok(Some(key.trim().to_string()))
+}
+
 /// Try to resolve Codex token from cc-rust's own `credentials.json`.
 fn try_resolve_codex_from_credentials() -> anyhow::Result<Option<String>> {
     let stored = match token::load_token()? {
@@ -395,6 +409,7 @@ fn try_refresh_sync(
 pub fn oauth_logout() -> anyhow::Result<()> {
     token::remove_token()?;
     let _ = api_key::remove_api_key();
+    let _ = api_key::remove_openai_api_key();
     Ok(())
 }
 

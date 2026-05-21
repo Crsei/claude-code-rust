@@ -437,7 +437,16 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     }
 
     // B.1: Load layered settings (managed/user/project/local + env).
-    let loaded_settings = settings::load_effective(std::path::Path::new(&cwd))?;
+    let mut loaded_settings = settings::load_effective(std::path::Path::new(&cwd))?;
+    let env_report = settings::apply_runtime_env(&loaded_settings.effective.env)?;
+    if env_report.applied > 0 || env_report.skipped > 0 {
+        debug!(
+            applied = env_report.applied,
+            skipped = env_report.skipped,
+            "settings.env runtime environment processed",
+        );
+    }
+    settings::refresh_process_env_overrides(&mut loaded_settings);
     let merged_config = loaded_settings.effective.clone();
     debug!(
         model = ?merged_config.model,
@@ -801,13 +810,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     let detected_client = cc_api::api::client::ApiClient::from_backend_result(Some(&backend))
         .context("invalid API provider configuration")?
         .map(Arc::new);
-    let provider_default_model = detected_client.as_ref().and_then(|client| {
-        matches!(
-            client.config().provider,
-            cc_api::api::client::ApiProvider::Anthropic { .. }
-        )
-        .then(|| client.config().default_model.clone())
-    });
+    let provider_default_model = detected_client
+        .as_ref()
+        .map(|client| client.config().default_model.clone());
 
     if detected_client.is_none() {
         if is_codex_backend {
@@ -845,6 +850,23 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         &hardcoded_default,
         &merged_config.available_models,
     );
+    let fallback_model = merged_config
+        .fallback_model
+        .as_deref()
+        .map(cc_commands::model::resolve_model_alias)
+        .unwrap_or_else(|| {
+            let is_anthropic_compatible = detected_client.as_ref().is_some_and(|client| {
+                matches!(
+                    client.config().provider.endpoint_kind(),
+                    Some(cc_api::api::providers::AnthropicEndpointKind::CompatibleAnthropic)
+                )
+            });
+            if is_anthropic_compatible {
+                model.clone()
+            } else {
+                cc_commands::model::resolve_model_alias(cc_models::DEFAULT_FALLBACK_MODEL_ALIAS)
+            }
+        });
     let persisted_plan_workflow = match cc_commands::plan_workflow::load(std::path::Path::new(&cwd))
     {
         Ok(record) => record,
@@ -878,6 +900,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         settings: SettingsJson {
             model: Some(model.clone()),
             backend: Some(backend.clone()),
+            api_provider: merged_config.api_provider.clone(),
             theme: merged_config.theme.clone(),
             verbose: Some(cli.verbose),
             permission_mode: merged_config.permission_mode.clone(),
@@ -1008,12 +1031,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         custom_system_prompt: cli.system_prompt.clone(),
         append_system_prompt: cli.append_system_prompt.clone(),
         user_specified_model: cli.model.clone(),
-        fallback_model: Some(cc_commands::model::resolve_model_alias(
-            merged_config
-                .fallback_model
-                .as_deref()
-                .unwrap_or(cc_models::DEFAULT_FALLBACK_MODEL_ALIAS),
-        )),
+        fallback_model: Some(fallback_model),
         max_turns: cli.max_turns,
         max_budget_usd: cli.max_budget,
         task_budget: None,

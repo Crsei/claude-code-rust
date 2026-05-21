@@ -7,6 +7,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use cc_config::settings::{self, RawSettings};
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 use cc_auth::oauth::{client, config, pkce};
@@ -53,7 +54,7 @@ pub struct LoginCodeHandler;
 
 #[async_trait]
 impl CommandHandler for LoginCodeHandler {
-    async fn execute(&self, args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
+    async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
         let code = args.trim();
         if code.is_empty() {
             return Ok(CommandResult::Output(
@@ -120,9 +121,14 @@ impl CommandHandler for LoginCodeHandler {
         }
 
         if pending.method == config::OAuthMethod::OpenAiCodex {
-            return Ok(CommandResult::Output(
-                "Logged in successfully (OpenAI Codex OAuth).".to_string(),
-            ));
+            let mut msg = "Logged in successfully (OpenAI Codex OAuth).".to_string();
+            append_provider_selection_message(
+                &mut msg,
+                settings::API_PROVIDER_OPENAI_CODEX,
+                Some("codex"),
+                ctx,
+            );
+            return Ok(CommandResult::Output(msg));
         }
 
         // Console mode: create API key
@@ -135,9 +141,15 @@ impl CommandHandler for LoginCodeHandler {
                             e
                         )));
                     }
-                    return Ok(CommandResult::Output(
-                        "Logged in successfully (Console). API key stored to keychain.".to_string(),
-                    ));
+                    let mut msg =
+                        "Logged in successfully (Console). API key stored to keychain.".to_string();
+                    append_provider_selection_message(
+                        &mut msg,
+                        settings::API_PROVIDER_ANTHROPIC,
+                        Some("native"),
+                        ctx,
+                    );
+                    return Ok(CommandResult::Output(msg));
                 }
                 Err(e) => {
                     return Ok(CommandResult::Output(format!(
@@ -149,9 +161,14 @@ impl CommandHandler for LoginCodeHandler {
             }
         }
 
-        Ok(CommandResult::Output(
-            "Logged in successfully (Claude.ai).".to_string(),
-        ))
+        let mut msg = "Logged in successfully (Claude.ai).".to_string();
+        append_provider_selection_message(
+            &mut msg,
+            settings::API_PROVIDER_ANTHROPIC,
+            Some("native"),
+            ctx,
+        );
+        Ok(CommandResult::Output(msg))
     }
 }
 
@@ -171,6 +188,72 @@ fn extract_authorization_code(input: &str) -> String {
         }
     }
     trimmed.to_string()
+}
+
+fn append_provider_selection_message(
+    msg: &mut String,
+    api_provider: &str,
+    backend: Option<&str>,
+    ctx: &mut CommandContext,
+) {
+    let provider_msg = persist_provider_selection(api_provider, backend, ctx);
+    msg.push_str("\n\n");
+    msg.push_str(&provider_msg);
+}
+
+fn persist_provider_selection(
+    api_provider: &str,
+    backend: Option<&str>,
+    ctx: &mut CommandContext,
+) -> String {
+    let path = settings::user_settings_path();
+    let mut raw = if path.exists() {
+        match std::fs::read_to_string(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|txt| serde_json::from_str::<RawSettings>(&txt).map_err(anyhow::Error::from))
+        {
+            Ok(raw) => raw,
+            Err(error) => {
+                return format!(
+                    "Provider selected for this session, but user settings were not updated: {}",
+                    error
+                );
+            }
+        }
+    } else {
+        RawSettings::default()
+    };
+
+    raw.api_provider = Some(api_provider.to_string());
+    ctx.app_state.settings.api_provider = Some(api_provider.to_string());
+    ctx.app_state
+        .settings
+        .sources
+        .insert("apiProvider".to_string(), settings::SettingsSource::User);
+    if let Some(backend) = backend {
+        raw.backend = Some(backend.to_string());
+        ctx.app_state.main_loop_backend = backend.to_string();
+        ctx.app_state.settings.backend = Some(backend.to_string());
+        ctx.app_state
+            .settings
+            .sources
+            .insert("backend".to_string(), settings::SettingsSource::User);
+    }
+
+    match settings::write_user_settings(&raw) {
+        Ok(path) => format!(
+            "Selected apiProvider={}{} (persisted to {}).",
+            api_provider,
+            backend
+                .map(|value| format!(", backend={value}"))
+                .unwrap_or_default(),
+            path.display()
+        ),
+        Err(error) => format!(
+            "Provider selected for this session, but user settings were not updated: {}",
+            error
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------------

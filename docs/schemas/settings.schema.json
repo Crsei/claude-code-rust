@@ -8,6 +8,7 @@
   "properties": {
     "model": { "type": "string" },
     "backend": { "type": "string", "enum": ["native", "codex"] },
+    "apiProvider": { "type": "string", "enum": ["anthropic", "openai-codex", "openai"] },
     "theme": { "type": "string" },
     "verbose": { "type": "boolean" },
     "permissionMode": {
@@ -130,6 +131,11 @@
     "autoMemoryEnabled": { "type": "boolean" },
     "advisorModel": { "type": "string" },
     "systemPrompt": { "type": "string" },
-    "apiKey": { "type": "string" }
+    "apiKey": { "type": "string" },
+    "env": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Environment variables applied at startup only when the variable is not already set by the shell, .env, or CI."
+    }
   }
 }

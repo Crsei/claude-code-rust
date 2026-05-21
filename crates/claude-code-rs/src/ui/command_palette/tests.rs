@@ -170,10 +170,11 @@ fn command_palette_surfaces_session_help_diagnostics_and_keybindings() {
 
 #[test]
 fn visible_window_tracks_selection_beyond_first_page() {
-    assert_eq!(visible_window_start(12, 0, MAX_ROWS), 0);
-    assert_eq!(visible_window_start(12, MAX_ROWS - 1, MAX_ROWS), 0);
-    assert_eq!(visible_window_start(12, MAX_ROWS, MAX_ROWS), 1);
-    assert_eq!(visible_window_start(12, 11, MAX_ROWS), 6);
+    let total = MAX_ROWS + 12;
+    assert_eq!(visible_window_start(total, 0, MAX_ROWS), 0);
+    assert_eq!(visible_window_start(total, MAX_ROWS - 1, MAX_ROWS), 0);
+    assert_eq!(visible_window_start(total, MAX_ROWS, MAX_ROWS), 1);
+    assert_eq!(visible_window_start(total, total - 1, MAX_ROWS), 12);
 }
 
 #[test]
@@ -193,6 +194,23 @@ fn render_scrolls_command_list_to_selected_item() {
     let rendered = buffer_text(&buf, area);
     assert!(rendered.contains(&format!("/{selected_name}")));
     assert!(!rendered.contains(&format!("/{first_name}  ")));
+}
+
+#[test]
+fn preferred_height_allows_twenty_command_rows() {
+    let mut palette = CommandPalette::new();
+    palette.sync_from_input("/", Path::new("/repo"));
+
+    let area = Rect::new(0, 0, 100, palette.preferred_height());
+    let mut buf = Buffer::empty(area);
+    palette.render(area, &mut buf, &Theme::default());
+
+    let rendered = buffer_text(&buf, area);
+    let command_rows = rendered
+        .lines()
+        .filter(|line| line.starts_with("│/"))
+        .count();
+    assert_eq!(command_rows, palette.filtered.len().min(MAX_ROWS));
 }
 
 #[test]

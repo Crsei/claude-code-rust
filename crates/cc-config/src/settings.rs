@@ -96,6 +96,25 @@ impl SettingsSource {
 /// of `/config show` is deterministic.
 pub type SourceMap = BTreeMap<String, SettingsSource>;
 
+pub const API_PROVIDER_ANTHROPIC: &str = "anthropic";
+pub const API_PROVIDER_OPENAI_CODEX: &str = "openai-codex";
+pub const API_PROVIDER_OPENAI: &str = "openai";
+pub const VALID_API_PROVIDERS: &[&str] = &[
+    API_PROVIDER_ANTHROPIC,
+    API_PROVIDER_OPENAI_CODEX,
+    API_PROVIDER_OPENAI,
+];
+
+pub fn normalize_api_provider(value: &str) -> Option<&'static str> {
+    let normalized = value.trim().to_ascii_lowercase().replace('_', "-");
+    match normalized.as_str() {
+        "anthropic" | "anthropic-method" | "anthropic_method" => Some(API_PROVIDER_ANTHROPIC),
+        "openai-codex" | "openai_codex" | "codex" => Some(API_PROVIDER_OPENAI_CODEX),
+        "openai" | "openai-api" | "openai_api" => Some(API_PROVIDER_OPENAI),
+        _ => None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Typed sub-structures for richer settings
 // ---------------------------------------------------------------------------
@@ -425,6 +444,7 @@ pub struct RawSettings {
     // -- Core identity --------------------------------------------------
     pub model: Option<String>,
     pub backend: Option<String>,
+    pub api_provider: Option<String>,
     pub theme: Option<String>,
     pub verbose: Option<bool>,
 
@@ -487,6 +507,13 @@ pub struct RawSettings {
     /// source-map output.
     pub api_key: Option<String>,
 
+    // -- Runtime environment -------------------------------------------
+    /// Environment variables to seed into the process during startup.
+    ///
+    /// Values are strings only. The startup bridge applies these without
+    /// overwriting variables already provided by the shell, `.env`, or CI.
+    pub env: Option<HashMap<String, String>>,
+
     // -- Arbitrary passthrough ------------------------------------------
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
@@ -507,6 +534,7 @@ impl RawSettings {
 
         merge_opt!(model, "model");
         merge_opt!(backend, "backend");
+        merge_opt!(api_provider, "apiProvider");
         merge_opt!(theme, "theme");
         merge_opt!(verbose, "verbose");
         merge_opt!(permission_mode, "permissionMode");
@@ -567,6 +595,15 @@ impl RawSettings {
         merge_opt!(advisor_model, "advisorModel");
         merge_opt!(system_prompt, "systemPrompt");
         merge_opt!(api_key, "apiKey");
+
+        if let Some(env) = other.env {
+            let mut merged = self.env.take().unwrap_or_default();
+            for (k, v) in env {
+                merged.insert(k, v);
+            }
+            self.env = Some(merged);
+            sources.insert("env".to_string(), source);
+        }
 
         for (k, v) in other.extra {
             self.extra.insert(k.clone(), v);
@@ -743,6 +780,7 @@ pub struct EffectiveSettings {
     // -- Legacy (consumed by main.rs) ----------------------------------
     pub model: Option<String>,
     pub backend: Option<String>,
+    pub api_provider: Option<String>,
     pub theme: Option<String>,
     pub verbose: bool,
     pub permission_mode: Option<String>,
@@ -751,6 +789,7 @@ pub struct EffectiveSettings {
     pub hooks: HashMap<String, Value>,
     pub claude_in_chrome_default_enabled: Option<bool>,
     pub api_key: Option<String>,
+    pub env: HashMap<String, String>,
     pub extra: HashMap<String, Value>,
 
     // -- New typed fields ----------------------------------------------
@@ -793,6 +832,7 @@ impl EffectiveSettings {
         Self {
             model: raw.model,
             backend: raw.backend,
+            api_provider: raw.api_provider,
             theme: raw.theme,
             verbose: raw.verbose.unwrap_or(false),
             permission_mode: perms.default_mode.clone().or(raw.permission_mode),
@@ -801,6 +841,7 @@ impl EffectiveSettings {
             hooks: raw.hooks.unwrap_or_default(),
             claude_in_chrome_default_enabled: raw.claude_in_chrome_default_enabled,
             api_key: raw.api_key,
+            env: raw.env.unwrap_or_default(),
             extra: raw.extra,
             permissions: perms,
             sandbox: raw.sandbox.unwrap_or_default(),
@@ -1040,6 +1081,10 @@ fn apply_env_overrides(merged: &mut EffectiveSettings, sources: &mut SourceMap) 
         merged.backend = Some(backend);
         set_src("backend", sources);
     }
+    if let Ok(provider) = std::env::var("CC_API_PROVIDER") {
+        merged.api_provider = Some(provider);
+        set_src("apiProvider", sources);
+    }
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
         merged.api_key = Some(key);
         set_src("apiKey", sources);
@@ -1065,6 +1110,66 @@ fn apply_env_overrides(merged: &mut EffectiveSettings, sources: &mut SourceMap) 
         merged.theme = Some(theme);
         set_src("theme", sources);
     }
+}
+
+/// Re-read process environment overrides into an already-loaded settings
+/// stack. Used after startup seeds [`RawSettings::env`] into the process.
+pub fn refresh_process_env_overrides(loaded: &mut LoadedSettings) {
+    apply_env_overrides(&mut loaded.effective, &mut loaded.sources);
+    if let Some(raw) = loaded.managed.as_ref() {
+        apply_managed_non_overridable(&mut loaded.effective, &mut loaded.sources, raw);
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RuntimeEnvApplyReport {
+    pub applied: usize,
+    pub skipped: usize,
+}
+
+/// Apply merged `settings.env` values to the process environment.
+///
+/// This only fills missing variables. Existing shell, `.env`, and CI
+/// variables keep priority and are never overwritten.
+pub fn apply_runtime_env(env: &HashMap<String, String>) -> Result<RuntimeEnvApplyReport> {
+    let mut report = RuntimeEnvApplyReport::default();
+    let mut keys = env.keys().collect::<Vec<_>>();
+    keys.sort();
+
+    for key in keys {
+        validate_runtime_env_pair(key, env.get(key).map(String::as_str).unwrap_or_default())?;
+        if std::env::var_os(key).is_some() {
+            report.skipped += 1;
+            continue;
+        }
+        if let Some(value) = env.get(key) {
+            std::env::set_var(key, value);
+            report.applied += 1;
+        }
+    }
+
+    if report.applied > 0 || report.skipped > 0 {
+        tracing::debug!(
+            applied = report.applied,
+            skipped = report.skipped,
+            "settings.env applied to runtime environment"
+        );
+    }
+
+    Ok(report)
+}
+
+fn validate_runtime_env_pair(key: &str, value: &str) -> Result<()> {
+    if key.is_empty() || key.contains('=') || key.contains('\0') {
+        anyhow::bail!("settings.env contains invalid environment variable name");
+    }
+    if value.contains('\0') {
+        anyhow::bail!(
+            "settings.env contains invalid value for environment variable `{}`",
+            key
+        );
+    }
+    Ok(())
 }
 
 fn apply_managed_non_overridable(
@@ -1333,6 +1438,7 @@ pub fn settings_schema() -> Value {
         "properties": {
             "model": { "type": "string" },
             "backend": { "type": "string", "enum": ["native", "codex"] },
+            "apiProvider": { "type": "string", "enum": ["anthropic", "openai-codex", "openai"] },
             "theme": { "type": "string" },
             "verbose": { "type": "boolean" },
             "permissionMode": {
@@ -1460,7 +1566,11 @@ pub fn settings_schema() -> Value {
             "autoMemoryEnabled": { "type": "boolean" },
             "advisorModel": { "type": "string" },
             "systemPrompt": { "type": "string" },
-            "apiKey": { "type": "string" }
+            "apiKey": { "type": "string" },
+            "env": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+            }
         }
     })
 }
@@ -2009,6 +2119,114 @@ mod tests {
     }
 
     #[test]
+    fn env_key_parses_as_typed_map_not_extra() {
+        let raw: RawSettings = serde_json::from_str(
+            r#"{
+                "env": {
+                    "ANTHROPIC_MODEL": "deepseek-v4-pro",
+                    "CC_BACKEND": "codex"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let env = raw.env.expect("env parsed");
+        assert_eq!(
+            env.get("ANTHROPIC_MODEL").map(String::as_str),
+            Some("deepseek-v4-pro")
+        );
+        assert_eq!(env.get("CC_BACKEND").map(String::as_str), Some("codex"));
+        assert!(!raw.extra.contains_key("env"));
+    }
+
+    #[test]
+    fn env_values_must_be_strings() {
+        let err = serde_json::from_str::<RawSettings>(
+            r#"{"env": {"ANTHROPIC_MODEL": ["not", "a", "string"]}}"#,
+        )
+        .expect_err("non-string env values should fail");
+        assert!(err.to_string().contains("invalid type"));
+    }
+
+    #[test]
+    #[serial]
+    fn settings_env_layers_merge_in_settings_priority_order() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let home = temp.path().join("home");
+        let project = temp.path().join("repo");
+        let managed_path = temp.path().join("managed.json");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(project.join(".cc-rust")).unwrap();
+
+        std::fs::write(
+            &managed_path,
+            r#"{"env":{"FROM_MANAGED":"managed","SHARED":"managed"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            home.join("settings.json"),
+            r#"{"env":{"FROM_USER":"user","SHARED":"user"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            project.join(".cc-rust/settings.json"),
+            r#"{"env":{"FROM_PROJECT":"project","SHARED":"project"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            project.join(".cc-rust/settings.local.json"),
+            r#"{"env":{"FROM_LOCAL":"local","SHARED":"local"}}"#,
+        )
+        .unwrap();
+
+        let _managed = EnvGuard::set_path("CC_RUST_MANAGED_SETTINGS", &managed_path);
+        let _home = EnvGuard::set_path("CC_RUST_HOME", &home);
+
+        let loaded = load_effective(&project).unwrap();
+        assert_eq!(
+            loaded.effective.env.get("FROM_MANAGED").map(String::as_str),
+            Some("managed")
+        );
+        assert_eq!(
+            loaded.effective.env.get("FROM_USER").map(String::as_str),
+            Some("user")
+        );
+        assert_eq!(
+            loaded.effective.env.get("FROM_PROJECT").map(String::as_str),
+            Some("project")
+        );
+        assert_eq!(
+            loaded.effective.env.get("FROM_LOCAL").map(String::as_str),
+            Some("local")
+        );
+        assert_eq!(
+            loaded.effective.env.get("SHARED").map(String::as_str),
+            Some("local")
+        );
+        assert_eq!(loaded.source_of("env"), SettingsSource::Local);
+    }
+
+    #[test]
+    #[serial]
+    fn apply_runtime_env_fills_missing_without_overwriting_process_env() {
+        const APPLIED: &str = "CC_RUST_TEST_SETTINGS_ENV_APPLIED";
+        const SKIPPED: &str = "CC_RUST_TEST_SETTINGS_ENV_SKIPPED";
+        let _applied = EnvGuard::unset(APPLIED);
+        let _skipped = EnvGuard::set_value(SKIPPED, "from-process");
+        let env = HashMap::from([
+            (APPLIED.to_string(), "from-settings".to_string()),
+            (SKIPPED.to_string(), "from-settings".to_string()),
+        ]);
+
+        let report = apply_runtime_env(&env).unwrap();
+
+        assert_eq!(report.applied, 1);
+        assert_eq!(report.skipped, 1);
+        assert_eq!(std::env::var(APPLIED).as_deref(), Ok("from-settings"));
+        assert_eq!(std::env::var(SKIPPED).as_deref(), Ok("from-process"));
+    }
+
+    #[test]
     fn schema_has_known_keys() {
         let s = settings_schema();
         let props = s
@@ -2028,6 +2246,7 @@ mod tests {
             "fallbackModel",
             "fastModel",
             "fastMode",
+            "env",
         ] {
             assert!(props.contains_key(key), "missing schema key: {}", key);
         }

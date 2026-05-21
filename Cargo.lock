@@ -542,6 +542,7 @@ dependencies = [
  "futures",
  "hex",
  "hmac",
+ "keyring",
  "reqwest",
  "ring",
  "serde",

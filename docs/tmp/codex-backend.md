@@ -35,6 +35,8 @@ CLAUDE_MODEL=gpt-5.4
 - `backend=codex` 会被规范化为 OpenAI Codex provider（`openai-codex`）
 - QueryEngine、工具执行、权限与 UI 事件流仍然走 cc-rust 自己的主流程
 - 只有模型请求与鉴权来源切换到 Codex backend
+- ChatGPT OAuth 模式使用 Codex Responses endpoint：
+  `https://chatgpt.com/backend-api/codex/responses`
 - 可选环境变量：
   - `OPENAI_CODEX_BASE_URL`（默认 `https://chatgpt.com/backend-api`）
   - `OPENAI_CODEX_MODEL`（默认 `gpt-5.4`）

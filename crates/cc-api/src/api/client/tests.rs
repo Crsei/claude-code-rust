@@ -1,9 +1,11 @@
 use super::*;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static TEST_KEYCHAIN: OnceLock<Mutex<HashMap<(String, String), Vec<u8>>>> = OnceLock::new();
 const ANTHROPIC_MODEL_ENV_KEYS: &[&str] = &[
     "ANTHROPIC_MODEL",
     ANTHROPIC_DEFAULT_SOTA_MODEL_ENV,
@@ -95,6 +97,80 @@ fn restore_provider_keys(saved: Vec<(&'static str, String)>) {
     for (key, value) in saved {
         std::env::set_var(key, value);
     }
+}
+
+#[derive(Debug)]
+struct PersistentTestCredential {
+    service: String,
+    user: String,
+}
+
+impl keyring::credential::CredentialApi for PersistentTestCredential {
+    fn set_secret(&self, secret: &[u8]) -> keyring::Result<()> {
+        TEST_KEYCHAIN
+            .get_or_init(Default::default)
+            .lock()
+            .expect("test keychain poisoned")
+            .insert((self.service.clone(), self.user.clone()), secret.to_vec());
+        Ok(())
+    }
+
+    fn get_secret(&self) -> keyring::Result<Vec<u8>> {
+        TEST_KEYCHAIN
+            .get_or_init(Default::default)
+            .lock()
+            .expect("test keychain poisoned")
+            .get(&(self.service.clone(), self.user.clone()))
+            .cloned()
+            .ok_or(keyring::Error::NoEntry)
+    }
+
+    fn delete_credential(&self) -> keyring::Result<()> {
+        TEST_KEYCHAIN
+            .get_or_init(Default::default)
+            .lock()
+            .expect("test keychain poisoned")
+            .remove(&(self.service.clone(), self.user.clone()))
+            .map(|_| ())
+            .ok_or(keyring::Error::NoEntry)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+struct PersistentTestCredentialBuilder;
+
+impl keyring::credential::CredentialBuilderApi for PersistentTestCredentialBuilder {
+    fn build(
+        &self,
+        _target: Option<&str>,
+        service: &str,
+        user: &str,
+    ) -> keyring::Result<Box<keyring::Credential>> {
+        Ok(Box::new(PersistentTestCredential {
+            service: service.to_string(),
+            user: user.to_string(),
+        }))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn persistence(&self) -> keyring::credential::CredentialPersistence {
+        keyring::credential::CredentialPersistence::ProcessOnly
+    }
+}
+
+fn use_persistent_test_keyring() {
+    TEST_KEYCHAIN
+        .get_or_init(Default::default)
+        .lock()
+        .expect("test keychain poisoned")
+        .clear();
+    keyring::set_default_credential_builder(Box::new(PersistentTestCredentialBuilder));
 }
 
 // -----------------------------------------------------------------------
@@ -298,7 +374,7 @@ fn test_build_url_openai_codex() {
     };
     let client = ApiClient::new(config);
     let url = client.build_url();
-    assert_eq!(url, "https://chatgpt.com/backend-api/conversation");
+    assert_eq!(url, "https://chatgpt.com/backend-api/codex/responses");
 }
 
 // -----------------------------------------------------------------------
@@ -772,6 +848,152 @@ fn anthropic_compatible_explicit_model_id_wins_over_alias_defaults() {
     restore_env(saved);
 }
 
+#[test]
+fn settings_runtime_env_is_visible_to_anthropic_provider_detection() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let saved_keys = save_and_clear_provider_keys();
+    clear_env(&[
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let env = std::collections::HashMap::from([
+        (
+            "ANTHROPIC_API_KEY".to_string(),
+            "sk-ant-api03-settings-runtime".to_string(),
+        ),
+        (
+            "ANTHROPIC_BASE_URL".to_string(),
+            "https://compatible.example.com".to_string(),
+        ),
+        ("ANTHROPIC_MODEL".to_string(), "deepseek-v4-pro".to_string()),
+    ]);
+
+    let report = cc_config::settings::apply_runtime_env(&env).expect("settings env applies");
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("settings env should build a client");
+
+    assert_eq!(report.applied, 3);
+    assert_eq!(client.config().default_model, "deepseek-v4-pro");
+    assert_eq!(
+        client.config().provider.endpoint_kind(),
+        Some(AnthropicEndpointKind::CompatibleAnthropic)
+    );
+
+    restore_provider_keys(saved_keys);
+    restore_env(saved);
+}
+
+#[test]
+fn settings_runtime_env_supports_anthropic_legacy_model_alias_fallback() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        ANTHROPIC_DEFAULT_MOTA_MODEL_ENV,
+        ANTHROPIC_DEFAULT_SONNET_MODEL_ENV,
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let saved_keys = save_and_clear_provider_keys();
+    clear_env(&[
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        ANTHROPIC_DEFAULT_MOTA_MODEL_ENV,
+        ANTHROPIC_DEFAULT_SONNET_MODEL_ENV,
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let env = std::collections::HashMap::from([
+        (
+            "ANTHROPIC_API_KEY".to_string(),
+            "sk-ant-api03-settings-runtime-alias".to_string(),
+        ),
+        (
+            "ANTHROPIC_BASE_URL".to_string(),
+            "https://compatible.example.com".to_string(),
+        ),
+        ("ANTHROPIC_MODEL".to_string(), "MOTA".to_string()),
+        (
+            ANTHROPIC_DEFAULT_SONNET_MODEL_ENV.to_string(),
+            "deepseek-v4-pro".to_string(),
+        ),
+    ]);
+
+    cc_config::settings::apply_runtime_env(&env).expect("settings env applies");
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("settings env should build a client");
+
+    assert_eq!(client.config().default_model, "deepseek-v4-pro");
+
+    restore_provider_keys(saved_keys);
+    restore_env(saved);
+}
+
+#[test]
+fn settings_runtime_env_is_visible_to_codex_backend_auth() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        OPENAI_CODEX_TOKEN_ENV,
+        OPENAI_CODEX_BASE_URL_ENV,
+        OPENAI_CODEX_MODEL_ENV,
+    ]);
+    clear_env(&[
+        OPENAI_CODEX_TOKEN_ENV,
+        OPENAI_CODEX_BASE_URL_ENV,
+        OPENAI_CODEX_MODEL_ENV,
+    ]);
+    let env = std::collections::HashMap::from([
+        (
+            OPENAI_CODEX_TOKEN_ENV.to_string(),
+            "codex-settings-token".to_string(),
+        ),
+        (
+            OPENAI_CODEX_BASE_URL_ENV.to_string(),
+            "https://example.com/codex".to_string(),
+        ),
+        (
+            OPENAI_CODEX_MODEL_ENV.to_string(),
+            "gpt-5.3-codex-spark".to_string(),
+        ),
+    ]);
+
+    cc_config::settings::apply_runtime_env(&env).expect("settings env applies");
+    let client = ApiClient::from_backend(Some("codex")).expect("codex settings env auth");
+
+    match &client.config().provider {
+        ApiProvider::OpenAiCompat {
+            name,
+            api_key,
+            base_url,
+            default_model,
+        } => {
+            assert_eq!(name, OPENAI_CODEX_PROVIDER_NAME);
+            assert_eq!(api_key, "codex-settings-token");
+            assert_eq!(base_url, "https://example.com/codex");
+            assert_eq!(default_model, "gpt-5.3-codex-spark");
+        }
+        other => panic!("expected OpenAiCompat provider, got {:?}", other),
+    }
+
+    restore_env(saved);
+}
+
 // -----------------------------------------------------------------------
 // from_provider_info
 // -----------------------------------------------------------------------
@@ -1144,6 +1366,149 @@ fn test_from_backend_codex_prefers_codex_auth() {
 
     std::env::remove_var(OPENAI_CODEX_TOKEN_ENV);
     std::env::remove_var("ANTHROPIC_API_KEY");
+}
+
+#[test]
+fn test_from_auth_uses_openai_keychain_when_api_provider_is_openai() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    use_persistent_test_keyring();
+    let temp = tempfile::tempdir().expect("tempdir");
+    let saved = save_env(&[
+        "CC_RUST_HOME",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        OPENAI_CODEX_TOKEN_ENV,
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    clear_env(&[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        OPENAI_CODEX_TOKEN_ENV,
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    std::env::set_var("CC_RUST_HOME", temp.path());
+    cc_auth::api_key::remove_api_key().unwrap();
+    cc_auth::api_key::remove_openai_api_key().unwrap();
+    cc_auth::api_key::store_openai_api_key("sk-proj-keychain-openai-123456").unwrap();
+    cc_config::settings::write_user_settings(&cc_config::settings::RawSettings {
+        api_provider: Some(cc_config::settings::API_PROVIDER_OPENAI.to_string()),
+        backend: Some("native".to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("openai keychain client");
+    match &client.config().provider {
+        ApiProvider::OpenAiCompat { name, api_key, .. } => {
+            assert_eq!(name, OPENAI_PROVIDER_NAME);
+            assert_eq!(api_key, "sk-proj-keychain-openai-123456");
+        }
+        other => panic!("expected OpenAI-compatible provider, got {:?}", other),
+    }
+
+    restore_env(saved);
+}
+
+#[test]
+fn test_from_auth_anthropic_provider_does_not_read_openai_keychain() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    use_persistent_test_keyring();
+    let temp = tempfile::tempdir().expect("tempdir");
+    let saved = save_env(&[
+        "CC_RUST_HOME",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        OPENAI_CODEX_TOKEN_ENV,
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    clear_env(&[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        OPENAI_CODEX_TOKEN_ENV,
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    std::env::set_var("CC_RUST_HOME", temp.path());
+    cc_auth::api_key::remove_api_key().unwrap();
+    cc_auth::api_key::remove_openai_api_key().unwrap();
+    cc_auth::api_key::store_openai_api_key("sk-proj-keychain-openai-abcdef").unwrap();
+    cc_config::settings::write_user_settings(&cc_config::settings::RawSettings {
+        api_provider: Some(cc_config::settings::API_PROVIDER_ANTHROPIC.to_string()),
+        backend: Some("native".to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+
+    let client = ApiClient::from_auth_result().expect("auth resolution should not error");
+    assert!(
+        client.is_none(),
+        "anthropic provider selection must not consume OpenAI keychain"
+    );
+
+    restore_env(saved);
+}
+
+#[test]
+fn test_from_auth_env_key_takes_priority_over_api_provider_keychain() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    use_persistent_test_keyring();
+    let temp = tempfile::tempdir().expect("tempdir");
+    let saved = save_env(&[
+        "CC_RUST_HOME",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        OPENAI_CODEX_TOKEN_ENV,
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    clear_env(&[
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        OPENAI_CODEX_TOKEN_ENV,
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    std::env::set_var("CC_RUST_HOME", temp.path());
+    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-env-priority-key");
+    cc_auth::api_key::remove_openai_api_key().unwrap();
+    cc_auth::api_key::store_openai_api_key("sk-proj-keychain-openai-priority").unwrap();
+    cc_config::settings::write_user_settings(&cc_config::settings::RawSettings {
+        api_provider: Some(cc_config::settings::API_PROVIDER_OPENAI.to_string()),
+        backend: Some("native".to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("env client");
+    match &client.config().provider {
+        ApiProvider::Anthropic { auth, .. } => {
+            assert_eq!(
+                auth,
+                &AnthropicAuth::ApiKey("sk-ant-api03-env-priority-key".to_string())
+            );
+        }
+        other => panic!("expected Anthropic provider, got {:?}", other),
+    }
+
+    restore_env(saved);
 }
 
 // -----------------------------------------------------------------------

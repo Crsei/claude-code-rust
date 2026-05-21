@@ -1,6 +1,6 @@
 # cc-rust 工作状态总览
 
-> 更新日期: 2026-05-18 | 分支历史名: `rust-lite` | 当前阶段: 全量构建 / Full Build
+> 更新日期: 2026-05-21 | 分支历史名: `rust-lite` | 当前阶段: 全量构建 / Full Build
 
 本文件只保留当前阶段仍需要判断和执行的状态。已经确认实现、已关闭或只具历史价值的阶段记录统一看：
 
@@ -17,7 +17,7 @@ cc-rust 已不再按历史 "Lite" 边界维护。触及上游能力时，默认�
 当前已确认完成并归档的主线包括：
 
 - API 基线：Anthropic、OpenAI compatible、Google Gemini、Azure、Bedrock、Vertex 均有运行时支持；真实 provider/e2e 覆盖仍是后续质量门。
-- Anthropic-compatible coding API：direct API key、direct bearer、custom base URL bearer、Bedrock/Vertex model mapping、SOTA/MOTA/FOTA defaults、prompt-cache TTL/global gates 已有 mock smoke matrix；真实 smoke 按凭据 env 门控运行。
+- Anthropic-compatible coding API：direct API key、direct bearer、custom base URL bearer、Bedrock/Vertex model mapping、SOTA/MOTA/FOTA defaults、prompt-cache TTL/global gates 已有 mock smoke matrix；2026-05-21 真实 smoke 已通过 direct bearer、compatible custom base URL bearer、prompt-cache default 与 TTL/global gates，direct API key、Bedrock、Vertex 因缺少对应凭据跳过。
 - 认证：API key、系统 Keychain、OAuth PKCE、token 持久化与刷新已落地。
 - 工具基线：Bash、PowerShell、Read、Write、Edit、Grep、Glob、Agent、Skill、LSP、Tasks、Web、Brief、Sleep 等主路径已落地。
 - Agent Teams：in-process backend、`/team`、`TeamSpawn`、`SendMessage`、Team Dashboard 已收口；tmux/iTerm2 pane backend 是 intentional crop。
@@ -30,7 +30,7 @@ cc-rust 已不再按历史 "Lite" 边界维护。触及上游能力时，默认�
 
 | 范围 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| API providers | 基线完成，真实凭据质量门未完全收束 | provider validation DTO、Azure/Foundry 命名诊断、Anthropic-compatible coding 契约和 mock smoke matrix 已补；下一步在具备凭据时运行 `scripts/provider_smoke_matrix.py real` 并收集 Bedrock/Vertex/Azure 等真实 provider 证据。 |
+| API providers | 基线完成，真实凭据质量门部分收束 | provider validation DTO、Azure/Foundry 命名诊断、Anthropic-compatible coding 契约和 mock smoke matrix 已补；2026-05-21 `scripts/provider_smoke_matrix.py real` 已通过可用凭据覆盖的 bearer/custom-base/prompt-cache 场景，下一步补 direct API key、Bedrock、Vertex/Azure 等缺凭据真实证据。 |
 | Team Memory 客户端同步 | 代码路径已接通，验证与文档收口未完 | 补同步、断线恢复、冲突处理 e2e；通过后归档旧 Team Memory plan/spec。 |
 | TaskTools | 多数基础已完成，remote/multi-type poller parity 仍开放 | 对齐远程/多类型后台任务 poller/reconnect runtime。 |
 | PlanMode | 保守 classifier、持久化、审批和 plan file 白名单已完成 | 补 full auto-mode LLM classifier parity，并覆盖 plan 创建/恢复/审批/e2e。 |

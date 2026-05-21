@@ -13,10 +13,11 @@ mod tests;
 
 use edit_targets::{has_edit_target_picker, EditTarget};
 use filter::{command_from_argument_input, filtered_commands};
-use render::{argument_edit_row_count, palette_detail_rows};
+use render::argument_edit_row_count;
 
-const MAX_ROWS: usize = 6;
-const DETAIL_ROWS: u16 = 4;
+const MAX_ROWS: usize = 20;
+const RESERVED_NON_COMMAND_ROWS: usize = 7;
+const BORDER_ROWS: u16 = 2;
 const ARG_HELP_BASE_HEIGHT: u16 = 5;
 const MAX_EDIT_ROWS: usize = 2;
 const MAX_EDIT_TARGET_ROWS: usize = 4;
@@ -260,23 +261,13 @@ impl CommandPalette {
         if !self.active || self.filtered.is_empty() {
             return 0;
         }
-        let list_rows = self.filtered.len().min(MAX_ROWS);
-        let detail_rows = self
-            .filtered
-            .get(self.selected)
-            .map(|item| palette_detail_rows(item, usize::MAX))
-            .unwrap_or(DETAIL_ROWS);
-        let list_rows = if detail_rows > DETAIL_ROWS {
-            list_rows.saturating_sub((detail_rows - DETAIL_ROWS) as usize)
-        } else {
-            list_rows
-        } as u16;
+        let list_rows = self.filtered.len().min(MAX_ROWS) as u16;
         let picker_rows = self
             .edit_target_picker
             .as_ref()
-            .map(|picker| picker.render_lines(MAX_EDIT_TARGET_ROWS).len() as u16)
+            .map(|picker| (picker.items.len().min(MAX_EDIT_TARGET_ROWS) + 3) as u16)
             .unwrap_or(0);
-        (list_rows + DETAIL_ROWS + 2 + picker_rows).min(16)
+        list_rows + RESERVED_NON_COMMAND_ROWS as u16 + BORDER_ROWS + picker_rows
     }
 }
 

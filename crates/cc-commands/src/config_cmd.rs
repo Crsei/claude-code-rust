@@ -105,6 +105,7 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
         return Ok(CommandResult::Output(format!(
             "Usage: /config set <key> <value> [--user|--project|--local]\n\n\
              Available keys: model, backend, theme, verbose, permissionMode,\n  \
+               apiProvider,\n  \
                outputStyle, language, voiceEnabled, editorMode, viewMode,\n  \
                terminalProgressBarEnabled, effortLevel, fastMode,\n  \
                defaultModel, fallbackModel, fastModel, fastModePerSessionOptIn,\n  \
@@ -164,6 +165,12 @@ fn apply_set_in_memory(key: &str, value: &str, app_state: &mut AppState) -> Resu
             app_state.main_loop_backend = normalized.clone();
             s.backend = Some(normalized.clone());
             Ok(format!("Backend set to: {}", normalized))
+        }
+        "apiProvider" | "api_provider" => {
+            let provider = cc_config::settings::normalize_api_provider(value)
+                .ok_or_else(|| anyhow::anyhow!("Unknown apiProvider: {}", value))?;
+            s.api_provider = Some(provider.to_string());
+            Ok(format!("API provider set to: {}", provider))
         }
         "theme" => {
             s.theme = Some(value.to_string());
@@ -309,6 +316,11 @@ fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) -> Result<()>
         "model" => raw.model = Some(value.into()),
         "backend" => {
             raw.backend = Some(normalize_backend(Some(value)).to_string());
+        }
+        "apiProvider" | "api_provider" => {
+            let provider = cc_config::settings::normalize_api_provider(value)
+                .ok_or_else(|| anyhow::anyhow!("Unknown apiProvider: {}", value))?;
+            raw.api_provider = Some(provider.to_string());
         }
         "theme" => raw.theme = Some(value.into()),
         "verbose" => raw.verbose = Some(parse_config_bool(key, value)?),

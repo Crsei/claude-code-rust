@@ -11,6 +11,7 @@ use crate::settings::LoadedSettings;
 use crate::validation_tips::{self, ValidationTip};
 
 const VALID_BACKENDS: &[&str] = &["native", "codex"];
+const VALID_API_PROVIDERS: &[&str] = &["anthropic", "openai-codex", "openai"];
 
 // ---------------------------------------------------------------------------
 // Engine-layer constants duplicated here
@@ -210,6 +211,21 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
                     "Unknown backend '{}'. Known backends: {}.",
                     backend,
                     VALID_BACKENDS.join(", ")
+                ),
+                severity: WarningSeverity::Error,
+            });
+        }
+    }
+
+    if let Some(ref provider) = settings.api_provider {
+        let normalized = provider.trim().to_ascii_lowercase().replace('_', "-");
+        if !normalized.is_empty() && !VALID_API_PROVIDERS.contains(&normalized.as_str()) {
+            warnings.push(ValidationWarning {
+                field: "apiProvider".to_string(),
+                message: format!(
+                    "Unknown apiProvider '{}'. Known providers: {}.",
+                    provider,
+                    VALID_API_PROVIDERS.join(", ")
                 ),
                 severity: WarningSeverity::Error,
             });

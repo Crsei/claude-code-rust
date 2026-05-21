@@ -12,7 +12,10 @@ use crate::ui::theme::Theme;
 
 use super::edit_targets::{has_edit_target_picker, EditTarget};
 use super::filter::{command_from_argument_input, CommandGroup};
-use super::{CommandItem, CommandPalette, MAX_EDIT_ROWS, MAX_EDIT_TARGET_ROWS, MAX_ROWS};
+use super::{
+    CommandItem, CommandPalette, MAX_EDIT_ROWS, MAX_EDIT_TARGET_ROWS, MAX_ROWS,
+    RESERVED_NON_COMMAND_ROWS,
+};
 
 impl CommandPalette {
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
@@ -38,11 +41,12 @@ impl CommandPalette {
         }
 
         let selected_item = self.filtered.get(self.selected);
-        let reserved_rows = 7 + self
-            .edit_target_picker
-            .as_ref()
-            .map(|picker| picker.items.len().min(MAX_EDIT_TARGET_ROWS) + 3)
-            .unwrap_or(0);
+        let reserved_rows = RESERVED_NON_COMMAND_ROWS
+            + self
+                .edit_target_picker
+                .as_ref()
+                .map(|picker| picker.items.len().min(MAX_EDIT_TARGET_ROWS) + 3)
+                .unwrap_or(0);
         let visible_rows = (inner.height as usize)
             .saturating_sub(reserved_rows)
             .clamp(1, MAX_ROWS);
@@ -276,17 +280,6 @@ pub(super) fn argument_edit_row_count(item: &CommandItem) -> usize {
     } else {
         item.edit_targets.len().min(MAX_EDIT_ROWS)
     }
-}
-
-pub(super) fn palette_detail_rows(item: &CommandItem, width: usize) -> u16 {
-    let edit_rows = if item.edit_targets.is_empty() {
-        1
-    } else {
-        edit_target_lines(&item.edit_targets, width, MAX_EDIT_ROWS)
-            .len()
-            .max(1)
-    };
-    3 + edit_rows as u16
 }
 
 fn truncate(s: &str, max_width: usize) -> String {

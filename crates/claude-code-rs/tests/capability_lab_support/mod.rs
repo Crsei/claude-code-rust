@@ -308,6 +308,68 @@ Review the changed issue tracker code and report user-visible risks.
         plugin_dir
     }
 
+    pub fn write_skill_only_plugin_fixture(&self) -> PathBuf {
+        let plugin_dir = self
+            .project_dir
+            .join("fixtures")
+            .join("plugins")
+            .join("capability-skill-plugin");
+        fs::create_dir_all(
+            plugin_dir
+                .join("skills")
+                .join("plugin-review")
+                .join("references"),
+        )
+        .expect("create skill-only plugin skill");
+        let plugin_manifest = json!({
+            "name": "capability-skill-plugin",
+            "display_name": "Capability Skill Plugin",
+            "version": "1.0.0",
+            "description": "Local plugin fixture that contributes a review skill without starting extra MCP servers.",
+            "skills": [
+                {
+                    "name": "plugin-review",
+                    "path": "skills/plugin-review/SKILL.md",
+                    "description": "Review capability lab changes."
+                }
+            ],
+            "commands": [
+                {
+                    "name": "capability-review",
+                    "description": "Review capability lab changes."
+                }
+            ]
+        });
+        write_file(
+            &plugin_dir.join("plugin.json"),
+            &serde_json::to_string_pretty(&plugin_manifest).expect("serialize plugin manifest"),
+        );
+        write_file(
+            &plugin_dir
+                .join("skills")
+                .join("plugin-review")
+                .join("SKILL.md"),
+            r#"---
+name: plugin-review
+description: Use when reviewing capability lab changes.
+allowed-tools: Read
+version: 1.0.0
+---
+
+Review the changed issue tracker code and report user-visible risks.
+"#,
+        );
+        write_file(
+            &plugin_dir
+                .join("skills")
+                .join("plugin-review")
+                .join("references")
+                .join("rubric.md"),
+            "# Review Rubric\n\nCheck behavior, tests, and path isolation.\n",
+        );
+        plugin_dir
+    }
+
     pub fn npm_cache_dir(&self) -> PathBuf {
         self.cc_rust_home.join("npm-cache")
     }
