@@ -1,6 +1,6 @@
 //! Built-in rich status widget.
 
-use crate::ui::status_icon::StatusIcon;
+use crate::ui::status_icon::{LegacyStatus, StatusIcon};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusSeverity {
@@ -130,9 +130,9 @@ impl StatusSnapshot {
 
     fn subsystems_label(&self) -> &'static str {
         if self.subsystems_ok {
-            StatusIcon::Ok.label()
+            LegacyStatus::Ok.label()
         } else {
-            StatusIcon::Attention.label()
+            LegacyStatus::Attention.label()
         }
     }
 }

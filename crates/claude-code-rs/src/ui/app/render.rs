@@ -64,6 +64,7 @@ impl App {
             0
         };
         let command_palette_height = self.command_palette.preferred_height();
+        let completion_popup_height = self.completion_popup_height();
         let cwd_path = std::path::Path::new(&self.cwd);
         let command_arg_help_height =
             CommandPalette::argument_help_height(&self.prompt.input, cwd_path);
@@ -77,6 +78,7 @@ impl App {
         let bottom_height = spinner_height
             + suggestion_height
             + command_palette_height
+            + completion_popup_height
             + command_arg_help_height
             + paste_notice_height
             + input_height
@@ -152,13 +154,14 @@ impl App {
             );
         }
 
-        // Bottom area: spinner + suggestions + input + status
+        // Bottom area: spinner + suggestions + paste_notice + input + completion_popup + palette + arg_help + status
         let has_suggestions = !self.is_streaming && self.suggestions.is_some();
         let bottom_chunks = Layout::vertical([
             Constraint::Length(if self.is_streaming { 1 } else { 0 }),
             Constraint::Length(if has_suggestions { 1 } else { 0 }),
             Constraint::Length(paste_notice_height),
             Constraint::Length(1),
+            Constraint::Length(completion_popup_height),
             Constraint::Length(command_palette_height),
             Constraint::Length(command_arg_help_height),
             Constraint::Length(status_height),
@@ -192,18 +195,23 @@ impl App {
             },
         );
 
+        // Render completion popup (when active and command palette is not active)
+        if self.completion_state.active && !self.command_palette.active() {
+            self.render_completion_popup(bottom_chunks[4], frame.buffer_mut());
+        }
+
         self.command_palette
-            .render(bottom_chunks[4], frame.buffer_mut(), &self.theme);
+            .render(bottom_chunks[5], frame.buffer_mut(), &self.theme);
 
         CommandPalette::render_argument_help(
             &self.prompt.input,
             cwd_path,
-            bottom_chunks[5],
+            bottom_chunks[6],
             frame.buffer_mut(),
             &self.theme,
         );
 
-        self.render_status_bar(bottom_chunks[6], frame.buffer_mut(), &custom_lines);
+        self.render_status_bar(bottom_chunks[7], frame.buffer_mut(), &custom_lines);
 
         if let Some(ref surface) = self.command_surface {
             render_command_surface_overlay(surface, size, frame.buffer_mut(), &self.theme);
@@ -678,4 +686,125 @@ fn render_history_search_overlay(
         .style(Style::default().fg(Color::White))
         .wrap(Wrap { trim: false })
         .render(inner, buf);
+}
+
+// ---------------------------------------------------------------------------
+// Completion popup rendering helpers
+// ---------------------------------------------------------------------------
+
+/// Calculate visible window start for a scrollable list.
+fn visible_window_start(total: usize, selected: usize, max_rows: usize) -> usize {
+    if max_rows == 0 || total <= max_rows {
+        return 0;
+    }
+
+    selected.saturating_add(1).saturating_sub(max_rows)
+}
+
+/// Truncate a string to a max character width, adding "..." if truncated.
+fn truncate(s: &str, max_width: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max_width {
+        s.to_string()
+    } else if max_width <= 3 {
+        ".".repeat(max_width)
+    } else {
+        format!("{}...", chars[..max_width - 3].iter().collect::<String>())
+    }
+}
+
+impl App {
+    /// Preferred height for the completion popup (0 if not active).
+    pub(super) fn completion_popup_height(&self) -> u16 {
+        if !self.completion_state.active || self.command_palette.active() {
+            return 0;
+        }
+        let count = self.completion_state.items.len().min(8);
+        if count == 0 {
+            return 0;
+        }
+        // Header + separator line + item rows + footer hint
+        (count as u16).min(8) + 2
+    }
+
+    /// Render the active completion popup.
+    fn render_completion_popup(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        if area.height < 3 || area.width < 20 {
+            return;
+        }
+
+        let state = &self.completion_state;
+        if state.items.is_empty() {
+            return;
+        }
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Completions ")
+            .border_style(self.theme.dim);
+        let inner = block.inner(area);
+        block.render(area, buf);
+
+        let mut lines: Vec<Line<'_>> = Vec::new();
+
+        // Header line
+        lines.push(Line::from(vec![Span::styled(
+            format!(
+                " {} items | Tab:accept | Shift+Tab:prev | Enter:fill ",
+                state.items.len()
+            ),
+            self.theme.dim,
+        )]));
+
+        // Determine visible window
+        let max_visible = (inner.height as usize).saturating_sub(2).max(1);
+        let visible_start = visible_window_start(state.items.len(), state.selected, max_visible);
+
+        for (idx, item) in state
+            .items
+            .iter()
+            .enumerate()
+            .skip(visible_start)
+            .take(max_visible)
+        {
+            let selected = idx == state.selected;
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+
+            let kind_label = item.kind.label();
+            let source = item.source_group.unwrap_or(kind_label);
+
+            let detail = if selected {
+                item.detail.as_deref().unwrap_or("")
+            } else {
+                ""
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(" \u{276f} "),
+                    if selected {
+                        Style::default().fg(Color::Green)
+                    } else {
+                        Style::default().fg(Color::DarkGray)
+                    },
+                ),
+                Span::styled(format!("{:<30}", truncate(&item.label, 28)), style),
+                Span::styled(format!(" {} ", source), self.theme.dim),
+                if !detail.is_empty() {
+                    Span::styled(detail, self.theme.dim)
+                } else {
+                    Span::raw("")
+                },
+            ]));
+        }
+
+        Paragraph::new(lines).render(inner, buf);
+    }
 }

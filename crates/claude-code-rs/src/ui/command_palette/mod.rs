@@ -12,7 +12,7 @@ mod render;
 mod tests;
 
 use edit_targets::{has_edit_target_picker, EditTarget};
-use filter::{command_from_argument_input, filtered_commands};
+use filter::{command_from_argument_input, filtered_commands, find_mid_input_slash_command};
 use render::{argument_edit_row_count, palette_detail_rows};
 
 const MAX_ROWS: usize = 6;
@@ -31,13 +31,17 @@ pub struct CommandPalette {
 }
 
 #[derive(Debug, Clone)]
-struct CommandItem {
-    name: String,
-    aliases: Vec<String>,
-    description: String,
-    usage: String,
-    examples: Vec<String>,
-    edit_targets: Vec<EditTarget>,
+pub struct CommandItem {
+    pub name: String,
+    pub aliases: Vec<String>,
+    pub description: String,
+    pub usage: String,
+    pub examples: Vec<String>,
+    pub edit_targets: Vec<EditTarget>,
+    /// Source group for grouping display (populated by filter).
+    pub source_group: Option<&'static str>,
+    /// Usage score for tie-breaking and display.
+    pub usage_score: f64,
 }
 
 impl CommandPalette {
@@ -56,7 +60,13 @@ impl CommandPalette {
     }
 
     pub fn sync_from_input(&mut self, input: &str, cwd: &Path) {
-        let Some(without_slash) = input.strip_prefix('/') else {
+        let without_slash = if let Some(without_slash) = input.strip_prefix('/') {
+            without_slash.to_string()
+        } else if let Some((command_name, _prefix)) =
+            find_mid_input_slash_command(input, input.len())
+        {
+            command_name
+        } else {
             self.close();
             return;
         };
@@ -67,7 +77,7 @@ impl CommandPalette {
         }
 
         self.active = true;
-        self.query = without_slash.to_string();
+        self.query = without_slash;
         self.filtered = filtered_commands(&self.query, cwd);
         self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
         self.edit_target_picker = None;
@@ -115,10 +125,42 @@ impl CommandPalette {
         }
     }
 
+    /// Get the input buffer text for the selected command (insert mode).
     pub fn selected_command_input(&self) -> Option<String> {
-        self.filtered
-            .get(self.selected)
-            .map(|cmd| format!("/{} ", cmd.name))
+        let item = self.filtered.get(self.selected)?;
+        match self.apply_command_suggestion(item, false)? {
+            CommandAction::Insert(input) | CommandAction::Execute(input) => Some(input),
+        }
+    }
+
+    /// Apply the selected command suggestion.
+    ///
+    /// If `should_execute` is true and the command has no arguments, submit it
+    /// directly instead of inserting into the prompt.
+    pub fn apply_command_suggestion(
+        &self,
+        _item: &CommandItem,
+        _should_execute: bool,
+    ) -> Option<CommandAction> {
+        // When should_execute is true and the command is argument-less,
+        // return Execute directly. Otherwise return Insert.
+        let cmd = self.filtered.get(self.selected)?;
+
+        if _should_execute && cmd.usage.trim() == format!("/{}", cmd.name) {
+            // No-argument command: execute directly
+            Some(CommandAction::Execute(format!("/{}", cmd.name)))
+        } else {
+            Some(CommandAction::Insert(format!("/{} ", cmd.name)))
+        }
+    }
+
+    /// Get the ghost suffix for the currently selected command.
+    pub fn selected_ghost_suffix(&self) -> Option<String> {
+        self.filtered.get(self.selected).map(|cmd| {
+            let full = format!("/{}", cmd.name);
+            let partial_len = self.query.len().min(full.len());
+            full[partial_len..].to_string()
+        })
     }
 
     pub fn selected_command_has_edit_targets(&self) -> bool {
@@ -241,4 +283,13 @@ impl Default for CommandPalette {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Action to take when applying a command suggestion.
+#[derive(Debug, Clone)]
+pub enum CommandAction {
+    /// Insert the command text into the prompt.
+    Insert(String),
+    /// Execute the command directly.
+    Execute(String),
 }

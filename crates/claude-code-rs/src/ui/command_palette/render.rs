@@ -11,7 +11,7 @@ use crate::ui::selection_surface::SelectionSurface;
 use crate::ui::theme::Theme;
 
 use super::edit_targets::{has_edit_target_picker, EditTarget};
-use super::filter::command_from_argument_input;
+use super::filter::{command_from_argument_input, CommandGroup};
 use super::{CommandItem, CommandPalette, MAX_EDIT_ROWS, MAX_EDIT_TARGET_ROWS, MAX_ROWS};
 
 impl CommandPalette {
@@ -59,6 +59,10 @@ impl CommandPalette {
             theme.dim,
         )));
         let visible_start = visible_window_start(self.filtered.len(), self.selected, visible_rows);
+
+        // Track group transitions for group headers
+        let mut last_group: Option<CommandGroup> = None;
+
         for (idx, item) in self
             .filtered
             .iter()
@@ -85,6 +89,26 @@ impl CommandPalette {
             } else {
                 String::new()
             };
+
+            // Group header on group transitions (only for non-empty query)
+            if self.query.is_empty() {
+                // Infer group from command name priority
+                // For simplicity, we use a heuristic: inline commands are Builtin,
+                // plugin/skill entries from dynamic registry would have source_group set
+                let current_group = item.source_group.unwrap_or("Builtin");
+                let last_group_str = last_group.map(|g| g.label()).unwrap_or("");
+                if current_group != last_group_str {
+                    let group_label = format!("  \u{2500} {} \u{2500}", current_group);
+                    lines.push(Line::from(Span::styled(
+                        group_label,
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::DIM),
+                    )));
+                }
+                last_group = Some(CommandGroup::Builtin);
+            }
+
             lines.push(Line::from(vec![
                 Span::styled(format!("/{:<22}", item.name), style),
                 Span::styled(aliases, theme.dim),
@@ -100,10 +124,24 @@ impl CommandPalette {
                 Span::styled("  Enter inserts: ", theme.dim),
                 Span::styled(format!("/{} ", selected.name), theme.info),
             ]));
+            // Ghost suffix hint
+            let ghost = self.selected_ghost_suffix();
+            if let Some(ghost_str) = ghost.filter(|s| !s.is_empty()) {
+                lines.push(Line::from(vec![
+                    Span::styled("  ghost: ", theme.dim),
+                    Span::styled(ghost_str, theme.dim),
+                ]));
+            }
             lines.push(Line::from(vec![
                 Span::styled("  usage: ", theme.dim),
                 Span::styled(selected.usage.clone(), theme.info),
             ]));
+            if selected.usage_score > 0.0 {
+                lines.push(Line::from(vec![
+                    Span::styled("  recent score: ", theme.dim),
+                    Span::styled(format!("{:.1}", selected.usage_score), theme.unselected),
+                ]));
+            }
             if let Some(example) = selected.examples.first() {
                 lines.push(Line::from(vec![
                     Span::styled("  example: ", theme.dim),

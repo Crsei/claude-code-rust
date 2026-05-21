@@ -24,18 +24,14 @@ pub enum AttachmentKind {
         unchanged: bool,
     },
     /// A compact file reference (minimal path display).
-    CompactFileReference {
-        display_path: String,
-    },
+    CompactFileReference { display_path: String },
     /// A PDF file reference with page count.
     PdfReference {
         display_path: String,
         page_count: u32,
     },
     /// A directory listing.
-    Directory {
-        display_path: String,
-    },
+    Directory { display_path: String },
     /// Lines selected from an IDE.
     SelectedLinesInIde {
         display_path: String,
@@ -44,70 +40,39 @@ pub enum AttachmentKind {
         ide_name: String,
     },
     /// A nested memory load.
-    NestedMemory {
-        display_path: String,
-        verb: String,
-    },
+    NestedMemory { display_path: String, verb: String },
     /// Relevant memories from a collapsed search group.
-    RelevantMemories {
-        count: usize,
-        paths: Vec<String>,
-    },
+    RelevantMemories { count: usize, paths: Vec<String> },
 
     // ── Skills & Tools ──────────────────────────────────────────────────
     /// A dynamic skill loaded from a file.
-    DynamicSkill {
-        count: usize,
-        display_path: String,
-    },
+    DynamicSkill { count: usize, display_path: String },
     /// Skill listing with availability count.
-    SkillListing {
-        count: usize,
-        is_initial: bool,
-    },
+    SkillListing { count: usize, is_initial: bool },
     /// Agent type listing delta.
-    AgentListingDelta {
-        count: usize,
-        is_initial: bool,
-    },
+    AgentListingDelta { count: usize, is_initial: bool },
     /// Restored skills from a previous session.
-    InvokedSkills {
-        names: Vec<String>,
-    },
+    InvokedSkills { names: Vec<String> },
     /// Discovered skills with description.
-    SkillDiscovery {
-        count: usize,
-    },
+    SkillDiscovery { count: usize },
     /// Discovered tools list.
-    ToolDiscovery {
-        count: usize,
-    },
+    ToolDiscovery { count: usize },
     /// Diagnostics display placeholder.
     Diagnostics,
 
     // ── MCP & Commands ──────────────────────────────────────────────────
     /// A queued command prompt.
-    QueuedCommand {
-        prompt: String,
-    },
+    QueuedCommand { prompt: String },
     /// A plan file reference.
-    PlanFileReference {
-        path: String,
-    },
+    PlanFileReference { path: String },
     /// A read MCP resource.
-    McpResource {
-        name: String,
-        server: String,
-    },
+    McpResource { name: String, server: String },
     /// Command permissions notification (typically hidden).
     CommandPermissions,
 
     // ── Hook types ──────────────────────────────────────────────────────
     /// An asynchronous hook completion.
-    AsyncHookResponse {
-        event: String,
-        verbose: bool,
-    },
+    AsyncHookResponse { event: String, verbose: bool },
     /// A blocking error from a hook.
     HookBlockingError {
         name: String,
@@ -115,15 +80,9 @@ pub enum AttachmentKind {
         stderr: Option<String>,
     },
     /// A non-blocking error from a hook.
-    HookNonBlockingError {
-        name: String,
-        hook_event: String,
-    },
+    HookNonBlockingError { name: String, hook_event: String },
     /// An error occurring during hook execution.
-    HookErrorDuringExecution {
-        name: String,
-        hook_event: String,
-    },
+    HookErrorDuringExecution { name: String, hook_event: String },
     /// Successful hook completion (typically hidden).
     HookSuccess,
     /// A hook that stopped continuation.
@@ -133,10 +92,7 @@ pub enum AttachmentKind {
         message: String,
     },
     /// A system message from a hook.
-    HookSystemMessage {
-        name: String,
-        content: String,
-    },
+    HookSystemMessage { name: String, content: String },
     /// A permission decision made by a hook.
     HookPermissionDecision {
         name: String,
@@ -146,25 +102,15 @@ pub enum AttachmentKind {
 
     // ── Task & Teammate ─────────────────────────────────────────────────
     /// Generic task status update.
-    TaskStatus {
-        description: String,
-        status: String,
-    },
+    TaskStatus { description: String, status: String },
     /// Batch shutdown notification.
-    TeammateShutdownBatch {
-        count: u32,
-    },
+    TeammateShutdownBatch { count: u32 },
     /// Teammate mailbox notification.
-    TeammateMailbox {
-        unread: usize,
-    },
+    TeammateMailbox { unread: usize },
 
     // ── Generic fallback ────────────────────────────────────────────────
     /// Generic/unknown attachment type shown as-is.
-    Generic {
-        label: String,
-        detail: String,
-    },
+    Generic { label: String, detail: String },
 }
 
 /// Try to parse `detail` as a JSON object and extract a field.
@@ -195,11 +141,13 @@ fn json_bool_field(detail: &str, field: &str) -> Option<bool> {
 fn json_str_array(detail: &str) -> Vec<String> {
     serde_json::from_str::<serde_json::Value>(detail)
         .ok()
-        .and_then(|v| v.as_array().map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(ToOwned::to_owned))
-                .collect()
-        }))
+        .and_then(|v| {
+            v.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+                    .collect()
+            })
+        })
         .unwrap_or_default()
 }
 
@@ -298,39 +246,39 @@ pub fn classify_attachment(label: &str, detail: &str) -> AttachmentKind {
             is_initial: json_bool_field(trimmed_detail, "is_initial").unwrap_or(false),
         },
         "invoked_skills" => {
-            let names: Vec<String> = if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed_detail) {
-                v.as_array()
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(ToOwned::to_owned))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            } else {
-                trimmed_detail
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(ToOwned::to_owned)
-                    .collect()
-            };
+            let names: Vec<String> =
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed_detail) {
+                    v.as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                } else {
+                    trimmed_detail
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect()
+                };
             AttachmentKind::InvokedSkills { names }
         }
         "skill_discovery" => AttachmentKind::SkillDiscovery {
-            count: json_usize_field(trimmed_detail, "count").unwrap_or(
-                json_str_array(trimmed_detail).len(),
-            ),
+            count: json_usize_field(trimmed_detail, "count")
+                .unwrap_or(json_str_array(trimmed_detail).len()),
         },
         "tool_discovery" => AttachmentKind::ToolDiscovery {
-            count: json_usize_field(trimmed_detail, "count").unwrap_or(
-                json_str_array(trimmed_detail).len(),
-            ),
+            count: json_usize_field(trimmed_detail, "count")
+                .unwrap_or(json_str_array(trimmed_detail).len()),
         },
         "diagnostics" => AttachmentKind::Diagnostics,
 
         // ── MCP & Commands ──────────────────────────────────────────────
         "queued_command" => AttachmentKind::QueuedCommand {
-            prompt: json_field(trimmed_detail, "prompt").unwrap_or_else(|| trimmed_detail.to_string()),
+            prompt: json_field(trimmed_detail, "prompt")
+                .unwrap_or_else(|| trimmed_detail.to_string()),
         },
         "plan_file_reference" => AttachmentKind::PlanFileReference {
             path: json_field(trimmed_detail, "path").unwrap_or_else(|| trimmed_detail.to_string()),
@@ -343,7 +291,8 @@ pub fn classify_attachment(label: &str, detail: &str) -> AttachmentKind {
 
         // ── Hook types ──────────────────────────────────────────────────
         "async_hook_response" => AttachmentKind::AsyncHookResponse {
-            event: json_field(trimmed_detail, "event").unwrap_or_else(|| trimmed_detail.to_string()),
+            event: json_field(trimmed_detail, "event")
+                .unwrap_or_else(|| trimmed_detail.to_string()),
             verbose: json_bool_field(trimmed_detail, "verbose").unwrap_or(false),
         },
         "hook_blocking_error" => {
@@ -362,31 +311,33 @@ pub fn classify_attachment(label: &str, detail: &str) -> AttachmentKind {
                 hook_event: json_field(trimmed_detail, "hook_event").unwrap_or_default(),
             }
         }
-        "hook_error_during_execution" => {
-            AttachmentKind::HookErrorDuringExecution {
-                name: json_field(trimmed_detail, "name").unwrap_or_else(|| "hook".to_string()),
-                hook_event: json_field(trimmed_detail, "hook_event").unwrap_or_default(),
-            }
-        }
+        "hook_error_during_execution" => AttachmentKind::HookErrorDuringExecution {
+            name: json_field(trimmed_detail, "name").unwrap_or_else(|| "hook".to_string()),
+            hook_event: json_field(trimmed_detail, "hook_event").unwrap_or_default(),
+        },
         "hook_success" => AttachmentKind::HookSuccess,
         "hook_stopped_continuation" => AttachmentKind::HookStoppedContinuation {
             name: json_field(trimmed_detail, "name").unwrap_or_else(|| "hook".to_string()),
             hook_event: json_field(trimmed_detail, "hook_event").unwrap_or_default(),
-            message: json_field(trimmed_detail, "message").unwrap_or_else(|| trimmed_detail.to_string()),
+            message: json_field(trimmed_detail, "message")
+                .unwrap_or_else(|| trimmed_detail.to_string()),
         },
         "hook_system_message" => AttachmentKind::HookSystemMessage {
             name: json_field(trimmed_detail, "name").unwrap_or_else(|| "hook".to_string()),
-            content: json_field(trimmed_detail, "content").unwrap_or_else(|| trimmed_detail.to_string()),
+            content: json_field(trimmed_detail, "content")
+                .unwrap_or_else(|| trimmed_detail.to_string()),
         },
         "hook_permission_decision" => AttachmentKind::HookPermissionDecision {
             name: json_field(trimmed_detail, "name").unwrap_or_else(|| "hook".to_string()),
             hook_event: json_field(trimmed_detail, "hook_event").unwrap_or_default(),
-            decision: json_field(trimmed_detail, "decision").unwrap_or_else(|| "allowed".to_string()),
+            decision: json_field(trimmed_detail, "decision")
+                .unwrap_or_else(|| "allowed".to_string()),
         },
 
         // ── Task & Teammate ─────────────────────────────────────────────
         "task_status" => AttachmentKind::TaskStatus {
-            description: json_field(trimmed_detail, "description").unwrap_or_else(|| trimmed_detail.to_string()),
+            description: json_field(trimmed_detail, "description")
+                .unwrap_or_else(|| trimmed_detail.to_string()),
             status: json_field(trimmed_detail, "status").unwrap_or_default(),
         },
         "teammate_shutdown_batch" => AttachmentKind::TeammateShutdownBatch {
@@ -473,7 +424,10 @@ fn render_selected_lines(kind: &AttachmentKind) -> String {
             ide_name,
         } => {
             if ide_name.is_empty() {
-                format!("Selected {} lines from {display_path}", line_end - line_start)
+                format!(
+                    "Selected {} lines from {display_path}",
+                    line_end - line_start
+                )
             } else {
                 format!(
                     "Selected {} lines from {display_path} in {ide_name}",
@@ -488,10 +442,7 @@ fn render_selected_lines(kind: &AttachmentKind) -> String {
 /// Render nested memory.
 fn render_nested_memory(kind: &AttachmentKind) -> String {
     match kind {
-        AttachmentKind::NestedMemory {
-            display_path,
-            verb,
-        } => format!("{verb} {display_path}"),
+        AttachmentKind::NestedMemory { display_path, verb } => format!("{verb} {display_path}"),
         _ => String::new(),
     }
 }
@@ -525,10 +476,7 @@ fn render_dynamic_skill(kind: &AttachmentKind) -> String {
 /// Render skill listing.
 fn render_skill_listing(kind: &AttachmentKind) -> String {
     match kind {
-        AttachmentKind::SkillListing {
-            count,
-            is_initial,
-        } => {
+        AttachmentKind::SkillListing { count, is_initial } => {
             if *is_initial {
                 String::new()
             } else {
@@ -542,10 +490,7 @@ fn render_skill_listing(kind: &AttachmentKind) -> String {
 /// Render agent listing delta.
 fn render_agent_listing_delta(kind: &AttachmentKind) -> String {
     match kind {
-        AttachmentKind::AgentListingDelta {
-            count,
-            is_initial,
-        } => {
+        AttachmentKind::AgentListingDelta { count, is_initial } => {
             if *is_initial {
                 String::new()
             } else {
@@ -665,10 +610,7 @@ fn render_hook_blocking_error(kind: &AttachmentKind) -> String {
 /// Render a hook non-blocking error.
 fn render_hook_non_blocking_error(kind: &AttachmentKind) -> String {
     match kind {
-        AttachmentKind::HookNonBlockingError {
-            name,
-            hook_event,
-        } => {
+        AttachmentKind::HookNonBlockingError { name, hook_event } => {
             if is_stop_hook_event(hook_event) {
                 return String::new();
             }
@@ -681,10 +623,7 @@ fn render_hook_non_blocking_error(kind: &AttachmentKind) -> String {
 /// Render a hook execution error.
 fn render_hook_error_during_execution(kind: &AttachmentKind) -> String {
     match kind {
-        AttachmentKind::HookErrorDuringExecution {
-            name,
-            hook_event,
-        } => {
+        AttachmentKind::HookErrorDuringExecution { name, hook_event } => {
             if is_stop_hook_event(hook_event) {
                 return String::new();
             }
@@ -782,7 +721,10 @@ fn render_attachment_kind(kind: &AttachmentKind) -> String {
     match kind {
         // File & Reference
         AttachmentKind::File { .. } => render_file(kind),
-        AttachmentKind::AlreadyReadFile { display_path, unchanged } => {
+        AttachmentKind::AlreadyReadFile {
+            display_path,
+            unchanged,
+        } => {
             if *unchanged {
                 format!("Read {display_path} (unchanged)")
             } else {
@@ -878,7 +820,8 @@ mod tests {
 
     #[test]
     fn compact_file_reference_renders() {
-        let result = render_attachment_message("compact_file_reference", "src/lib.rs", &Theme::default());
+        let result =
+            render_attachment_message("compact_file_reference", "src/lib.rs", &Theme::default());
         assert_eq!(result, "Referenced file src/lib.rs");
     }
 
@@ -904,7 +847,8 @@ mod tests {
 
     #[test]
     fn nested_memory_renders() {
-        let result = render_attachment_message("nested_memory", "project/notes.md", &Theme::default());
+        let result =
+            render_attachment_message("nested_memory", "project/notes.md", &Theme::default());
         assert_eq!(result, "Loaded project/notes.md");
     }
 

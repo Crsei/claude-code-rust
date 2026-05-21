@@ -1,5 +1,10 @@
 //! Typed chat history cells.
 
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
+
+use super::theme::Theme;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HistoryCell {
     User(String),
@@ -65,6 +70,43 @@ impl HistoryCell {
             (HistoryCell::Status(text), _) => format!("status: {text}"),
         }
     }
+
+    /// Render as a styled ratatui Line with theme colors.
+    pub fn render_styled(&self, mode: HistoryRenderMode, theme: &Theme) -> Line<'static> {
+        match (self, mode) {
+            (HistoryCell::User(text), _) => Line::from(vec![
+                Span::styled("> ", theme.user_name),
+                Span::styled(text.clone(), Style::default()),
+            ]),
+            (HistoryCell::Assistant(text), _) => {
+                Line::from(Span::styled(text.clone(), Style::default()))
+            }
+            (HistoryCell::System(text), _) => Line::from(vec![
+                Span::styled("system: ", theme.system_name),
+                Span::styled(text.clone(), theme.dim),
+            ]),
+            (HistoryCell::Tool { name, summary }, _) => Line::from(vec![
+                Span::styled(format!("tool {name}: "), theme.tool_name),
+                Span::styled(summary.clone(), theme.tool_result),
+            ]),
+            (
+                HistoryCell::Diff {
+                    path,
+                    added,
+                    removed,
+                },
+                _,
+            ) => Line::from(vec![
+                Span::styled("diff ", theme.dim),
+                Span::styled(path.clone(), theme.diff_header),
+                Span::styled(format!(" +{added}"), theme.diff_add),
+                Span::styled(format!(" -{removed}"), theme.diff_remove),
+            ]),
+            (HistoryCell::Status(text), _) => {
+                Line::from(Span::styled(format!("status: {text}"), theme.dim))
+            }
+        }
+    }
 }
 
 pub fn render_history(cells: &[HistoryCell], mode: HistoryRenderMode) -> String {
@@ -73,4 +115,16 @@ pub fn render_history(cells: &[HistoryCell], mode: HistoryRenderMode) -> String 
         .map(|cell| cell.render(mode))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Render history cells as styled ratatui lines.
+pub fn render_styled_history(
+    cells: &[HistoryCell],
+    mode: HistoryRenderMode,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    cells
+        .iter()
+        .map(|cell| cell.render_styled(mode, theme))
+        .collect()
 }

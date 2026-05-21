@@ -1,5 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/command_palette/tests.rs
+assertion_line: 207
 expression: "render_palette_snapshot(\"/mcp\", &cwd, 100, 12, &[])"
 ---
 "┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
@@ -11,6 +12,6 @@ expression: "render_palette_snapshot(\"/mcp\", &cwd, 100, 12, &[])"
 "│                                                                                                  │"
 "│Behavior                                                                                          │"
 "│  Enter inserts: /mcp                                                                             │"
+"│  ghost: p                                                                                        │"
 "│  usage: /mcp <list|status|add|edit|remove|approve|reject|connect|disconnect|reconnect>           │"
-"│  example: /mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp                       │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"

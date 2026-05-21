@@ -5,18 +5,16 @@ use ratatui::text::{Line, Span};
 use std::collections::HashMap;
 
 use crate::ui::markdown::markdown_to_lines;
-use crate::ui::messages::assistant_text_message::{
-    classify_assistant_text, render_api_error,
-};
+use crate::ui::messages::assistant_text_message::{classify_assistant_text, render_api_error};
 use crate::ui::messages::assistant_tool_use_message::{
     render_assistant_tool_use_message, ToolUseState,
 };
 use crate::ui::messages::attachment_message::render_attachment_message as render_attachment_helper;
 use crate::ui::messages::system_text_message::render_system_text_message;
-use crate::ui::messages::user_text_message::render_user_text_message;
 use crate::ui::messages::user_bash_output_message::{
     render_user_bash_output_message_with_options, ShellOutputRenderOptions,
 };
+use crate::ui::messages::user_text_message::render_user_text_message;
 use crate::ui::theme::Theme;
 use crate::ui::virtual_scroll::VirtualScroll;
 use cc_types::message::{
@@ -669,7 +667,11 @@ fn render_assistant_message<'a>(
                 );
                 for (i, line) in rendered.lines().enumerate() {
                     lines.push(Line::from(vec![
-                        Span::raw(if first_block && i == 0 { "" } else { "        " }),
+                        Span::raw(if first_block && i == 0 {
+                            ""
+                        } else {
+                            "        "
+                        }),
                         Span::styled(line.to_string(), theme.tool_name),
                     ]));
                 }
@@ -687,7 +689,11 @@ fn render_assistant_message<'a>(
                 );
                 for (i, line) in rendered.lines().enumerate() {
                     lines.push(Line::from(vec![
-                        Span::raw(if first_block && i == 0 { "" } else { "        " }),
+                        Span::raw(if first_block && i == 0 {
+                            ""
+                        } else {
+                            "        "
+                        }),
                         Span::styled(format!("server: {line}"), theme.tool_name),
                     ]));
                 }
@@ -914,16 +920,20 @@ fn render_attachment_message<'a>(
     use cc_types::message::Attachment;
     let text = match &msg.attachment {
         Attachment::EditedTextFile { path } => format!("[edited: {}]", path),
-        Attachment::QueuedCommand { prompt, .. } => {
-            render_attachment_helper("queued_command", &serde_json::json!({ "prompt": prompt }).to_string(), theme)
-        }
+        Attachment::QueuedCommand { prompt, .. } => render_attachment_helper(
+            "queued_command",
+            &serde_json::json!({ "prompt": prompt }).to_string(),
+            theme,
+        ),
         Attachment::MaxTurnsReached {
             max_turns,
             turn_count,
         } => format!("[max turns reached: {}/{}]", turn_count, max_turns),
         Attachment::StructuredOutput { .. } => "[structured output]".to_string(),
         Attachment::HookStoppedContinuation => "[hook stopped continuation]".to_string(),
-        Attachment::NestedMemory { path, .. } => render_attachment_helper("nested_memory", path, theme),
+        Attachment::NestedMemory { path, .. } => {
+            render_attachment_helper("nested_memory", path, theme)
+        }
         Attachment::SkillDiscovery { skills } => render_attachment_helper(
             "skill_discovery",
             &serde_json::to_string(skills).unwrap_or_else(|_| "[]".to_string()),
@@ -1236,7 +1246,9 @@ mod tests {
             usage: None,
             stop_reason: Some("error".to_string()),
             is_api_error_message: true,
-            api_error: Some("Provider openrouter error (HTTP 429): rate limit exceeded".to_string()),
+            api_error: Some(
+                "Provider openrouter error (HTTP 429): rate limit exceeded".to_string(),
+            ),
             cost_usd: 0.0,
         });
 

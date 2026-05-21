@@ -1,12 +1,82 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 
 use crate::ui::command_surface::CommandSurfaceOutcome;
+use crate::ui::completions::{
+    CombinedCompleter, CommandCompletionProvider, CompletionContext, CompletionItem,
+};
 use crate::ui::history_search_dialog::{HistorySearchDialog, HistorySearchDialogEvent};
 use crate::ui::messages::{message_copy_text, message_primary_reference};
 use crate::ui::transcript::ViewMode;
 use crate::ui::vim::VimAction;
 
 use super::{current_unix_secs, App, AppAction};
+
+/// Tracks the state of an active completion session.
+#[derive(Debug)]
+pub struct CompletionState {
+    /// All computed completion items.
+    pub items: Vec<CompletionItem>,
+    /// Currently selected index.
+    pub selected: usize,
+    /// Whether the completion popup is visible.
+    pub active: bool,
+    /// The combined completer used to compute items.
+    pub completer: CombinedCompleter,
+}
+
+impl CompletionState {
+    pub fn new() -> Self {
+        let mut completer = CombinedCompleter::new();
+        completer.add_provider(Box::new(CommandCompletionProvider::new()));
+
+        Self {
+            items: Vec::new(),
+            selected: 0,
+            active: false,
+            completer,
+        }
+    }
+
+    /// Compute completions for the given input and cursor position.
+    pub fn compute(&mut self, input: &str, cursor_pos: usize) {
+        let ctx = CompletionContext::new(input, cursor_pos, &[]);
+        self.items = self.completer.compute(&ctx);
+        self.selected = 0;
+        self.active = !self.items.is_empty();
+    }
+
+    /// Get the selected completion item, if any.
+    pub fn selected_item(&self) -> Option<&CompletionItem> {
+        self.items.get(self.selected)
+    }
+
+    /// Move selection up (toward earlier items).
+    pub fn select_prev(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+        }
+    }
+
+    /// Move selection down (toward later items).
+    pub fn select_next(&mut self) {
+        if self.selected + 1 < self.items.len() {
+            self.selected += 1;
+        }
+    }
+
+    /// Close the completion popup.
+    pub fn close(&mut self) {
+        self.active = false;
+        self.items.clear();
+        self.selected = 0;
+    }
+}
+
+impl Default for CompletionState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl App {
     pub fn handle_key_event(&mut self, key: KeyEvent) -> AppAction {
@@ -201,8 +271,71 @@ impl App {
             }
         }
 
+        // ── Tab completion ─────────────────────────────────────────────
+        if self.prompt.is_active && !self.is_streaming {
+            match (key.modifiers, key.code) {
+                (KeyModifiers::NONE, KeyCode::Tab) => {
+                    // If completion is already active, accept the selected item
+                    if self.completion_state.active {
+                        if let Some(item) = self.completion_state.selected_item() {
+                            // Replace the range with insert_text
+                            let range = &item.range;
+                            let insert = &item.insert_text;
+                            if range.end <= self.prompt.input.len() {
+                                self.prompt.input.replace_range(range.clone(), insert);
+                                self.prompt.cursor_position = range.start + insert.len();
+                            }
+                        }
+                        self.completion_state.close();
+                        self.prompt.set_ghost_suffix(None);
+                        self.prompt.set_show_ghost(false);
+                        self.sync_command_palette();
+                        self.dirty = true;
+                        return AppAction::None;
+                    }
+
+                    // Check if cursor follows a word boundary (potential completion trigger)
+                    let input = &self.prompt.input;
+                    let cursor = self.prompt.cursor_position;
+                    let should_complete = input.is_empty()
+                        || cursor == 0
+                        || input[..cursor].ends_with(' ')
+                        || input[..cursor].ends_with('/');
+                    // Also trigger when typing a /command
+                    let has_slash_prefix = input.starts_with('/') || input[..cursor].contains('/');
+
+                    if should_complete || has_slash_prefix {
+                        self.completion_state.compute(input, cursor);
+                        if self.completion_state.active {
+                            // Show ghost suffix for first item
+                            if let Some(item) = self.completion_state.selected_item() {
+                                self.prompt.set_ghost_suffix(item.ghost_suffix.clone());
+                                self.prompt.set_show_ghost(true);
+                            }
+                            self.dirty = true;
+                            return AppAction::None;
+                        }
+                    }
+                }
+                (KeyModifiers::SHIFT, KeyCode::Tab) | (KeyModifiers::NONE, KeyCode::BackTab) => {
+                    if self.completion_state.active {
+                        self.completion_state.select_prev();
+                        if let Some(item) = self.completion_state.selected_item() {
+                            self.prompt.set_ghost_suffix(item.ghost_suffix.clone());
+                        }
+                        self.dirty = true;
+                        return AppAction::None;
+                    }
+                }
+                _ => {}
+            }
+        }
+
         if let Some(submitted) = self.prompt.handle_key(key) {
             self.command_palette.close();
+            self.completion_state.close();
+            self.prompt.set_ghost_suffix(None);
+            self.prompt.set_show_ghost(false);
             return AppAction::Submit(submitted);
         }
 
