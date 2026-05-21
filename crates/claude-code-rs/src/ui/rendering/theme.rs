@@ -26,9 +26,9 @@ impl ThemeKind {
 /// All styles are pre-composed so widgets can simply clone the style they need
 /// without having to compose foreground/background/modifiers at render time.
 pub struct Theme {
-    /// Style for the "Claude:" prefix on assistant messages.
+    /// Legacy assistant-name style retained for renderers that still need a label.
     pub assistant_name: Style,
-    /// Style for the "You:" prefix on user messages.
+    /// Legacy user-name style retained for renderers that still need a label.
     pub user_name: Style,
     /// Style for system messages.
     pub system_name: Style,

@@ -328,7 +328,7 @@ fn is_tab_navigation_key(key: &KeyEvent) -> bool {
     ) || matches!(key.code, KeyCode::Char(ch) if ch.is_ascii_digit())
 }
 
-fn build_model_picker(state: &AppState) -> SelectionSurface {
+pub(super) fn build_model_picker(state: &AppState) -> SelectionSurface {
     let current = if state.main_loop_model.is_empty() {
         AppState::default().main_loop_model
     } else {

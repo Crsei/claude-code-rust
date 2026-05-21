@@ -420,7 +420,6 @@ pub async fn run_tui(
                         let action = app.handle_key_event(key);
                         match action {
                             AppAction::Submit(text) => {
-                                app.add_message(create_user_message(&text));
                                 app.push_history(text.clone());
 
                                 // Try slash command first
@@ -453,6 +452,7 @@ pub async fn run_tui(
                                         }
                                     }
                                 } else {
+                                    app.add_message(create_user_message(&text));
                                     // Regular message — send to engine
                                     app.set_streaming(true);
                                     engine.reset_abort();

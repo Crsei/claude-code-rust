@@ -1,6 +1,6 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use std::collections::{HashMap, HashSet};
 
@@ -1425,22 +1425,22 @@ fn render_user_message<'a>(
     if routed.is_empty() {
         return Vec::new();
     }
-    let content_text = routed
-        .strip_prefix("You: ")
-        .unwrap_or(routed.as_str())
-        .to_string();
+    let content_text = routed.to_string();
+    let user_style = Style::default().bg(Color::Rgb(31, 35, 42));
 
-    // First line includes the "You: " prefix.
     let content_lines: Vec<&str> = content_text.lines().collect();
     if content_lines.is_empty() {
-        lines.push(Line::from(vec![Span::styled("You: ", theme.user_name)]));
+        lines.push(Line::from(vec![Span::styled(" ", user_style)]));
     } else {
-        lines.push(Line::from(vec![
-            Span::styled("You: ", theme.user_name),
-            Span::raw(content_lines[0].to_string()),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            format!(" {}", content_lines[0]),
+            user_style,
+        )]));
         for extra in &content_lines[1..] {
-            lines.push(Line::from(format!("     {}", extra)));
+            lines.push(Line::from(vec![Span::styled(
+                format!(" {}", extra),
+                user_style,
+            )]));
         }
     }
 
@@ -1667,8 +1667,6 @@ fn render_assistant_message<'a>(
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
 
-    // Name prefix on the first line.
-    let prefix = Span::styled("Claude: ", theme.assistant_name);
     let mut first_block = true;
 
     for block in &msg.content {
@@ -1679,37 +1677,18 @@ fn render_assistant_message<'a>(
                 if msg.is_api_error_message {
                     let error_text = api_error_display_text(text);
                     let style = theme.error;
-                    if first_block {
-                        let mut spans = vec![prefix.clone()];
-                        spans.push(Span::styled(error_text, style));
-                        lines.push(Line::from(spans));
-                    } else {
-                        lines.push(Line::from(vec![
-                            Span::raw("        "),
-                            Span::styled(error_text, style),
-                        ]));
-                    }
+                    lines.push(Line::from(Span::styled(error_text, style)));
                     first_block = false;
                     continue;
                 }
                 let md_lines = markdown_to_lines(text, theme);
                 if md_lines.is_empty() {
                     if first_block {
-                        lines.push(Line::from(vec![prefix.clone()]));
+                        lines.push(Line::default());
                     }
                 } else {
-                    for (i, md_line) in md_lines.into_iter().enumerate() {
-                        if i == 0 && first_block {
-                            // Prepend the "Claude: " prefix to the first line.
-                            let mut spans = vec![prefix.clone()];
-                            spans.extend(md_line.spans);
-                            lines.push(Line::from(spans));
-                        } else {
-                            // Indent continuation lines to align with text after "Claude: "
-                            let mut spans = vec![Span::raw("        ")];
-                            spans.extend(md_line.spans);
-                            lines.push(Line::from(spans));
-                        }
+                    for md_line in md_lines {
+                        lines.push(md_line);
                     }
                 }
                 first_block = false;
@@ -1719,19 +1698,11 @@ fn render_assistant_message<'a>(
                 let md_lines = markdown_to_lines(connector_text, theme);
                 if md_lines.is_empty() {
                     if first_block {
-                        lines.push(Line::from(vec![prefix.clone()]));
+                        lines.push(Line::default());
                     }
                 } else {
-                    for (i, md_line) in md_lines.into_iter().enumerate() {
-                        if i == 0 && first_block {
-                            let mut spans = vec![prefix.clone()];
-                            spans.extend(md_line.spans);
-                            lines.push(Line::from(spans));
-                        } else {
-                            let mut spans = vec![Span::raw("        ")];
-                            spans.extend(md_line.spans);
-                            lines.push(Line::from(spans));
-                        }
+                    for md_line in md_lines {
+                        lines.push(md_line);
                     }
                 }
                 first_block = false;
@@ -1888,15 +1859,15 @@ fn render_assistant_message<'a>(
         }) {
             return Vec::new();
         }
-        lines.push(Line::from(vec![prefix]));
+        lines.push(Line::default());
     }
 
     // Show cost if non-zero.
     if msg.cost_usd > 0.0 {
-        lines.push(Line::from(vec![
-            Span::raw("        "),
-            Span::styled(format!("(${:.4})", msg.cost_usd), theme.dim),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            format!("(${:.4})", msg.cost_usd),
+            theme.dim,
+        )]));
     }
 
     lines
@@ -2366,8 +2337,9 @@ mod tests {
         let rendered = lines_to_text(render_single_message(&message, &Theme::default()));
 
         assert!(rendered.contains(
-            "Claude: Error occurred: API error: Provider openrouter error (HTTP 429): rate limit exceeded"
+            "Error occurred: API error: Provider openrouter error (HTTP 429): rate limit exceeded"
         ));
+        assert!(!rendered.contains("Claude:"));
     }
 
     #[test]

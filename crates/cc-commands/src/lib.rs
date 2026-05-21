@@ -853,7 +853,7 @@ pub fn get_all_commands() -> Vec<Command> {
         ),
         command(
             "plugin",
-            &[],
+            &["plugins"],
             "Plugin management (list, status, enable, disable)",
             plugin_cmd::PluginHandler,
         ),

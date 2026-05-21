@@ -1,17 +1,16 @@
 ---
 source: crates/claude-code-rs/src/ui/command_palette/tests.rs
-assertion_line: 211
 expression: "render_palette_snapshot(\"/plugin\", &cwd, 100, 12, &[])"
 ---
 "┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
-"│query=/plugin  matches=3  mode=insert                                                             │"
 "│Commands                       Command details                                                    │"
-"│/plugin                        Plugin management (list, status, enable, di...                     │"
-"│/reload-plugins                                                                                   │"
-"│/login-code                                                                                       │"
+"│/plugin                 (plugins)        Plugin management (list, status, enable, di...           │"
+"│/reload-plugins                Hot-refresh the plugin registry                                    │"
+"│/login-code                    Complete OAuth login with authorization code                       │"
 "│                                                                                                  │"
 "│Behavior                                                                                          │"
 "│  Enter inserts: /plugin                                                                          │"
 "│  ghost: n                                                                                        │"
 "│  usage: /plugin <list|installed|disabled|errors|status|enable|disable|uninstall> [id]            │"
+"│  example: /plugin enable <plugin-id>                                                             │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"

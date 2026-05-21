@@ -461,13 +461,13 @@ mod tests {
             60,
             PromptInputRenderContext {
                 hint: None,
-                placeholder: Some("Message Claude Code"),
+                placeholder: Some("Message cc-rust"),
                 mode_indicator: Some("INS"),
             },
         );
 
         assert!(rendered.starts_with(">"));
-        assert!(rendered.contains("Message Claude Code"));
+        assert!(rendered.contains("Message cc-rust"));
         assert!(rendered.contains("[INS]"));
     }
 

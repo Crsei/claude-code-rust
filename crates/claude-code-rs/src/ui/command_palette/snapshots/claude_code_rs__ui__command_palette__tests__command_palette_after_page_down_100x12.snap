@@ -1,17 +1,16 @@
 ---
 source: crates/claude-code-rs/src/ui/command_palette/tests.rs
-assertion_line: 203
 expression: "render_palette_snapshot(\"/\", &cwd, 100, 12, &[KeyCode::PageDown])"
 ---
 "┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
-"│query=/  matches=73  mode=insert                                                                  │"
 "│Commands                       Command details                                                    │"
 "│  ─ Builtin ─                                                                                     │"
-"│/cost                   (usage)                                                                   │"
-"│/daemon                                                                                           │"
+"│/cost                   (usage)        Show token usage and cost for the current s...             │"
+"│/daemon                        View/control daemon process                                        │"
 "│/diff                          Show git diff of current changes                                   │"
 "│                                                                                                  │"
 "│Behavior                                                                                          │"
 "│  Enter inserts: /diff                                                                            │"
 "│  ghost: /diff                                                                                    │"
+"│  usage: /diff                                                                                    │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"

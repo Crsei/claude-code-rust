@@ -55,17 +55,7 @@ impl PermissionsSurface {
         workspace_directories.sort_by(|a, b| a.path.cmp(&b.path));
 
         Self {
-            state: TabbedFormState::new(
-                "Permissions",
-                vec![
-                    status_tab(perm),
-                    rules_tab(&rules),
-                    modes_tab(perm),
-                    workspace_directories_tab(&workspace_directories),
-                    recent_denials_tab(&[]),
-                    mutate_tab(),
-                ],
-            ),
+            state: TabbedFormState::new("Permissions", vec![modes_tab(perm)]),
             rules,
             workspace_directories,
             recent_denials: Vec::new(),
@@ -163,8 +153,12 @@ impl PermissionsSurface {
                 "mode={} rules={}",
                 self.state
                     .active_tab()
-                    .map(|tab| tab.label.as_str())
-                    .unwrap_or("unknown"),
+                    .and_then(|tab| tab
+                        .options
+                        .iter()
+                        .find(|option| option.description == "current"))
+                    .map(|option| option.label.trim_end_matches(" (current)"))
+                    .unwrap_or("default"),
                 self.rules.len()
             ))
             .sections(sections, self.state.active_tab)
@@ -190,7 +184,7 @@ impl PermissionsSurface {
                     CommandSurfaceOutcome::Submit("/permissions mode auto --confirm".to_string())
                 }
                 "mode-bypass" => {
-                    CommandSurfaceOutcome::Submit("/permissions mode bypass --confirm".to_string())
+                    CommandSurfaceOutcome::Submit("/permissions mode bypass".to_string())
                 }
                 "mode-plan" => CommandSurfaceOutcome::Submit("/permissions mode plan".to_string()),
                 "mode-accept-edits" => {
@@ -226,57 +220,13 @@ impl PermissionsSurface {
     }
 }
 
-fn status_tab(perm: &ToolPermissionContext) -> FormTab {
-    FormTab::new(
-        "status",
-        "Status",
-        vec![
-            FormOption::new("show", "Show effective permissions").with_description(format!(
-                "mode={}; auto={}; bypass={}",
-                perm.mode.as_str(),
-                availability_label(perm.is_auto_mode_available.unwrap_or(true)),
-                availability_label(perm.is_bypass_permissions_mode_available),
-            )),
-        ],
-    )
-}
-
-fn rules_tab(rules: &[PermissionRule]) -> FormTab {
-    FormTab::new(
-        "rules",
-        "Rules",
-        vec![FormOption::new("show", "Review effective rules")
-            .with_description(format!("{} rule(s) from settings/session", rules.len()))],
-    )
-}
-
-fn workspace_directories_tab(directories: &[WorkspaceDirectory]) -> FormTab {
-    FormTab::new(
-        "workspace",
-        "Workspace",
-        vec![
-            FormOption::new("workspace-show", "Review workspace directories")
-                .with_description(format!("{} additional directorie(s)", directories.len())),
-        ],
-    )
-}
-
-fn recent_denials_tab(denials: &[RecentDenial]) -> FormTab {
-    FormTab::new(
-        "denials",
-        "Denials",
-        vec![FormOption::new("denials-show", "Review recent denials")
-            .with_description(format!("{} recent denial(s)", denials.len()))],
-    )
-}
-
 fn modes_tab(perm: &ToolPermissionContext) -> FormTab {
     let mut auto = FormOption::new("mode-auto", "Auto mode")
-        .with_description("requires explicit opt-in; classifier reviews prompts");
+        .with_description("classifier reviews permission prompts");
     if perm.is_auto_mode_available == Some(false) {
         auto = auto.disabled();
     }
-    let mut bypass = FormOption::new("mode-bypass", "Bypass permissions")
+    let mut bypass = FormOption::new("mode-bypass", "Full Access")
         .with_description("requires explicit danger confirmation");
     if !perm.is_bypass_permissions_mode_available {
         bypass = bypass.disabled();
@@ -284,40 +234,11 @@ fn modes_tab(perm: &ToolPermissionContext) -> FormTab {
 
     FormTab::new(
         "modes",
-        "Modes",
+        "Mode",
         vec![
             mode_option("mode-default", "Default", PermissionMode::Default, perm),
-            auto,
-            bypass,
-            mode_option("mode-plan", "Plan", PermissionMode::Plan, perm),
-            mode_option(
-                "mode-accept-edits",
-                "Accept edits",
-                PermissionMode::AcceptEdits,
-                perm,
-            ),
-            mode_option("mode-dont-ask", "Don't ask", PermissionMode::DontAsk, perm),
-        ],
-    )
-}
-
-fn mutate_tab() -> FormTab {
-    FormTab::new(
-        "mutate",
-        "Mutate",
-        vec![
-            FormOption::new("add-allow", "Add allow rule")
-                .with_description("fills /permissions allow <rule> --project"),
-            FormOption::new("add-ask", "Add ask rule")
-                .with_description("fills /permissions ask <rule> --project"),
-            FormOption::new("add-deny", "Add deny rule")
-                .with_description("fills /permissions deny <rule> --project"),
-            FormOption::new("session-grant", "Add session grant")
-                .with_description("transient allow; cleared on session end"),
-            FormOption::new("clear-session", "Clear session grants")
-                .with_description("drops transient allow rules"),
-            FormOption::new("reset", "Reset in-memory rules")
-                .with_description("does not edit .cc-rust settings files"),
+            mode_option_from_option(auto, PermissionMode::Auto, perm, "Auto-review"),
+            mode_option_from_option(bypass, PermissionMode::Bypass, perm, "Full Access"),
         ],
     )
 }
@@ -333,7 +254,31 @@ fn mode_option(
     } else {
         "select"
     };
+    let mut label = label.into();
+    if perm.mode == mode {
+        label.push_str(" (current)");
+    }
     FormOption::new(id, label).with_description(current)
+}
+
+fn mode_option_from_option(
+    option: FormOption,
+    mode: PermissionMode,
+    perm: &ToolPermissionContext,
+    label: &str,
+) -> FormOption {
+    let mut option = option;
+    option.label = if perm.mode == mode {
+        format!("{label} (current)")
+    } else {
+        label.to_string()
+    };
+    option.description = if perm.mode == mode {
+        "current".to_string()
+    } else {
+        option.description
+    };
+    option
 }
 
 fn collect_rules(
@@ -361,13 +306,5 @@ fn scope_for_source(source: &str) -> PermissionScope {
         "local" => PermissionScope::Local,
         "policy" | "managed" => PermissionScope::Policy,
         _ => PermissionScope::Project,
-    }
-}
-
-fn availability_label(enabled: bool) -> &'static str {
-    if enabled {
-        "available"
-    } else {
-        "disabled"
     }
 }

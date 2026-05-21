@@ -75,11 +75,13 @@ impl App {
             } else {
                 0
             };
-        let command_palette_height = self.command_palette.preferred_height();
+        let command_palette_height = self
+            .command_palette
+            .preferred_height()
+            .min(size.height.saturating_sub(4));
         let completion_popup_height = self.completion_popup_height();
         let cwd_path = std::path::Path::new(&self.cwd);
-        let command_arg_help_height =
-            CommandPalette::argument_help_height(&self.prompt.input, cwd_path);
+        let command_arg_help_height = 0;
         let paste_notice_height =
             u16::from(self.prompt.large_paste_notice().is_some() && !immediate_notification);
         let notification_height = u16::from(current_notification.is_some());
@@ -228,14 +230,6 @@ impl App {
             &self.theme,
         );
 
-        CommandPalette::render_argument_help(
-            &self.prompt.input,
-            cwd_path,
-            bottom_chunks.command_arg_help,
-            frame.buffer_mut(),
-            &self.theme,
-        );
-
         if notification_height > 0 {
             self.render_notification(bottom_chunks.notification, frame.buffer_mut());
         }
@@ -370,7 +364,7 @@ impl App {
         } else if self.vim.enabled {
             "Press i to insert, / for commands, Ctrl+R for history"
         } else {
-            "Message Claude Code, / for commands"
+            "Message cc-rust, / for commands"
         }
     }
 
@@ -698,7 +692,7 @@ fn render_workspace_trust_prompt(
             " project, or work from your team). If not, take a moment to review what's in this folder first.",
         ),
         Line::from(""),
-        Line::from(" Claude Code'll be able to read, edit, and execute files here."),
+        Line::from(" cc-rust can read, edit, and execute files here."),
         Line::from(""),
         Line::from(Span::styled(
             " Security guide",

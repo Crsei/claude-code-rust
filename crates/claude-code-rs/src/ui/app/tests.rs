@@ -73,7 +73,8 @@ fn render_places_prompt_after_short_chat_content() {
     terminal.draw(|frame| app.render(frame)).expect("draw");
 
     let content = buffer_to_lines(terminal.backend().buffer(), 80, 24);
-    assert!(content[0].contains("You: hello"));
+    assert!(content[0].contains("hello"));
+    assert!(!content[0].contains("You:"));
     assert!(
         content[1].trim_start().starts_with(">"),
         "prompt should follow the rendered chat content"
@@ -360,7 +361,7 @@ fn command_palette_renders_below_prompt_input() {
     let content = buffer_to_lines(terminal.backend().buffer(), 100, 24);
     let prompt_row = content
         .iter()
-        .position(|line| line.trim_start().starts_with("> /"))
+        .position(|line| line.trim_start().starts_with(">"))
         .expect("prompt row");
     let commands_row = content
         .iter()
@@ -374,7 +375,7 @@ fn command_palette_renders_below_prompt_input() {
 
 #[test]
 #[serial]
-fn argument_entry_renders_parameter_help_near_input() {
+fn argument_entry_does_not_render_parameter_help_near_input() {
     let mut app = App::new();
     app.prompt.input = "/plugin ".to_string();
     app.prompt.cursor_position = app.prompt.input.len();
@@ -383,17 +384,9 @@ fn argument_entry_renders_parameter_help_near_input() {
     terminal.draw(|frame| app.render(frame)).expect("draw");
 
     let content = buffer_to_lines(terminal.backend().buffer(), 100, 24).join("\n");
-    assert!(content.contains("/plugin arguments"));
-    assert!(content.contains(
-        "Usage: /plugin <list|installed|disabled|errors|status|enable|disable|uninstall> [id]"
-    ));
-    assert!(content.contains("installed_plugins.json"));
-    assert!(
-        content.contains("~/.cc-rust")
-            || content.contains("$CC_RUST_HOME")
-            || content.contains("file:///"),
-        "expected an editable plugin path, got:\n{content}"
-    );
+    assert!(!content.contains("/plugin arguments"));
+    assert!(!content.contains("Usage: /plugin"));
+    assert!(!content.contains("installed_plugins.json"));
 }
 
 #[test]
@@ -439,7 +432,7 @@ fn workspace_trust_prompt_accepts_persists_and_exits() {
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
     terminal.draw(|frame| reopened.render(frame)).expect("draw");
     let content = buffer_to_lines(terminal.backend().buffer(), 80, 24).join("\n");
-    assert!(content.contains("Claude Code"));
+    assert!(content.contains("cc-rust"));
     assert!(!content.contains("Quick safety check"));
 
     let other_workspace = tempfile::tempdir().expect("other workspace");

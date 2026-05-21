@@ -176,20 +176,19 @@ pub fn render_api_error(error: &AssistantApiError) -> String {
 /// Render assistant text message, performing error classification first.
 ///
 /// If the text matches an API error pattern, the classified error message
-/// is rendered; otherwise the plain text is returned with an "Assistant:"
-/// prefix.
+/// is rendered; otherwise the plain text is returned.
 #[cfg(test)]
 pub fn render_assistant_text_message(text: &str, _theme: &Theme) -> String {
     let trimmed = text.trim();
     if trimmed.is_empty() {
-        return "Assistant: <empty text>".to_string();
+        return "<empty text>".to_string();
     }
 
     if let Some(error) = classify_assistant_text(trimmed) {
         return render_api_error(&error);
     }
 
-    format!("Assistant: {trimmed}")
+    trimmed.to_string()
 }
 
 #[cfg(test)]
@@ -199,20 +198,20 @@ mod tests {
     #[test]
     fn empty_text_returns_placeholder() {
         let result = render_assistant_text_message("", &Theme::default());
-        assert_eq!(result, "Assistant: <empty text>");
+        assert_eq!(result, "<empty text>");
     }
 
     #[test]
     fn whitespace_text_returns_placeholder() {
         let result = render_assistant_text_message("   ", &Theme::default());
-        assert_eq!(result, "Assistant: <empty text>");
+        assert_eq!(result, "<empty text>");
     }
 
     #[test]
     fn plain_text_passes_through() {
         let result =
             render_assistant_text_message("Hello, I can help with that.", &Theme::default());
-        assert_eq!(result, "Assistant: Hello, I can help with that.");
+        assert_eq!(result, "Hello, I can help with that.");
     }
 
     #[test]

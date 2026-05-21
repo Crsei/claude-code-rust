@@ -13,11 +13,13 @@ mod tests;
 
 use edit_targets::{has_edit_target_picker, EditTarget};
 use filter::{command_from_argument_input, filtered_commands};
+#[cfg(test)]
 use render::argument_edit_row_count;
 
 const MAX_ROWS: usize = 20;
 const RESERVED_NON_COMMAND_ROWS: usize = 7;
 const BORDER_ROWS: u16 = 2;
+#[cfg(test)]
 const ARG_HELP_BASE_HEIGHT: u16 = 5;
 const MAX_EDIT_ROWS: usize = 2;
 const MAX_EDIT_TARGET_ROWS: usize = 4;
@@ -247,6 +249,7 @@ impl CommandPalette {
         command_from_argument_input(input, cwd).map(|item| item.usage)
     }
 
+    #[cfg(test)]
     pub fn argument_help_height(input: &str, cwd: &Path) -> u16 {
         command_from_argument_input(input, cwd)
             .map(|item| {

@@ -100,10 +100,8 @@ pub fn render_user_text_message(text: &str, _theme: &Theme) -> String {
         UserTextRendered::Hidden => String::new(),
         UserTextRendered::Rendered(s) => s,
         UserTextRendered::Delegated(kind, content) => {
-            // Default fallback when no specialized handler is available:
-            // preserve the previous user-visible prompt format for normal text.
             if kind == "prompt" {
-                format!("You: {content}")
+                content
             } else {
                 format!("[{kind}]: {content}")
             }

@@ -1,3 +1,4 @@
+#[cfg(test)]
 use std::path::Path;
 
 use ratatui::buffer::Buffer;
@@ -11,10 +12,13 @@ use crate::ui::selection_surface::SelectionSurface;
 use crate::ui::theme::Theme;
 
 use super::edit_targets::{has_edit_target_picker, EditTarget};
-use super::filter::{command_from_argument_input, CommandGroup};
+#[cfg(test)]
+use super::filter::command_from_argument_input;
+use super::filter::CommandGroup;
+#[cfg(test)]
+use super::CommandItem;
 use super::{
-    CommandItem, CommandPalette, MAX_EDIT_ROWS, MAX_EDIT_TARGET_ROWS, MAX_ROWS,
-    RESERVED_NON_COMMAND_ROWS,
+    CommandPalette, MAX_EDIT_ROWS, MAX_EDIT_TARGET_ROWS, MAX_ROWS, RESERVED_NON_COMMAND_ROWS,
 };
 
 impl CommandPalette {
@@ -51,13 +55,6 @@ impl CommandPalette {
             .saturating_sub(reserved_rows)
             .clamp(1, MAX_ROWS);
         let mut lines = Vec::new();
-        lines.push(Line::from(vec![
-            Span::styled(format!("query=/{}", self.query), theme.info),
-            Span::styled(
-                format!("  matches={}  mode=insert", self.filtered.len()),
-                theme.dim,
-            ),
-        ]));
         lines.push(Line::from(Span::styled(
             "Commands                       Command details",
             theme.dim,
@@ -88,11 +85,7 @@ impl CommandPalette {
             } else {
                 format!(" ({})", item.aliases.join(", "))
             };
-            let detail = if selected {
-                truncate(&item.description, 46)
-            } else {
-                String::new()
-            };
+            let detail = truncate(&item.description, 46);
 
             // Group header on group transitions (only for non-empty query)
             if self.query.is_empty() {
@@ -181,6 +174,7 @@ impl CommandPalette {
         Paragraph::new(lines).render(inner, buf);
     }
 
+    #[cfg(test)]
     pub fn render_argument_help(
         input: &str,
         cwd: &Path,
@@ -268,12 +262,14 @@ pub(super) fn visible_window_start(total: usize, selected: usize, max_rows: usiz
     selected.saturating_add(1).saturating_sub(max_rows)
 }
 
+#[cfg(test)]
 fn set_inner_line(buf: &mut Buffer, inner: Rect, row: u16, line: &Line<'_>) {
     if row < inner.height {
         buf.set_line(inner.x, inner.y + row, line, inner.width);
     }
 }
 
+#[cfg(test)]
 pub(super) fn argument_edit_row_count(item: &CommandItem) -> usize {
     if item.edit_targets.is_empty() {
         0
@@ -367,7 +363,7 @@ fn command_palette_hint() -> String {
     render_shortcut_hints(&[
         ShortcutHint::new("Enter", "select"),
         ShortcutHint::new("Esc", "close"),
-        ShortcutHint::new("type", "arguments after space"),
+        ShortcutHint::new("type", "filter"),
     ])
 }
 

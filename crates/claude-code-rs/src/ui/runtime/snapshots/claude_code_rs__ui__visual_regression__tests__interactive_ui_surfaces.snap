@@ -1,6 +1,5 @@
 ---
 source: crates/claude-code-rs/src/ui/runtime/visual_regression.rs
-assertion_line: 410
 expression: render_interactive_ui_surfaces()
 ---
 ## permission/bash
@@ -35,7 +34,6 @@ expression: render_interactive_ui_surfaces()
 
 ## command-palette-picker
 ┌ Commands - Edit targets ─────────────────────────────────────────────────────────────────────────┐
-│query=/mcp  matches=7  mode=insert                                                                │
 │Commands                       Command details                                                    │
 │/mcp                           MCP server management (list, status, add, e...                     │
 │                                                                                                  │
@@ -47,6 +45,7 @@ expression: render_interactive_ui_surfaces()
 │  edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                        │
 │        local: ./.cc-rust/settings.local.json                                                     │
 │  target: Ctrl+E pick target                                                                      │
+│                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ## markdown
@@ -58,12 +57,12 @@ Visit docs for the current state.
 - second
 
 ## streaming-message
-You: show me the latest status
+ show me the latest status
 
-Claude: Progress
+Progress
 
-        Visit docs for details.
-        ($0.0314) ▌
+Visit docs for details.
+($0.0314) ▌
 
 
 

@@ -186,10 +186,13 @@ fn slash_command_surfaces_open_only_for_empty_interactive_commands() {
         "login",
         "mcp",
         "memory",
+        "model",
         "sandbox",
         "skills",
         "permissions",
         "perms",
+        "plugin",
+        "plugins",
         "remote",
         "tasks",
         "team",
@@ -225,11 +228,9 @@ fn permissions_command_surface_routes_confirmed_safety_modes() {
         CommandSurface::for_slash_command("permissions", "", &state, &cwd).expect("surface");
 
     assert!(surface.render().contains("Permissions"));
-    assert!(surface.render().contains("mode=default"));
-    surface.handle_key(key(KeyCode::Right));
-    assert!(surface.render().contains("Permission rules (1)"));
-    surface.handle_key(key(KeyCode::Right));
-    assert!(surface.render().contains("Auto mode"));
+    assert!(surface.render().contains("Default (current)"));
+    assert!(surface.render().contains("Auto-review"));
+    assert!(surface.render().contains("Full Access"));
     surface.handle_key(key(KeyCode::Down));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
@@ -238,7 +239,7 @@ fn permissions_command_surface_routes_confirmed_safety_modes() {
     surface.handle_key(key(KeyCode::Down));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
-        CommandSurfaceOutcome::Submit("/permissions mode bypass --confirm".to_string())
+        CommandSurfaceOutcome::Submit("/permissions mode bypass".to_string())
     );
 }
 

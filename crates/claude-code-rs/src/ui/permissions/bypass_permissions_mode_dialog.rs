@@ -83,7 +83,7 @@ impl BypassPermissionsModeDialog {
         let body = if self.disabled {
             "Bypass permissions mode is disabled by settings policy. Exit this session or choose another permission mode."
         } else {
-            "Claude Code will not ask before running potentially dangerous commands. Use this only in a sandboxed container or VM that can be restored if damaged.\n\nBy proceeding, you accept responsibility for actions taken in this mode."
+            "cc-rust will not ask before running potentially dangerous commands. Use this only in a sandboxed container or VM that can be restored if damaged.\n\nBy proceeding, you accept responsibility for actions taken in this mode."
         };
         Paragraph::new(body)
             .wrap(Wrap { trim: true })

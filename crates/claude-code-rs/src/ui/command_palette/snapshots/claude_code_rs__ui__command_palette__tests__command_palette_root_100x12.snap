@@ -1,17 +1,16 @@
 ---
 source: crates/claude-code-rs/src/ui/command_palette/tests.rs
-assertion_line: 199
 expression: "render_palette_snapshot(\"/\", &cwd, 100, 12, &[])"
 ---
 "┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
-"│query=/  matches=73  mode=insert                                                                  │"
 "│Commands                       Command details                                                    │"
 "│  ─ Builtin ─                                                                                     │"
 "│/init                          Initialize project config and CLAUDE.md                            │"
-"│/add-dir                                                                                          │"
-"│/advisor                                                                                          │"
+"│/add-dir                       Add a new working directory                                        │"
+"│/advisor                       Show, set, or clear the advisor model                              │"
 "│                                                                                                  │"
 "│Behavior                                                                                          │"
 "│  Enter inserts: /init                                                                            │"
 "│  ghost: /init                                                                                    │"
+"│  usage: /init                                                                                    │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
