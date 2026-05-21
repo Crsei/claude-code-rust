@@ -349,3 +349,32 @@ export HOME=/tmp/cc-rust-capability-lab/home
 4. `Add plugin marketplace e2e fixtures`
 5. `Add combined MCP skill plugin capability test`
 6. `Document verified full-build capability gaps`
+
+---
+
+## 11. 落地状态（2026-05-21）
+
+已落地第一轮回归自动化：
+
+- 新增 `crates/claude-code-rs/tests/capability_lab_support/`，运行时生成隔离的 `cc-rust-capability-lab` 夹具项目、项目级 Skill、项目级 `.cc-rust/settings.json`、本地插件 fixture，并扫描禁止写入的上游路径。
+- 新增 `e2e_mcp_capability.rs`，默认覆盖 MCP discovery、disabled server、missing command recovery；ignored/live 覆盖 pinned community packages：
+  - `@modelcontextprotocol/server-filesystem@2026.1.14`
+  - `@modelcontextprotocol/server-sequential-thinking@2025.12.18`
+  - `@playwright/mcp@0.0.75`
+  - `@upstash/context7-mcp@2.3.0`
+  - `@modelcontextprotocol/server-github@2025.4.8`（deprecated，仅作兼容错误/凭据路径 live 覆盖）
+  - `uvx --from mcp-server-git mcp-server-git`
+- 新增 `e2e_skill_capability.rs`，覆盖项目级 Skill discovery、reference 文件不预加载、插件 Skill 随贡献启用/移除。
+- 新增 `e2e_plugin_capability.rs`，覆盖本地 marketplace/plugin fixture、install、enable/disable、MCP/Skill contribution discovery、uninstall、missing source/bad manifest 错误。
+- 新增 `e2e_capability_lab.rs`，覆盖 MCP + Skill + Plugin 同项目组合 smoke；真实社区 MCP 连接链路作为 ignored/live tests。
+
+默认验证命令：
+
+```bash
+cargo test -p claude-code-rs --test e2e_mcp_capability --test e2e_skill_capability --test e2e_plugin_capability --test e2e_capability_lab
+```
+
+已知保留：
+
+- 真实社区包连接、Playwright 浏览器、Context7/GitHub 网络/token 路径不进入默认 gate，需显式 `-- --ignored` 或后续 live job 跑。
+- 当前组合任务仍是工具/注册/发现层 smoke，不是带真实模型凭据的端到端代码修改链路。
