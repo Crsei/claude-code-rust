@@ -13,17 +13,21 @@ use cc_engine::types::tool::{
     ValidationResult,
 };
 use cc_permissions::dangerous::is_dangerous_command;
+use cc_permissions::read_only_shell::is_read_only_bash_command;
 use cc_sandbox::{make_runner, policy_from_app_state, preflight_shell_command};
+use cc_shell_command::ReadOnlyResult;
 use cc_tools::exec::bash as bash_spec;
 pub(crate) use cc_tools::exec::truncate_output;
 use cc_types::message::AssistantMessage;
 use cc_utils::bash::{
     extract_command_name, extract_command_prefixes, has_malformed_tokens, has_unterminated_quotes,
-    is_command_parseable, parse_command, resolve_timeout, rewrite_windows_null_redirect,
-    should_add_stdin_redirect, split_compound_command, validate_heredocs,
+    is_command_parseable, parse_command, resolve_timeout, split_compound_command,
+    validate_heredocs,
 };
 use cc_utils::git_operation_tracking::track_git_operations_json;
-use cc_utils::shell::{build_shell_env, detect_default_shell};
+use cc_utils::shell::detect_default_shell;
+
+use cc_shell_command::provider::{BashProvider, ShellProvider};
 
 use super::process_control::{
     configure_process_group, wait_for_exit_or_termination, ControlledExit,
@@ -125,8 +129,9 @@ impl Tool for BashTool {
         false
     }
 
-    fn is_read_only(&self, _input: &Value) -> bool {
-        false
+    fn is_read_only(&self, input: &Value) -> bool {
+        let command = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
+        matches!(is_read_only_bash_command(command), ReadOnlyResult::ReadOnly)
     }
 
     fn interrupt_behavior(&self) -> InterruptBehavior {
@@ -251,29 +256,18 @@ impl Tool for BashTool {
             });
         }
 
-        // Detect the best available shell for the current platform
+        // Detect the best available shell and create a BashProvider
         let shell = detect_default_shell();
-
-        // Rewrite Windows CMD-style `>nul` to POSIX `/dev/null` for POSIX shells
-        let mut command = if shell.kind.is_posix() {
-            rewrite_windows_null_redirect(&raw_command)
-        } else {
-            raw_command.clone()
-        };
-
-        // Add stdin redirect (< /dev/null) to prevent interactive hangs,
-        // unless the command uses heredoc or already has a stdin redirect
-        if shell.needs_stdin_redirect && should_add_stdin_redirect(&command) {
-            command = format!("{} < /dev/null", command);
-        }
-        let mut cmd = Command::new(&shell.path);
-        for arg in &shell.exec_args {
+        let provider = BashProvider::new(shell.path, shell.exec_args, shell.needs_stdin_redirect);
+        let command = provider.normalize_command(&raw_command);
+        let mut cmd = Command::new(provider.shell_path());
+        for arg in provider.exec_args() {
             cmd.arg(arg);
         }
         cmd.arg(&command);
 
         // Inject shell environment (TERM, LANG, GIT_PAGER=cat, CLAUDE_CODE=1, etc.)
-        for (k, v) in build_shell_env() {
+        for (k, v) in provider.build_env() {
             cmd.env(&k, &v);
         }
 
@@ -657,5 +651,20 @@ mod tests {
                 line
             );
         }
+    }
+
+    #[test]
+    fn test_bash_read_only_safe_command() {
+        let tool = BashTool;
+        assert!(tool.is_read_only(&json!({ "command": "git status --short" })));
+        assert!(tool.is_read_only(&json!({ "command": "rg pattern src" })));
+    }
+
+    #[test]
+    fn test_bash_read_only_blocks_shell_syntax() {
+        let tool = BashTool;
+        assert!(!tool.is_read_only(&json!({ "command": "git status > out.txt" })));
+        assert!(!tool.is_read_only(&json!({ "command": "git status && git diff" })));
+        assert!(!tool.is_read_only(&json!({ "command": "echo $(git status)" })));
     }
 }

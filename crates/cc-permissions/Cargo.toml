@@ -16,6 +16,7 @@ url = { workspace = true }
 cc-types = { workspace = true }
 cc-utils = { workspace = true }
 cc-bootstrap = { workspace = true }
+cc-shell-command = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
