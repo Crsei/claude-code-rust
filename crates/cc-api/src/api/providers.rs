@@ -191,11 +191,11 @@ pub fn compatible_anthropic_capabilities() -> ProviderCapabilities {
         streaming: StreamingSupport::Native,
         tool_use: true,
         thinking: false,
-        prompt_cache: true,
-        prompt_cache_marker: true,
+        prompt_cache: false,
+        prompt_cache_marker: false,
         prompt_cache_ttl_1h: false,
         prompt_cache_global_scope: false,
-        anthropic_beta_header: true,
+        anthropic_beta_header: false,
         advisor: false,
         status: ProviderSupportStatus::Supported,
     }
@@ -641,11 +641,11 @@ mod tests {
         assert_eq!(caps.protocol, ProviderProtocol::Anthropic);
         assert_eq!(caps.streaming, StreamingSupport::Native);
         assert!(caps.tool_use);
-        assert!(caps.prompt_cache);
-        assert!(caps.prompt_cache_marker);
+        assert!(!caps.prompt_cache);
+        assert!(!caps.prompt_cache_marker);
         assert!(!caps.prompt_cache_ttl_1h);
         assert!(!caps.prompt_cache_global_scope);
-        assert!(caps.anthropic_beta_header);
+        assert!(!caps.anthropic_beta_header);
         assert!(!caps.thinking);
         assert!(!caps.advisor);
         assert!(caps.is_usable());

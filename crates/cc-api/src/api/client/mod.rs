@@ -245,7 +245,14 @@ pub(crate) fn build_anthropic_headers(
     auth: &AnthropicAuth,
     include_token_counting_beta: bool,
 ) -> Result<reqwest::header::HeaderMap> {
-    build_anthropic_headers_with_cache_betas(auth, include_token_counting_beta, true, false, false)
+    build_anthropic_headers_with_cache_betas(
+        auth,
+        include_token_counting_beta,
+        true,
+        false,
+        false,
+        true,
+    )
 }
 
 pub(crate) fn build_anthropic_headers_for_body(
@@ -253,12 +260,22 @@ pub(crate) fn build_anthropic_headers_for_body(
     include_token_counting_beta: bool,
     body: &Value,
 ) -> Result<reqwest::header::HeaderMap> {
+    build_anthropic_headers_for_body_with_beta_policy(auth, include_token_counting_beta, body, true)
+}
+
+pub(crate) fn build_anthropic_headers_for_body_with_beta_policy(
+    auth: &AnthropicAuth,
+    include_token_counting_beta: bool,
+    body: &Value,
+    include_anthropic_beta_header: bool,
+) -> Result<reqwest::header::HeaderMap> {
     build_anthropic_headers_with_cache_betas(
         auth,
         include_token_counting_beta,
         body_contains_key(body, "cache_control"),
         body_contains_cache_attr(body, "ttl"),
         body_contains_cache_attr(body, "scope"),
+        include_anthropic_beta_header,
     )
 }
 
@@ -268,6 +285,7 @@ fn build_anthropic_headers_with_cache_betas(
     include_prompt_cache_beta: bool,
     include_ttl_beta: bool,
     include_global_scope_beta: bool,
+    include_anthropic_beta_header: bool,
 ) -> Result<reqwest::header::HeaderMap> {
     use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
 
@@ -279,22 +297,24 @@ fn build_anthropic_headers_with_cache_betas(
             .context("failed to build User-Agent header")?,
     );
     headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
-    let mut betas = vec!["interleaved-thinking-2025-05-14"];
-    if include_prompt_cache_beta {
-        betas.push("prompt-caching-2024-07-16");
+    if include_anthropic_beta_header {
+        let mut betas = vec!["interleaved-thinking-2025-05-14"];
+        if include_prompt_cache_beta {
+            betas.push("prompt-caching-2024-07-16");
+        }
+        if include_ttl_beta {
+            betas.push("extended-cache-ttl-2025-04-11");
+        }
+        if include_global_scope_beta {
+            betas.push("prompt-caching-scope-2026-01-05");
+        }
+        if include_token_counting_beta {
+            betas.push("token-counting-2024-11-01");
+        }
+        let beta = HeaderValue::from_str(&betas.join(","))
+            .context("failed to build anthropic-beta header")?;
+        headers.insert("anthropic-beta", beta);
     }
-    if include_ttl_beta {
-        betas.push("extended-cache-ttl-2025-04-11");
-    }
-    if include_global_scope_beta {
-        betas.push("prompt-caching-scope-2026-01-05");
-    }
-    if include_token_counting_beta {
-        betas.push("token-counting-2024-11-01");
-    }
-    let beta =
-        HeaderValue::from_str(&betas.join(",")).context("failed to build anthropic-beta header")?;
-    headers.insert("anthropic-beta", beta);
     auth.insert_auth_header(&mut headers)?;
     Ok(headers)
 }
@@ -336,6 +356,37 @@ pub(crate) fn strip_anthropic_cache_fields(value: &mut Value) {
         Value::Array(values) => {
             for value in values {
                 strip_anthropic_cache_fields(value);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn strip_anthropic_compatible_only_fields(value: &mut Value) {
+    strip_anthropic_cache_fields(value);
+    if let Value::Object(map) = value {
+        map.remove("thinking");
+        map.remove("context_management");
+    }
+    strip_anthropic_thinking_blocks(value);
+}
+
+fn strip_anthropic_thinking_blocks(value: &mut Value) {
+    match value {
+        Value::Array(values) => {
+            values.retain(|item| {
+                item.get("type")
+                    .and_then(Value::as_str)
+                    .map(|kind| kind != "thinking" && kind != "redacted_thinking")
+                    .unwrap_or(true)
+            });
+            for value in values {
+                strip_anthropic_thinking_blocks(value);
+            }
+        }
+        Value::Object(map) => {
+            for value in map.values_mut() {
+                strip_anthropic_thinking_blocks(value);
             }
         }
         _ => {}
@@ -897,10 +948,8 @@ impl ApiClient {
     pub fn supports_exact_token_count(&self) -> bool {
         matches!(
             self.config.provider,
-            ApiProvider::Anthropic {
-                endpoint_kind: AnthropicEndpointKind::DirectAnthropic,
-                ..
-            } | ApiProvider::Azure { .. }
+            ApiProvider::Anthropic { .. }
+                | ApiProvider::Azure { .. }
                 | ApiProvider::Google { .. }
                 | ApiProvider::Bedrock { .. }
                 | ApiProvider::Vertex { .. }
@@ -923,12 +972,17 @@ impl ApiClient {
                 auth,
                 base_url,
                 endpoint_kind,
-            } if *endpoint_kind == AnthropicEndpointKind::DirectAnthropic => {
+            } => {
+                let provider = if *endpoint_kind == AnthropicEndpointKind::CompatibleAnthropic {
+                    "anthropic-compatible"
+                } else {
+                    "anthropic"
+                };
                 self.count_anthropic_input_tokens(
                     auth,
                     base_url.as_deref().unwrap_or("https://api.anthropic.com"),
                     request,
-                    "anthropic",
+                    provider,
                 )
                 .await
             }
@@ -1021,16 +1075,24 @@ impl ApiClient {
         );
         let mut body = build_anthropic_count_tokens_body(request);
         let direct_official_anthropic = is_official_anthropic_base_url(base_url);
-        apply_prompt_cache_policy_to_body(
-            &mut body,
-            PromptCacheCapability {
-                explicit_markers: true,
-                ttl_1h: direct_official_anthropic,
-                global_scope: direct_official_anthropic,
-                direct_official_anthropic,
-            },
-        );
-        let headers = build_anthropic_headers_for_body(auth, true, &body)?;
+        if direct_official_anthropic {
+            apply_prompt_cache_policy_to_body(
+                &mut body,
+                PromptCacheCapability {
+                    explicit_markers: true,
+                    ttl_1h: true,
+                    global_scope: true,
+                    direct_official_anthropic: true,
+                },
+            );
+        } else {
+            strip_anthropic_compatible_only_fields(&mut body);
+        }
+        let headers = if direct_official_anthropic {
+            build_anthropic_headers_for_body(auth, true, &body)?
+        } else {
+            build_anthropic_headers_for_body_with_beta_policy(auth, true, &body, false)?
+        };
         let response = self
             .http
             .post(&url)
@@ -1506,10 +1568,26 @@ impl ApiClient {
         }
 
         match &self.config.provider {
-            ApiProvider::Anthropic { auth, .. } => match build_anthropic_headers(auth, false) {
-                Ok(provider_headers) => headers.extend(provider_headers),
-                Err(error) => tracing::warn!(%error, "failed to build Anthropic headers"),
-            },
+            ApiProvider::Anthropic {
+                auth,
+                endpoint_kind,
+                ..
+            } => {
+                let provider_headers = if *endpoint_kind == AnthropicEndpointKind::DirectAnthropic {
+                    build_anthropic_headers(auth, false)
+                } else {
+                    build_anthropic_headers_for_body_with_beta_policy(
+                        auth,
+                        false,
+                        &Value::Null,
+                        false,
+                    )
+                };
+                match provider_headers {
+                    Ok(provider_headers) => headers.extend(provider_headers),
+                    Err(error) => tracing::warn!(%error, "failed to build Anthropic headers"),
+                }
+            }
             ApiProvider::Azure { api_key, .. } => {
                 match build_anthropic_headers(&AnthropicAuth::ApiKey(api_key.clone()), false) {
                     Ok(provider_headers) => headers.extend(provider_headers),
@@ -1537,8 +1615,22 @@ impl ApiClient {
         map.insert("content-type".to_string(), "application/json".to_string());
 
         match &self.config.provider {
-            ApiProvider::Anthropic { auth, .. } => {
-                if let Ok(headers) = build_anthropic_headers(auth, false) {
+            ApiProvider::Anthropic {
+                auth,
+                endpoint_kind,
+                ..
+            } => {
+                let headers = if *endpoint_kind == AnthropicEndpointKind::DirectAnthropic {
+                    build_anthropic_headers(auth, false)
+                } else {
+                    build_anthropic_headers_for_body_with_beta_policy(
+                        auth,
+                        false,
+                        &Value::Null,
+                        false,
+                    )
+                };
+                if let Ok(headers) = headers {
                     extend_header_string_map(&mut map, &headers);
                 }
             }

@@ -435,6 +435,32 @@ fn test_build_headers_raw_header_map_has_required() {
 }
 
 #[test]
+fn compatible_anthropic_headers_omit_beta_extensions() {
+    let body = serde_json::json!({
+        "model": "deepseek-v4-pro",
+        "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+        "messages": [{"role": "user", "content": "hello"}],
+    });
+    let headers = build_anthropic_headers_for_body_with_beta_policy(
+        &AnthropicAuth::BearerToken("compatible-token".to_string()),
+        true,
+        &body,
+        false,
+    )
+    .expect("headers build");
+
+    assert_eq!(
+        headers.get("anthropic-version").unwrap().to_str().unwrap(),
+        "2023-06-01"
+    );
+    assert_eq!(
+        headers.get("Authorization").unwrap().to_str().unwrap(),
+        "Bearer compatible-token"
+    );
+    assert!(!headers.contains_key("anthropic-beta"));
+}
+
+#[test]
 fn test_build_headers_azure_has_api_key() {
     let config = ApiClientConfig {
         provider: ApiProvider::Azure {
@@ -889,6 +915,55 @@ fn settings_runtime_env_is_visible_to_anthropic_provider_detection() {
     assert_eq!(
         client.config().provider.endpoint_kind(),
         Some(AnthropicEndpointKind::CompatibleAnthropic)
+    );
+
+    restore_provider_keys(saved_keys);
+    restore_env(saved);
+}
+
+#[test]
+fn startup_settings_env_overrides_inherited_anthropic_provider_env() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let saved = save_env(&[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    let saved_keys = save_and_clear_provider_keys();
+    clear_env(&[
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-old-process-key");
+    std::env::set_var("ANTHROPIC_BASE_URL", "https://old.example.com");
+    std::env::set_var("ANTHROPIC_MODEL", "claude-opus-4-20250514");
+    let env = std::collections::HashMap::from([
+        (
+            "ANTHROPIC_API_KEY".to_string(),
+            "sk-ant-api03-settings-runtime".to_string(),
+        ),
+        (
+            "ANTHROPIC_BASE_URL".to_string(),
+            "https://compatible.example.com".to_string(),
+        ),
+        ("ANTHROPIC_MODEL".to_string(), "deepseek-v4-pro".to_string()),
+    ]);
+
+    let report =
+        cc_config::settings::apply_startup_runtime_env(&env).expect("settings env applies");
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("settings env should build a client");
+
+    assert_eq!(report.overridden, 3);
+    assert_eq!(client.config().default_model, "deepseek-v4-pro");
+    assert_eq!(
+        client.build_url(),
+        "https://compatible.example.com/v1/messages"
     );
 
     restore_provider_keys(saved_keys);
@@ -2101,6 +2176,42 @@ fn test_prompt_cache_policy_defaults_do_not_add_ttl_or_global() {
 }
 
 #[test]
+fn test_compatible_anthropic_body_strips_cache_and_thinking_extensions() {
+    let mut body = serde_json::json!({
+        "model": "deepseek-v4-pro",
+        "thinking": {"type": "enabled", "budget_tokens": 1024},
+        "context_management": {"edits": [{"type": "clear_tool_uses_20250919"}]},
+        "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+        "messages": [{
+            "role": "assistant",
+            "content": [
+                {"type": "thinking", "thinking": "private", "signature": "signed"},
+                {"type": "redacted_thinking", "data": "redacted"},
+                {"type": "text", "text": "hello", "cache_reference": "abc"}
+            ]
+        }, {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": {"thinking": "payload field stays"}}]
+        }]
+    });
+
+    strip_anthropic_compatible_only_fields(&mut body);
+
+    assert!(body.get("thinking").is_none());
+    assert!(body.get("context_management").is_none());
+    assert!(body["system"][0].get("cache_control").is_none());
+    assert!(body["messages"][0]["content"][0]
+        .get("cache_reference")
+        .is_none());
+    assert_eq!(body["messages"][0]["content"].as_array().unwrap().len(), 1);
+    assert_eq!(body["messages"][0]["content"][0]["type"], "text");
+    assert_eq!(
+        body["messages"][1]["content"][0]["content"]["thinking"],
+        "payload field stays"
+    );
+}
+
+#[test]
 fn test_prompt_cache_policy_adds_ttl_and_global_only_when_capable() {
     let _guard = ENV_LOCK.lock().unwrap();
     let saved = save_env(&["CC_RUST_PROMPT_CACHE_TTL", "CC_RUST_PROMPT_CACHE_GLOBAL"]);
@@ -2247,7 +2358,7 @@ fn test_exact_token_count_support_matrix() {
         max_retries: 3,
         timeout_secs: 60,
     });
-    assert!(!compatible_anthropic.supports_exact_token_count());
+    assert!(compatible_anthropic.supports_exact_token_count());
 
     let azure = ApiClient::new(ApiClientConfig {
         provider: ApiProvider::Azure {

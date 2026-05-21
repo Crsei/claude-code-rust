@@ -11,7 +11,8 @@ use futures::Stream;
 
 use crate::api::client::{
     apply_prompt_cache_policy_to_body, build_anthropic_headers_for_body,
-    is_official_anthropic_base_url, parse_sse_byte_stream, AnthropicAuth, MessagesRequest,
+    build_anthropic_headers_for_body_with_beta_policy, is_official_anthropic_base_url,
+    parse_sse_byte_stream, strip_anthropic_compatible_only_fields, AnthropicAuth, MessagesRequest,
     PromptCacheCapability,
 };
 use crate::api::streaming::normalize_api_error_body;
@@ -52,16 +53,29 @@ impl StreamProvider for AnthropicStreamProvider {
         let mut body_value =
             serde_json::to_value(&req_body).context("failed to serialize request body")?;
         let direct_official_anthropic = is_official_anthropic_base_url(&self.base_url);
-        apply_prompt_cache_policy_to_body(
-            &mut body_value,
-            PromptCacheCapability {
-                explicit_markers: true,
-                ttl_1h: direct_official_anthropic,
-                global_scope: direct_official_anthropic,
-                direct_official_anthropic,
-            },
-        );
-        let headers = build_anthropic_headers_for_body(&self.auth, false, &body_value)?;
+        if direct_official_anthropic {
+            apply_prompt_cache_policy_to_body(
+                &mut body_value,
+                PromptCacheCapability {
+                    explicit_markers: true,
+                    ttl_1h: true,
+                    global_scope: true,
+                    direct_official_anthropic: true,
+                },
+            );
+        } else {
+            strip_anthropic_compatible_only_fields(&mut body_value);
+        }
+        let headers = if direct_official_anthropic {
+            build_anthropic_headers_for_body(&self.auth, false, &body_value)?
+        } else {
+            build_anthropic_headers_for_body_with_beta_policy(
+                &self.auth,
+                false,
+                &body_value,
+                false,
+            )?
+        };
         let body_json =
             serde_json::to_string(&body_value).context("failed to serialize request body")?;
 
