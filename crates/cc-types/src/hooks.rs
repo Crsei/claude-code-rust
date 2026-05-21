@@ -1211,7 +1211,7 @@ pub fn hook_source_description(source: HookSource) -> &'static str {
         HookSource::PolicySettings => "Policy settings (managed)",
         HookSource::PluginHook => "Plugin hooks (~/.cc-rust/plugins/*/hooks/hooks.json)",
         HookSource::SessionHook => "Session hooks (in-memory, temporary)",
-        HookSource::BuiltinHook => "Built-in hooks (registered internally by Claude Code)",
+        HookSource::BuiltinHook => "Built-in hooks (registered internally by cc-rust)",
     }
 }
 

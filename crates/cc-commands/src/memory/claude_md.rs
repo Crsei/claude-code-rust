@@ -40,7 +40,7 @@ pub(super) fn edit_memory(cwd: &Path) -> Result<CommandResult> {
     let claude_md_path = cwd.join("CLAUDE.md");
     if !claude_md_path.exists() {
         let template = "# CLAUDE.md\n\n\
-            This file provides guidance to Claude Code when working with code in this repository.\n\n\
+            This file provides guidance to cc-rust when working with code in this repository.\n\n\
             ## Project Overview\n\n\
             <!-- Describe your project here -->\n";
         fs::write(&claude_md_path, template)?;

@@ -189,7 +189,7 @@ gh pr create --title \"the pr title\" --body \"$(cat <<'EOF'\n\
 <1-3 bullet points>\n\n\
 ## Test plan\n\
 [Bulleted markdown checklist of TODOs for testing the pull request...]\n\n\n\
-Generated with [Claude Code](https://claude.com/claude-code)\n\
+Generated with cc-rust\n\
 EOF\n\
 )\"\n\
 </example>\n\n\

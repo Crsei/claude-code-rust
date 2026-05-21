@@ -573,7 +573,96 @@ impl App {
                 }
                 AppAction::ScrollDown
             }
+            MouseEventKind::Down(_) => {
+                if self.mouse_on_session_scrollbar(mouse) {
+                    self.session_scrollbar_dragging = true;
+                    self.seek_session_scrollbar(mouse.row)
+                } else {
+                    AppAction::None
+                }
+            }
+            MouseEventKind::Drag(_) => {
+                if self.session_scrollbar_dragging {
+                    self.seek_session_scrollbar(mouse.row)
+                } else {
+                    AppAction::None
+                }
+            }
+            MouseEventKind::Up(_) => {
+                self.session_scrollbar_dragging = false;
+                AppAction::None
+            }
             _ => AppAction::None,
+        }
+    }
+
+    fn mouse_on_session_scrollbar(&self, mouse: MouseEvent) -> bool {
+        let Some(scrollbar) = self.session_scrollbar else {
+            return false;
+        };
+        mouse.column == scrollbar.area.x
+            && mouse.row >= scrollbar.area.y
+            && mouse.row < scrollbar.area.y.saturating_add(scrollbar.area.height)
+    }
+
+    fn seek_session_scrollbar(&mut self, row: u16) -> AppAction {
+        let Some(scrollbar) = self.session_scrollbar else {
+            return AppAction::None;
+        };
+        let area = scrollbar.area;
+        if area.height == 0 {
+            return AppAction::None;
+        }
+        let viewport = area.height as usize;
+        let max_scroll = scrollbar.total_lines.saturating_sub(viewport);
+        if max_scroll == 0 {
+            return AppAction::None;
+        }
+
+        if row <= area.y {
+            if self.view_mode.is_transcript_like() {
+                self.scroll_transcript_up(1);
+            } else {
+                self.scroll_up(1);
+            }
+            return AppAction::ScrollUp;
+        }
+        if row >= area.y.saturating_add(area.height).saturating_sub(1) {
+            if self.view_mode.is_transcript_like() {
+                self.scroll_transcript_down(1);
+            } else {
+                self.scroll_down(1);
+            }
+            return AppAction::ScrollDown;
+        }
+
+        let track_height = area.height.saturating_sub(2) as usize;
+        if track_height == 0 {
+            return AppAction::None;
+        }
+        let relative = row.saturating_sub(area.y.saturating_add(1)) as usize;
+        let scroll = if track_height <= 1 {
+            0
+        } else {
+            relative.min(track_height - 1) * max_scroll / (track_height - 1)
+        };
+        let previous = if self.view_mode.is_transcript_like() {
+            let previous = self.transcript_state.scroll_offset;
+            self.transcript_state.scroll_offset = scroll;
+            previous
+        } else {
+            let previous = self.scroll_offset;
+            self.scroll_offset = scroll;
+            previous
+        };
+        self.dirty = true;
+
+        if scroll < previous {
+            AppAction::ScrollUp
+        } else if scroll > previous {
+            AppAction::ScrollDown
+        } else {
+            AppAction::None
         }
     }
 

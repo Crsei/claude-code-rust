@@ -54,6 +54,30 @@ fn command_suggestion_action_inserts_or_executes() {
 }
 
 #[test]
+fn advisor_is_hidden_from_slash_palette() {
+    let mut palette = CommandPalette::new();
+    palette.sync_from_input("/advisor", Path::new("/repo"));
+
+    assert!(palette.active());
+    assert!(!palette.filtered.iter().any(|item| item.name == "advisor"));
+    assert!(CommandPalette::argument_hint("/advisor ", Path::new("/repo")).is_some());
+}
+
+#[test]
+fn command_aliases_render_without_gap_before_details() {
+    let mut palette = CommandPalette::new();
+    palette.sync_from_input("/assistant", Path::new("/repo"));
+
+    let area = Rect::new(0, 0, 100, palette.preferred_height());
+    let mut buf = Buffer::empty(area);
+    palette.render(area, &mut buf, &Theme::default());
+
+    let rendered = buffer_text(&buf, area);
+    assert!(rendered.contains("/assistant(kairos)"));
+    assert!(rendered.contains("Command details"));
+}
+
+#[test]
 fn experimental_command_is_visible_in_slash_palette() {
     let mut palette = CommandPalette::new();
     palette.sync_from_input("/exp", Path::new("/repo"));

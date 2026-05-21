@@ -84,6 +84,13 @@ pub fn render_centered_dialog_lines(
     let overlay = centered_rect(area, width, height);
 
     Clear.render(overlay, buf);
+    if style.bg.is_some() {
+        for y in overlay.y..overlay.y + overlay.height {
+            for x in overlay.x..overlay.x + overlay.width {
+                buf[(x, y)].set_style(style);
+            }
+        }
+    }
     Paragraph::new(lines)
         .style(style)
         .wrap(Wrap { trim: false })

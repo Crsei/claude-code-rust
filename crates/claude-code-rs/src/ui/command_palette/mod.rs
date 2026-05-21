@@ -144,14 +144,11 @@ impl CommandPalette {
     pub fn apply_command_suggestion(
         &self,
         _item: &CommandItem,
-        _should_execute: bool,
+        should_execute: bool,
     ) -> Option<CommandAction> {
-        // When should_execute is true and the command is argument-less,
-        // return Execute directly. Otherwise return Insert.
         let cmd = self.filtered.get(self.selected)?;
 
-        if _should_execute && cmd.usage.trim() == format!("/{}", cmd.name) {
-            // No-argument command: execute directly
+        if should_execute && cmd.accepts_no_arguments() {
             Some(CommandAction::Execute(format!("/{}", cmd.name)))
         } else {
             Some(CommandAction::Insert(format!("/{} ", cmd.name)))
@@ -271,6 +268,12 @@ impl CommandPalette {
             .map(|picker| (picker.items.len().min(MAX_EDIT_TARGET_ROWS) + 3) as u16)
             .unwrap_or(0);
         list_rows + RESERVED_NON_COMMAND_ROWS as u16 + BORDER_ROWS + picker_rows
+    }
+}
+
+impl CommandItem {
+    pub fn accepts_no_arguments(&self) -> bool {
+        self.usage.trim() == format!("/{}", self.name)
     }
 }
 

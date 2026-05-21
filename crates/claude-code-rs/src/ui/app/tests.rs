@@ -9,7 +9,7 @@ use cc_keybindings::action::Action;
 use cc_services::prompt_suggestion::{PromptSuggestion, SuggestionCategory};
 use cc_types::agent_events::AgentEvent;
 use cc_types::message::{ContentBlock, MessageContent, UserMessage};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 use serial_test::serial;
@@ -73,10 +73,10 @@ fn render_places_prompt_after_short_chat_content() {
     terminal.draw(|frame| app.render(frame)).expect("draw");
 
     let content = buffer_to_lines(terminal.backend().buffer(), 80, 24);
-    assert!(content[0].contains("hello"));
-    assert!(!content[0].contains("You:"));
+    assert!(content[1].contains("hello"));
+    assert!(!content[1].contains("You:"));
     assert!(
-        content[1].trim_start().starts_with(">"),
+        content[3].trim_start().starts_with(">"),
         "prompt should follow the rendered chat content"
     );
     assert!(
@@ -102,6 +102,63 @@ fn in_app_notification_renders_in_footer_region() {
 
     let content = buffer_to_lines(terminal.backend().buffer(), 80, 24).join("\n");
     assert!(content.contains("API key missing"));
+}
+
+#[test]
+fn long_chat_renders_session_scrollbar() {
+    let mut app = App::new();
+    for i in 0..20 {
+        app.add_message(Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: i,
+            role: "user".to_string(),
+            content: MessageContent::Text(format!("message {i}")),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        }));
+    }
+    let mut terminal = Terminal::new(TestBackend::new(40, 12)).expect("terminal");
+
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+
+    let buffer = terminal.backend().buffer();
+    let right_edge = (0..12)
+        .map(|y| buffer[(39, y)].symbol().to_string())
+        .collect::<String>();
+    assert!(right_edge.contains('█'));
+    assert!(right_edge.contains('▲') || right_edge.contains('△'));
+    assert!(right_edge.contains('▼') || right_edge.contains('▽'));
+}
+
+#[test]
+fn mouse_click_session_scrollbar_controls_prompt_messages() {
+    let mut app = App::new();
+    for i in 0..20 {
+        app.add_message(Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: i,
+            role: "user".to_string(),
+            content: MessageContent::Text(format!("message {i}")),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        }));
+    }
+    app.scroll_offset = 0;
+    let mut terminal = Terminal::new(TestBackend::new(40, 12)).expect("terminal");
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+
+    assert_eq!(
+        app.handle_mouse_event(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 39,
+            row: 9,
+            modifiers: KeyModifiers::NONE,
+        }),
+        AppAction::ScrollDown
+    );
+    assert!(app.scroll_offset > 0);
 }
 
 #[test]
@@ -221,7 +278,7 @@ fn agent_event_updates_navigation_and_footer_rendering() {
     terminal.draw(|frame| app.render(frame)).expect("draw");
     let content = buffer_to_lines(terminal.backend().buffer(), 120, 24).join("\n");
     assert!(content.contains("Ctrl+X Ctrl+A open tree"));
-    assert!(content.contains("agent:Builder worker"));
+    assert!(content.contains("Builder worker |"));
 }
 
 #[test]
@@ -272,9 +329,14 @@ fn agent_tree_dialog_navigation_select_and_close() {
 }
 
 #[test]
-fn status_bar_renders_runtime_context_indicators() {
+#[serial]
+fn status_bar_renders_only_model_and_workspace() {
+    let home = tempfile::tempdir().expect("cc-rust home");
+    let _home_guard = EnvGuard::set_path("CC_RUST_HOME", home.path());
     let mut app = App::new();
-    app.set_model_name("claude-sonnet-4-20250514".to_string());
+    app.set_model_name("deepseek-v4-pro".to_string());
+    app.set_cwd("/repo/workspace".to_string());
+    app.accept_workspace_trust();
     let mut state = AppState::default();
     state.tool_permission_context.mode = PermissionMode::AcceptEdits;
     state.settings.sandbox.enabled = Some(true);
@@ -288,10 +350,11 @@ fn status_bar_renders_runtime_context_indicators() {
     terminal.draw(|frame| app.render(frame)).expect("draw");
 
     let content = buffer_to_lines(terminal.backend().buffer(), 120, 24).join("\n");
-    assert!(content.contains("perm:acceptEdits"));
-    assert!(content.contains("sandbox:workspace,no-net"));
-    assert!(content.contains("effort:medium"));
-    assert!(content.contains("remote:"));
+    assert!(content.contains("deepseek-v4-pro | /repo/workspace"));
+    assert!(!content.contains("perm:acceptEdits"));
+    assert!(!content.contains("sandbox:workspace,no-net"));
+    assert!(!content.contains("effort:medium"));
+    assert!(!content.contains("remote:"));
 }
 
 #[test]

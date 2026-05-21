@@ -1125,6 +1125,7 @@ pub fn refresh_process_env_overrides(loaded: &mut LoadedSettings) {
 pub struct RuntimeEnvApplyReport {
     pub applied: usize,
     pub skipped: usize,
+    pub overridden: usize,
 }
 
 /// Apply merged `settings.env` values to the process environment.
@@ -1132,31 +1133,79 @@ pub struct RuntimeEnvApplyReport {
 /// This only fills missing variables. Existing shell, `.env`, and CI
 /// variables keep priority and are never overwritten.
 pub fn apply_runtime_env(env: &HashMap<String, String>) -> Result<RuntimeEnvApplyReport> {
+    apply_runtime_env_inner(env, false)
+}
+
+/// Apply merged `settings.env` values during cc-rust startup.
+///
+/// Most variables still only fill missing process env. Provider auth, endpoint,
+/// and model variables are intentionally overridden when declared in cc-rust
+/// settings so inherited shell state from other Claude/Codex installations does
+/// not silently route this process to the wrong account or model.
+pub fn apply_startup_runtime_env(env: &HashMap<String, String>) -> Result<RuntimeEnvApplyReport> {
+    apply_runtime_env_inner(env, true)
+}
+
+fn apply_runtime_env_inner(
+    env: &HashMap<String, String>,
+    override_provider_env: bool,
+) -> Result<RuntimeEnvApplyReport> {
     let mut report = RuntimeEnvApplyReport::default();
     let mut keys = env.keys().collect::<Vec<_>>();
     keys.sort();
 
     for key in keys {
-        validate_runtime_env_pair(key, env.get(key).map(String::as_str).unwrap_or_default())?;
-        if std::env::var_os(key).is_some() {
-            report.skipped += 1;
-            continue;
-        }
-        if let Some(value) = env.get(key) {
-            std::env::set_var(key, value);
-            report.applied += 1;
+        let value = env.get(key).map(String::as_str).unwrap_or_default();
+        validate_runtime_env_pair(key, value)?;
+        match std::env::var_os(key) {
+            Some(existing)
+                if override_provider_env
+                    && should_override_startup_runtime_env_key(key)
+                    && existing != std::ffi::OsStr::new(value) =>
+            {
+                std::env::set_var(key, value);
+                report.overridden += 1;
+            }
+            Some(_) => {
+                report.skipped += 1;
+            }
+            None => {
+                std::env::set_var(key, value);
+                report.applied += 1;
+            }
         }
     }
 
-    if report.applied > 0 || report.skipped > 0 {
+    if report.applied > 0 || report.skipped > 0 || report.overridden > 0 {
         tracing::debug!(
             applied = report.applied,
             skipped = report.skipped,
+            overridden = report.overridden,
             "settings.env applied to runtime environment"
         );
     }
 
     Ok(report)
+}
+
+fn should_override_startup_runtime_env_key(key: &str) -> bool {
+    matches!(
+        key,
+        "ANTHROPIC_API_KEY"
+            | "ANTHROPIC_AUTH_TOKEN"
+            | "ANTHROPIC_BASE_URL"
+            | "ANTHROPIC_BEDROCK_BASE_URL"
+            | "ANTHROPIC_MODEL"
+            | "ANTHROPIC_DEFAULT_SOTA_MODEL"
+            | "ANTHROPIC_DEFAULT_MOTA_MODEL"
+            | "ANTHROPIC_DEFAULT_FOTA_MODEL"
+            | "ANTHROPIC_DEFAULT_OPUS_MODEL"
+            | "ANTHROPIC_DEFAULT_SONNET_MODEL"
+            | "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+            | "OPENAI_CODEX_AUTH_TOKEN"
+            | "OPENAI_CODEX_BASE_URL"
+            | "OPENAI_CODEX_MODEL"
+    )
 }
 
 fn validate_runtime_env_pair(key: &str, value: &str) -> Result<()> {
@@ -2224,6 +2273,38 @@ mod tests {
         assert_eq!(report.skipped, 1);
         assert_eq!(std::env::var(APPLIED).as_deref(), Ok("from-settings"));
         assert_eq!(std::env::var(SKIPPED).as_deref(), Ok("from-process"));
+    }
+
+    #[test]
+    #[serial]
+    fn apply_startup_runtime_env_overrides_provider_env_only() {
+        const GENERIC: &str = "CC_RUST_TEST_SETTINGS_ENV_GENERIC";
+        let _model = EnvGuard::set_value("ANTHROPIC_MODEL", "claude-opus-4-20250514");
+        let _base_url = EnvGuard::set_value("ANTHROPIC_BASE_URL", "https://old.example.com");
+        let _generic = EnvGuard::set_value(GENERIC, "from-process");
+        let env = HashMap::from([
+            ("ANTHROPIC_MODEL".to_string(), "deepseek-v4-pro".to_string()),
+            (
+                "ANTHROPIC_BASE_URL".to_string(),
+                "https://inferaichat.com".to_string(),
+            ),
+            (GENERIC.to_string(), "from-settings".to_string()),
+        ]);
+
+        let report = apply_startup_runtime_env(&env).unwrap();
+
+        assert_eq!(report.applied, 0);
+        assert_eq!(report.overridden, 2);
+        assert_eq!(report.skipped, 1);
+        assert_eq!(
+            std::env::var("ANTHROPIC_MODEL").as_deref(),
+            Ok("deepseek-v4-pro")
+        );
+        assert_eq!(
+            std::env::var("ANTHROPIC_BASE_URL").as_deref(),
+            Ok("https://inferaichat.com")
+        );
+        assert_eq!(std::env::var(GENERIC).as_deref(), Ok("from-process"));
     }
 
     #[test]

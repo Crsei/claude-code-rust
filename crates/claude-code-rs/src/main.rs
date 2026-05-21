@@ -438,11 +438,12 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.1: Load layered settings (managed/user/project/local + env).
     let mut loaded_settings = settings::load_effective(std::path::Path::new(&cwd))?;
-    let env_report = settings::apply_runtime_env(&loaded_settings.effective.env)?;
-    if env_report.applied > 0 || env_report.skipped > 0 {
+    let env_report = settings::apply_startup_runtime_env(&loaded_settings.effective.env)?;
+    if env_report.applied > 0 || env_report.skipped > 0 || env_report.overridden > 0 {
         debug!(
             applied = env_report.applied,
             skipped = env_report.skipped,
+            overridden = env_report.overridden,
             "settings.env runtime environment processed",
         );
     }

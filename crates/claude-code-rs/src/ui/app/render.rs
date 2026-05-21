@@ -11,7 +11,6 @@ use crate::ui::bottom_pane::BottomPaneHeights;
 use crate::ui::command_palette::CommandPalette;
 use crate::ui::command_surface::CommandSurface;
 use crate::ui::history_search_dialog::HistorySearchDialog;
-use crate::ui::keyboard_shortcut::{render_shortcut_hints, ShortcutHint};
 use crate::ui::messages::render_messages;
 use crate::ui::notifications::in_app::{NotificationPriority, NotificationTone};
 use crate::ui::overlays::{render_centered_dialog_lines, CenteredOverlayFrame};
@@ -31,6 +30,7 @@ impl App {
         if size.width < 10 || size.height < 4 {
             return;
         }
+        self.session_scrollbar = None;
 
         if self.workspace_trust_pending {
             render_workspace_trust_prompt(
@@ -170,7 +170,18 @@ impl App {
                 &self.theme,
                 &message_render_context,
             );
-            let total = self.vscroll.total_visual_lines();
+            let mut total = self.vscroll.total_visual_lines();
+            let (message_body_area, scrollbar_area) =
+                split_session_scrollbar_area(message_area, total);
+            if message_body_area.width != message_area.width {
+                self.vscroll.ensure_up_to_date(
+                    &self.messages,
+                    message_body_area.width,
+                    &self.theme,
+                    &message_render_context,
+                );
+                total = self.vscroll.total_visual_lines();
+            }
             let max_scroll = total.saturating_sub(message_area.height as usize);
             if self.scroll_offset > max_scroll {
                 self.scroll_offset = max_scroll;
@@ -178,7 +189,7 @@ impl App {
 
             render_messages(
                 &self.messages,
-                message_area,
+                message_body_area,
                 frame.buffer_mut(),
                 &self.theme,
                 self.is_streaming,
@@ -186,6 +197,19 @@ impl App {
                 &self.vscroll,
                 &message_render_context,
             );
+            if let Some(scrollbar_area) = scrollbar_area {
+                self.session_scrollbar = Some(super::SessionScrollbarState {
+                    area: scrollbar_area,
+                    total_lines: total,
+                });
+                render_session_scrollbar(
+                    scrollbar_area,
+                    frame.buffer_mut(),
+                    total,
+                    self.scroll_offset,
+                    &self.theme,
+                );
+            }
         }
 
         // Bottom area: spinner + suggestions + paste_notice + input + completion_popup + palette + arg_help + notification + agent_footer + status
@@ -245,7 +269,6 @@ impl App {
                 surface,
                 size,
                 frame.buffer_mut(),
-                &self.theme,
                 self.design_theme_provider.colors(),
             );
         }
@@ -408,74 +431,13 @@ impl App {
             return;
         }
 
-        // 2. Built-in default footer; also the fallback when the runner
-        //    errors or the script is disabled.
-        let msg_count = self.messages.len();
-        let mode = if self.is_streaming {
-            "streaming"
-        } else {
-            "ready"
-        };
-
+        // 2. Built-in default footer; keep the prompt-adjacent chrome quiet.
         let mut parts = Vec::new();
         if !self.model_name.is_empty() {
-            let short_model = self
-                .model_name
-                .strip_prefix("claude-")
-                .unwrap_or(&self.model_name);
-            let short_model = short_model.split('-').take(2).collect::<Vec<_>>().join("-");
-            parts.push(short_model);
+            parts.push(self.model_name.clone());
         }
-        if let Some(active_agent) = self.current_agent_label() {
-            parts.push(format!("agent:{active_agent}"));
-        }
-        parts.push(format!("{} msgs", msg_count));
-        if self.session_cost_usd > 0.0 {
-            parts.push(format!("${:.4}", self.session_cost_usd));
-        }
-        if self.vim.enabled {
-            parts.push(format!("vim:{}", self.vim.mode.indicator()));
-        }
-        if !self.permission_mode_label.is_empty() {
-            parts.push(format!("perm:{}", self.permission_mode_label));
-        }
-        if !self.sandbox_label.is_empty() {
-            parts.push(format!("sandbox:{}", self.sandbox_label));
-        }
-        if let Some(effort) = &self.effort_label {
-            parts.push(format!("effort:{effort}"));
-        }
-        if let Some(remote) = &self.remote_indicator_label {
-            parts.push(format!("remote:{remote}"));
-        }
-        parts.push(mode.to_string());
-        let hints = if self.is_streaming {
-            render_shortcut_hints(&[ShortcutHint::new("Ctrl+C", "abort")])
-        } else {
-            render_shortcut_hints(&[
-                ShortcutHint::new("/", "commands"),
-                ShortcutHint::new("Ctrl+R", "history"),
-                ShortcutHint::new("Ctrl+O", "views"),
-                ShortcutHint::new("Ctrl+C", "quit"),
-            ])
-        };
-        parts.push(hints);
-
-        // If the runner reported an error, surface a quiet marker so the
-        // user knows to run `/statusline status` to see why.
-        let latest = self.status_line_runner.latest();
-        if latest.error.is_some() && self.status_line_settings.is_command_mode() {
-            parts.push("statusline:err".to_string());
-        }
-
-        // Voice push-to-talk status (issue #13). Shown as the tail entry
-        // so it's the most prominent thing while recording.
-        if self.voice_enabled && !self.voice_supported {
-            parts.push("voice:unsupported".to_string());
-        } else if let Some(v) = &self.voice {
-            if let Some(label) = v.status_line() {
-                parts.push(label);
-            }
+        if !self.cwd.is_empty() {
+            parts.push(self.cwd.clone());
         }
 
         let status_text = format!(" {}", parts.join(" | "));
@@ -527,7 +489,17 @@ impl App {
             &self.theme,
             &message_render_context,
         );
-        let total = self.vscroll.total_visual_lines();
+        let mut total = self.vscroll.total_visual_lines();
+        let (message_body_area, scrollbar_area) = split_session_scrollbar_area(body_area, total);
+        if message_body_area.width != body_area.width {
+            self.vscroll.ensure_up_to_date(
+                &self.messages,
+                message_body_area.width,
+                &self.theme,
+                &message_render_context,
+            );
+            total = self.vscroll.total_visual_lines();
+        }
         let max_scroll = total.saturating_sub(body_area.height as usize);
         if self.transcript_state.scroll_offset > max_scroll {
             self.transcript_state.scroll_offset = max_scroll;
@@ -535,7 +507,7 @@ impl App {
 
         render_messages(
             &self.messages,
-            body_area,
+            message_body_area,
             frame.buffer_mut(),
             &self.theme,
             self.is_streaming,
@@ -543,6 +515,19 @@ impl App {
             &self.vscroll,
             &message_render_context,
         );
+        if let Some(scrollbar_area) = scrollbar_area {
+            self.session_scrollbar = Some(super::SessionScrollbarState {
+                area: scrollbar_area,
+                total_lines: total,
+            });
+            render_session_scrollbar(
+                scrollbar_area,
+                frame.buffer_mut(),
+                total,
+                self.transcript_state.scroll_offset,
+                &self.theme,
+            );
+        }
 
         if header_height > 0 {
             self.render_transcript_header(rows[0], frame.buffer_mut());
@@ -733,11 +718,89 @@ fn render_workspace_trust_prompt(
         .render(area, buf);
 }
 
+fn split_session_scrollbar_area(area: Rect, total_lines: usize) -> (Rect, Option<Rect>) {
+    if area.width <= 1 || total_lines <= area.height as usize {
+        return (area, None);
+    }
+    (
+        Rect {
+            width: area.width - 1,
+            ..area
+        },
+        Some(Rect {
+            x: area.x + area.width - 1,
+            width: 1,
+            ..area
+        }),
+    )
+}
+
+fn render_session_scrollbar(
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+    total_lines: usize,
+    scroll_offset: usize,
+    theme: &Theme,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let viewport = area.height as usize;
+    let max_scroll = total_lines.saturating_sub(viewport);
+    if max_scroll == 0 {
+        return;
+    }
+
+    let track_style = theme.dim;
+    let thumb_style = theme.selected;
+    let top_active = scroll_offset > 0;
+    let bottom_active = scroll_offset < max_scroll;
+    buf.set_string(
+        area.x,
+        area.y,
+        if top_active { "▲" } else { "△" },
+        track_style,
+    );
+    if area.height == 1 {
+        return;
+    }
+    buf.set_string(
+        area.x,
+        area.y + area.height - 1,
+        if bottom_active { "▼" } else { "▽" },
+        track_style,
+    );
+    if area.height <= 2 {
+        return;
+    }
+
+    let track_height = area.height.saturating_sub(2) as usize;
+    let thumb_height = ((track_height * viewport).max(1) / total_lines.max(1))
+        .max(1)
+        .min(track_height);
+    let travel = track_height.saturating_sub(thumb_height);
+    let thumb_offset = if max_scroll == 0 {
+        0
+    } else {
+        scroll_offset.min(max_scroll) * travel / max_scroll
+    };
+
+    for row in 0..track_height {
+        let y = area.y + 1 + row as u16;
+        let in_thumb = row >= thumb_offset && row < thumb_offset + thumb_height;
+        buf.set_string(
+            area.x,
+            y,
+            if in_thumb { "█" } else { "│" },
+            if in_thumb { thumb_style } else { track_style },
+        );
+    }
+}
+
 fn render_command_surface_overlay(
     surface: &CommandSurface,
     area: Rect,
     buf: &mut ratatui::buffer::Buffer,
-    theme: &Theme,
     colors: &ThemeColors,
 ) {
     let text = surface.render();
@@ -754,7 +817,7 @@ fn render_command_surface_overlay(
         area,
         buf,
         colors,
-        theme.dim,
+        Style::default().fg(Color::White).bg(Color::Rgb(8, 10, 14)),
     );
 }
 

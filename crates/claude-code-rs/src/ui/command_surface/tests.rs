@@ -214,6 +214,19 @@ fn slash_command_surfaces_open_only_for_empty_interactive_commands() {
 }
 
 #[test]
+fn diff_surface_renders_explicit_escape_close_hint() {
+    let surface = DiffSurface {
+        sources: vec![DiffSource::current()],
+        source_index: 0,
+        selected_index: 0,
+        mode: DiffDialogMode::List,
+        error: None,
+    };
+
+    assert!(surface.render().contains("Esc close"));
+}
+
+#[test]
 fn permissions_command_surface_routes_confirmed_safety_modes() {
     let mut state = AppState::default();
     state

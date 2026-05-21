@@ -15,11 +15,12 @@ use super::edit_targets::{has_edit_target_picker, EditTarget};
 #[cfg(test)]
 use super::filter::command_from_argument_input;
 use super::filter::CommandGroup;
-#[cfg(test)]
 use super::CommandItem;
 use super::{
     CommandPalette, MAX_EDIT_ROWS, MAX_EDIT_TARGET_ROWS, MAX_ROWS, RESERVED_NON_COMMAND_ROWS,
 };
+
+const COMMAND_COLUMN_WIDTH: usize = 34;
 
 impl CommandPalette {
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
@@ -55,10 +56,10 @@ impl CommandPalette {
             .saturating_sub(reserved_rows)
             .clamp(1, MAX_ROWS);
         let mut lines = Vec::new();
-        lines.push(Line::from(Span::styled(
-            "Commands                       Command details",
-            theme.dim,
-        )));
+        lines.push(Line::from(vec![
+            Span::styled(format!("{:<COMMAND_COLUMN_WIDTH$}", "Commands"), theme.dim),
+            Span::styled("Command details", theme.dim),
+        ]));
         let visible_start = visible_window_start(self.filtered.len(), self.selected, visible_rows);
 
         // Track group transitions for group headers
@@ -80,11 +81,7 @@ impl CommandPalette {
             } else {
                 theme.unselected
             };
-            let aliases = if item.aliases.is_empty() {
-                String::new()
-            } else {
-                format!(" ({})", item.aliases.join(", "))
-            };
+            let command_label = command_label(item);
             let detail = truncate(&item.description, 46);
 
             // Group header on group transitions (only for non-empty query)
@@ -107,9 +104,13 @@ impl CommandPalette {
             }
 
             lines.push(Line::from(vec![
-                Span::styled(format!("/{:<22}", item.name), style),
-                Span::styled(aliases, theme.dim),
-                Span::styled(format!("{:<8}", ""), theme.dim),
+                Span::styled(
+                    format!(
+                        "{:<COMMAND_COLUMN_WIDTH$}",
+                        truncate(&command_label, COMMAND_COLUMN_WIDTH)
+                    ),
+                    style,
+                ),
                 Span::styled(detail, theme.unselected),
             ]));
         }
@@ -117,10 +118,17 @@ impl CommandPalette {
         if let Some(selected) = selected_item {
             lines.push(Line::default());
             lines.push(Line::from(Span::styled("Behavior", theme.dim)));
-            lines.push(Line::from(vec![
-                Span::styled("  Enter inserts: ", theme.dim),
-                Span::styled(format!("/{} ", selected.name), theme.info),
-            ]));
+            if selected.accepts_no_arguments() {
+                lines.push(Line::from(vec![
+                    Span::styled("  Enter runs: ", theme.dim),
+                    Span::styled(format!("/{}", selected.name), theme.info),
+                ]));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled("  Enter inserts: ", theme.dim),
+                    Span::styled(format!("/{} ", selected.name), theme.info),
+                ]));
+            }
             // Ghost suffix hint
             let ghost = self.selected_ghost_suffix();
             if let Some(ghost_str) = ghost.filter(|s| !s.is_empty()) {
@@ -251,6 +259,14 @@ impl CommandPalette {
                 }
             }
         }
+    }
+}
+
+fn command_label(item: &CommandItem) -> String {
+    if item.aliases.is_empty() {
+        format!("/{}", item.name)
+    } else {
+        format!("/{}({})", item.name, item.aliases.join(", "))
     }
 }
 

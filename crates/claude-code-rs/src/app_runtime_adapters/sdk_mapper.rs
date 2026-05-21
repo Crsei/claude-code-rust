@@ -198,7 +198,7 @@ pub fn handle_sdk_message(
                 let hooks_map = engine.app_state().hooks;
                 tokio::spawn(async move {
                     cc_tools::hooks::fire_notification_hook(
-                        "Claude Code",
+                        "cc-rust",
                         "Response ready",
                         &hooks_map,
                     )

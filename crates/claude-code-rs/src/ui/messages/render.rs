@@ -24,7 +24,9 @@ use crate::ui::messages::system_text_message::render_system_text_message;
 use crate::ui::messages::user_bash_output_message::{
     render_user_bash_output_message_with_options, ShellOutputRenderOptions,
 };
-use crate::ui::messages::user_text_message::render_user_text_message;
+use crate::ui::messages::user_text_message::{
+    render_user_text_message, route_user_text, UserTextRendered,
+};
 use crate::ui::messages::user_tool_result_message::user_tool_result_message::render_user_tool_result_message;
 use crate::ui::messages::user_tool_result_message::utils::{
     ToolResultBlock, ToolUseRecord as UserToolUseRecord, UserToolResultLookups,
@@ -39,6 +41,8 @@ use super::file_edit_tool_updated_message::{
     render_file_edit_tool_updated_message, FileEditMessageStyle, FileEditToolUpdatedView,
 };
 use super::wrap::wrap_line_to_width;
+
+const USER_MESSAGE_BACKGROUND: Color = Color::Rgb(31, 35, 42);
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MessageRenderContext {
@@ -1116,6 +1120,8 @@ pub fn render_messages(
     let mut y = 0usize; // current row in the viewport
 
     for idx in start..end.min(renderable_messages.len()) {
+        let fill_user_background =
+            renderable_message_uses_user_background(&renderable_messages[idx]);
         let mut msg_lines = render_renderable_message_wrapped(
             &renderable_messages[idx],
             idx,
@@ -1143,6 +1149,12 @@ pub fn render_messages(
                 return;
             }
             let line = if li < msg_lines.len() {
+                if fill_user_background {
+                    buf.set_style(
+                        Rect::new(area.x, area.y + y as u16, area.width, 1),
+                        Style::default().bg(USER_MESSAGE_BACKGROUND),
+                    );
+                }
                 &msg_lines[li]
             } else {
                 // separator blank line
@@ -1152,6 +1164,47 @@ pub fn render_messages(
             y += 1;
         }
     }
+}
+
+fn renderable_message_uses_user_background(msg: &RenderableMessage) -> bool {
+    match msg {
+        RenderableMessage::Message {
+            message: Message::User(user),
+            ..
+        } => user_message_uses_background(user),
+        RenderableMessage::Message { .. }
+        | RenderableMessage::GroupedToolUse(_)
+        | RenderableMessage::CollapsedReadSearch(_) => false,
+    }
+}
+
+fn user_message_uses_background(user: &cc_types::message::UserMessage) -> bool {
+    let content_text = match &user.content {
+        MessageContent::Text(text) => text.as_str().to_string(),
+        MessageContent::Blocks(blocks) => {
+            if blocks.iter().any(|block| {
+                matches!(
+                    block,
+                    ContentBlock::ToolResult { .. } | ContentBlock::Image { .. }
+                )
+            }) {
+                return false;
+            }
+            blocks
+                .iter()
+                .filter_map(content_block_copy_text)
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    };
+    let trimmed = content_text.trim();
+    if trimmed == "[Request interrupted by user]"
+        || trimmed.starts_with("<bash-stdout")
+        || trimmed.starts_with("<bash-stderr")
+    {
+        return false;
+    }
+    !matches!(route_user_text(&content_text), UserTextRendered::Hidden)
 }
 
 pub(crate) fn render_renderable_message_wrapped<'a>(
@@ -1176,6 +1229,10 @@ pub(crate) fn render_renderable_message_for_layout<'a>(
 ) -> Vec<Line<'a>> {
     let mut lines =
         render_renderable_message_with_context(msg, index, theme, width, render_context);
+    if renderable_message_uses_user_background(msg) && !lines.is_empty() {
+        lines.insert(0, Line::default());
+        lines.push(Line::default());
+    }
     if msg.has_source_index(render_context.selected_message) {
         if let RenderableMessage::Message { message, .. } = msg {
             decorate_selected_message(
@@ -1426,7 +1483,7 @@ fn render_user_message<'a>(
         return Vec::new();
     }
     let content_text = routed.to_string();
-    let user_style = Style::default().bg(Color::Rgb(31, 35, 42));
+    let user_style = Style::default().bg(USER_MESSAGE_BACKGROUND);
 
     let content_lines: Vec<&str> = content_text.lines().collect();
     if content_lines.is_empty() {
@@ -1904,7 +1961,7 @@ fn render_system_message<'a>(
         SystemSubtype::MicrocompactBoundary { .. } => ("context microcompacted", theme.dim),
         SystemSubtype::ApiError { .. } => ("", theme.error),
         SystemSubtype::Informational { level } => match level {
-            InfoLevel::Info => ("Info: ", theme.info),
+            InfoLevel::Info => ("Info: ", theme.unselected),
             InfoLevel::Warning => ("Warning: ", theme.warning),
             InfoLevel::Error => ("Error: ", theme.error),
         },
@@ -2194,11 +2251,15 @@ mod tests {
     use super::{message_copy_text, message_primary_reference, render_single_message};
     use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
     use crate::ui::theme::Theme;
+    use crate::ui::virtual_scroll::VirtualScroll;
     use cc_types::message::{
         ApiErrorInfo, AssistantMessage, CompactMetadata, ContentBlock, ImageSource, Message,
         MessageContent, MicrocompactMetadata, SystemMessage, SystemSubtype, ToolResultContent,
         UserMessage,
     };
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::style::Color;
     use serde_json::json;
 
     #[test]
@@ -2313,6 +2374,42 @@ mod tests {
             lines_to_text(render_single_message(&interrupted, &theme)),
             "Interrupted by user"
         );
+    }
+
+    #[test]
+    fn user_prompt_background_fills_terminal_row() {
+        let theme = Theme::default();
+        let messages = vec![Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text("hello".to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        })];
+        let context = super::build_message_render_context(&messages, None, false);
+        let mut vscroll = VirtualScroll::new();
+        vscroll.ensure_up_to_date(&messages, 16, &theme, &context);
+        let area = Rect::new(0, 0, 16, 3);
+        let mut buffer = Buffer::empty(area);
+
+        super::render_messages(
+            &messages,
+            area,
+            &mut buffer,
+            &theme,
+            false,
+            0,
+            &vscroll,
+            &context,
+        );
+
+        for y in 0..area.height {
+            for x in 0..area.width {
+                assert_eq!(buffer[(x, y)].bg, Color::Rgb(31, 35, 42));
+            }
+        }
     }
 
     #[test]

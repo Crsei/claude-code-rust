@@ -43,7 +43,7 @@ impl DiffSurface {
             .sources
             .get(self.source_index)
             .map(|source| source.label.as_str());
-        render_diff_dialog_lines(
+        let mut lines = render_diff_dialog_lines(
             "Uncommitted changes",
             subtitle,
             &self.sources,
@@ -51,8 +51,10 @@ impl DiffSurface {
             self.selected_index,
             self.mode,
             80,
-        )
-        .join("\n")
+        );
+        lines.push(String::new());
+        lines.push("Esc close".to_string());
+        lines.join("\n")
     }
 
     pub(crate) fn handle_key(&mut self, key: KeyEvent) -> CommandSurfaceOutcome {

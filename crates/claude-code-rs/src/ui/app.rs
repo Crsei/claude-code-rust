@@ -21,6 +21,7 @@ use cc_types::agent_events::{AgentEvent, TeamEvent};
 use cc_types::callbacks::AskUserRequestPayload;
 use cc_types::message::Message;
 use cc_voice::VoiceController;
+use ratatui::layout::Rect;
 use status::SessionUsageSnapshot;
 use workspace_trust::is_workspace_trusted;
 
@@ -70,6 +71,12 @@ pub enum AppAction {
     /// spawns the editor so `App` stays free of IO.
     ExportTranscript(String),
     CopyMessage(String),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SessionScrollbarState {
+    area: Rect,
+    total_lines: usize,
 }
 
 fn notification_from_app_event(
@@ -192,6 +199,9 @@ pub struct App {
     // Optimizations
     /// Virtual scroll: per-message height cache + prefix-sum offsets.
     vscroll: VirtualScroll,
+    /// Last rendered session scrollbar, used for mouse click/drag control.
+    session_scrollbar: Option<SessionScrollbarState>,
+    session_scrollbar_dragging: bool,
     /// Dirty flag; when false, the TUI skips `terminal.draw()`.
     dirty: bool,
     /// Tick counter for throttling spinner frame advances.
@@ -287,6 +297,8 @@ impl App {
             show_agent_footer: true,
             current_agent_thread_id: None,
             vscroll: VirtualScroll::new(),
+            session_scrollbar: None,
+            session_scrollbar_dragging: false,
             dirty: true,
             tick_counter: 0,
             keybindings: KeybindingRegistry::with_defaults(),

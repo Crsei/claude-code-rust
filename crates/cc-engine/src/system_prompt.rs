@@ -83,7 +83,7 @@ fn doing_tasks_section() -> String {
         "If the user asks for help or wants to give feedback inform them of the following:",
     ];
     let help_subitems = [
-        "/help: Get help with using Claude Code",
+        "/help: Get help with using cc-rust",
         "To give feedback, users should report the issue at https://github.com/anthropics/claude-code/issues",
     ];
     format!(

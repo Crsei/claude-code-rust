@@ -345,16 +345,14 @@ pub mod product {
     pub const CLAUDE_AI_BASE_URL: &str = "https://claude.ai";
 
     /// System prompt prefix for interactive CLI mode.
-    pub const CLI_SYSPROMPT_PREFIX: &str =
-        "You are Claude Code, Anthropic's official CLI for Claude.";
+    pub const CLI_SYSPROMPT_PREFIX: &str = "You are cc-rust, a coding CLI.";
 
-    /// System prompt prefix for Agent SDK (with Claude Code preset).
+    /// System prompt prefix for Agent SDK (with cc-rust preset).
     pub const AGENT_SDK_CC_PREFIX: &str =
-        "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.";
+        "You are cc-rust, a coding CLI, running within the Agent SDK.";
 
     /// System prompt prefix for plain Agent SDK usage.
-    pub const AGENT_SDK_PREFIX: &str =
-        "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+    pub const AGENT_SDK_PREFIX: &str = "You are an agent built for cc-rust.";
 
     /// Message returned when a tool call produces no content.
     pub const NO_CONTENT_MESSAGE: &str = "(no content)";

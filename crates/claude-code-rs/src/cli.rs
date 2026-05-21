@@ -6,12 +6,12 @@
 use clap::Parser;
 use std::path::PathBuf;
 
-/// Claude Code CLI - Rust implementation
+/// cc-rust CLI
 #[derive(Parser, Debug)]
 #[command(
     name = "claude",
     version,
-    about = "Claude Code CLI",
+    about = "cc-rust CLI",
     disable_version_flag = true
 )]
 pub struct Cli {

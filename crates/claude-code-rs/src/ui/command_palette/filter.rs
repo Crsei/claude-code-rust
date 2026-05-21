@@ -60,6 +60,10 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
 
     // Process commands with multi-field weighted scoring
     for (_index, cmd) in commands::get_all_commands().into_iter().enumerate() {
+        if is_hidden_palette_command(&cmd.name) {
+            continue;
+        }
+
         // Multi-field weighted fuzzy match
         let best = best_fuzzy_multi(
             &[
@@ -117,6 +121,9 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
     let registry = commands::DYNAMIC_REGISTRY.lock();
     for entry in registry.list_all() {
         let name = &entry.name;
+        if is_hidden_palette_command(name) {
+            continue;
+        }
 
         // Skip if already handled by builtins with the same name
         if scored.iter().any(|(_, s)| s.item.name == *name) {
@@ -200,6 +207,10 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
     }
 
     scored.into_iter().map(|(_, s)| s.item).collect()
+}
+
+fn is_hidden_palette_command(name: &str) -> bool {
+    matches!(name, "advisor")
 }
 
 /// Multi-field weighted fuzzy match.

@@ -90,7 +90,7 @@ fn version_long_flag() {
 #[test]
 fn help_flag_prints_usage_and_exits() {
     cli().arg("--help").assert().success().stdout(
-        predicate::str::contains("Claude Code CLI")
+        predicate::str::contains("cc-rust CLI")
             .and(predicate::str::contains("--print"))
             .and(predicate::str::contains("--cwd")),
     );

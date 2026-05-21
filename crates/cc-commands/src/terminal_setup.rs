@@ -317,7 +317,7 @@ fn render_tips(p: &EnvProbe) -> String {
             "  - Manual setup: add `set -g extended-keys on` + `set -as terminal-features ',xterm*:extkeys'` for Shift+Enter passthrough.\n",
         );
         out.push_str(
-            "  - Manual setup: use `set -g allow-passthrough on` (tmux >= 3.3) so Claude Code can emit notifications / OSC sequences.\n\n",
+            "  - Manual setup: use `set -g allow-passthrough on` (tmux >= 3.3) so cc-rust can emit notifications / OSC sequences.\n\n",
         );
     }
 

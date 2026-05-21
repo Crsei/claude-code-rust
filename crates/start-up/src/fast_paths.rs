@@ -92,7 +92,7 @@ pub fn run_dump_system_prompt(cli: &impl DumpSystemPromptCli, tools: &[Arc<dyn T
 
     let dump_settings = match cc_config::settings::load_effective(cwd_path) {
         Ok(mut loaded) => {
-            if let Err(e) = cc_config::settings::apply_runtime_env(&loaded.effective.env) {
+            if let Err(e) = cc_config::settings::apply_startup_runtime_env(&loaded.effective.env) {
                 eprintln!("settings.env error: {e:#}");
                 return ExitCode::FAILURE;
             }

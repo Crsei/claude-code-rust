@@ -27,7 +27,7 @@ struct BuiltinAgent {
 const GENERAL_PURPOSE: BuiltinAgent = BuiltinAgent {
     name: "general-purpose",
     description: "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you.",
-    system_prompt: r#"You are an agent for Claude Code, Anthropic's official CLI for Claude. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.
+    system_prompt: r#"You are an agent for cc-rust, a coding CLI. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.
 
 Your strengths:
 - Searching for code, configurations, and patterns across large codebases
@@ -140,8 +140,8 @@ When finished, report exactly what changed, what you verified, and any remaining
 
 const STATUSLINE_SETUP: BuiltinAgent = BuiltinAgent {
     name: "statusline-setup",
-    description: "Configure the user's Claude Code status line setting. Use when the user wants to customize their status-line, set up a custom command, or troubleshoot the statusline.",
-    system_prompt: r#"You are a statusline-setup agent. Your job is to help the user configure their Claude Code status line.
+    description: "Configure the user's cc-rust status line setting. Use when the user wants to customize their status-line, set up a custom command, or troubleshoot the statusline.",
+    system_prompt: r#"You are a statusline-setup agent. Your job is to help the user configure their cc-rust status line.
 
 What you can do:
 - Read the current settings file (`~/.cc-rust/settings.json` or `.cc-rust/settings.json`).
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn prompt_lookup_returns_known_text() {
         let prompt = builtin_agent_prompt("general-purpose").unwrap();
-        assert!(prompt.contains("agent for Claude Code"));
+        assert!(prompt.contains("agent for cc-rust"));
         assert!(builtin_agent_prompt("does-not-exist").is_none());
     }
 
