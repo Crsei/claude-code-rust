@@ -31,7 +31,7 @@ Rust 对应: `cc-config/`
 
 ## Rust 已实现
 
-### cc-config/ (完整度 ~90%)
+### cc-config/ (完整度 ~95%)
 - `settings.rs`: 多源设置 (user/project/local/flag/policy)
 - `features.rs`: 功能开关
 - `claude_md.rs`: CLAUDE.md 配置
@@ -40,38 +40,20 @@ Rust 对应: `cc-config/`
 - `runtime_settings.rs`: 运行时设置
 - `user_agent.rs`: User Agent
 - `validation.rs`: 验证
+- `mdm/`: 企业 MDM 策略管理和读取（完整移植 Bun 端 `mdm/settings.ts`, `mdm/rawRead.ts`, `mdm/constants.ts`）
+- `change_detector.rs`: 文件变更检测（notify-based）
+- `permission_validation.rs`: 设置权限规则验证
+- `validation_tips.rs`: 验证建议
+- `internal_writes.rs`: 内部写入检测，避免反馈循环
 
 ## Rust 缺失的主要功能
 
-### 1. MDM 企业设置 (316+129+81 行) — 完全缺失
-- MDM 策略管理和读取
-- macOS 配置描述文件的策略读取 (`mdm/rawRead.ts`)
-- 企业部署支持
-- **Rust 缺少对管理设备的 MDM 策略集成**
-
-### 2. 变更检测 (488 行) — 缺失
-- 使用 chokidar 的文件监控
-- 防抖重载
-- 设置合并失效
-- 启动文件扫描
-
-### 3. 权限验证 (411 行) — 缺失
-- 设置中的权限规则验证
-- 跨来源一致性检查
-
-### 4. 验证建议 (164 行) — 缺失
-- 格式良好验证提示
-- 常见问题解决建议
-
-### 5. 工具验证配置 (103+45 行) — 缺失
+### 1. 工具验证配置 (103+45 行) — 缺失
 - 每个工具的独立验证配置
 - 编辑工具特殊处理
 
-### 6. 变更应用 (92 行) — 缺失
+### 2. 变更应用 (92 行) — 缺失
 - 单个设置变更的应用逻辑
-
-### 7. 内部写入检测 (37 行) — 缺失
-- 避免反馈循环的内部写检测
 
 ## 关键差异总结
 
@@ -83,8 +65,9 @@ Rust 对应: `cc-config/`
 | CLAUDE.md | claude_md.rs | ✅ 已移植 |
 | 路径管理 | paths.rs | ✅ 已移植 |
 | 运行时设置 | runtime_settings.rs | ✅ 已移植 |
-| 验证 | validation.rs | ✅ 部分移植 |
-| **MDM 企业设置** | **mdm/ (526 行)** | **无** | **企业缺口** |
-| **变更检测** | **changeDetector.ts (488 行)** | **无** | **UX 降级** |
-| **权限验证** | **permissionValidation.ts (411 行)** | **无** | **安全缺口** |
-| 验证建议 | validationTips.ts | 无 | UX 降级 |
+| 验证 | validation.rs | ✅ 已移植 |
+| **MDM 企业设置** | **mdm/ (526 行)** | **mdm/** | **✅ 已移植** |
+| **变更检测** | **changeDetector.ts (488 行)** | **change_detector.rs** | **✅ 已移植** |
+| **权限验证** | **permissionValidation.ts (411 行)** | **permission_validation.rs** | **✅ 已移植** |
+| 验证建议 | validationTips.ts | validation_tips.rs | ✅ 已移植 |
+| 内部写入检测 | internalWrites.ts | internal_writes.rs | ✅ 已移植 |

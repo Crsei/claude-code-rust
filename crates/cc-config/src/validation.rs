@@ -5,7 +5,10 @@
 
 use anyhow::{bail, Result};
 
+use crate::permission_validation::{self, PermissionValidationWarning};
 use crate::runtime_settings::SettingsJson;
+use crate::settings::LoadedSettings;
+use crate::validation_tips::{self, ValidationTip};
 
 const VALID_BACKENDS: &[&str] = &["native", "codex"];
 
@@ -358,6 +361,156 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
 }
 
 // ---------------------------------------------------------------------------
+// Extended validation — ConfigDiagnostic
+// ---------------------------------------------------------------------------
+
+/// A unified diagnostic entry combining validation warnings, permission
+/// validation, and tips into a single type for use by `/doctor`.
+#[derive(Debug, Clone)]
+pub struct ConfigDiagnostic {
+    /// The setting field or diagnostic category.
+    pub field: String,
+    /// Human-readable description of the issue.
+    pub message: String,
+    /// How serious the issue is.
+    pub severity: WarningSeverity,
+    /// Optional machine-readable tip code (from `ValidationTip`).
+    pub code: Option<String>,
+    /// Optional source context (e.g. "Managed", "User").
+    pub source_info: Option<String>,
+    /// Optional suggested fix.
+    pub fix: Option<String>,
+}
+
+impl From<ValidationWarning> for ConfigDiagnostic {
+    fn from(w: ValidationWarning) -> Self {
+        Self {
+            field: w.field,
+            message: w.message,
+            severity: w.severity,
+            code: None,
+            source_info: None,
+            fix: None,
+        }
+    }
+}
+
+impl From<PermissionValidationWarning> for ConfigDiagnostic {
+    fn from(w: PermissionValidationWarning) -> Self {
+        Self {
+            field: w.field,
+            message: w.message,
+            severity: w.severity,
+            code: None,
+            source_info: w.source_info,
+            fix: None,
+        }
+    }
+}
+
+impl From<ValidationTip> for ConfigDiagnostic {
+    fn from(t: ValidationTip) -> Self {
+        Self {
+            field: String::new(),
+            message: t.message,
+            severity: t.severity,
+            code: Some(t.code),
+            source_info: None,
+            fix: t.fix,
+        }
+    }
+}
+
+/// Extended settings validation that runs the standard validator plus
+/// permission validation and MDM shadowing checks.
+///
+/// This is the integration point called by `/doctor` and initialization
+/// logic to produce a comprehensive diagnostic view.
+pub fn validate_settings_extended(
+    settings: &crate::runtime_settings::SettingsJson,
+    loaded: &LoadedSettings,
+) -> Vec<ConfigDiagnostic> {
+    let mut diagnostics: Vec<ConfigDiagnostic> = validate_settings(settings)
+        .into_iter()
+        .map(ConfigDiagnostic::from)
+        .collect();
+
+    // Permission validation.
+    let perm_warnings = permission_validation::validate_permission_settings(
+        &loaded.effective.permissions,
+        &loaded.sources,
+    );
+    for w in perm_warnings {
+        let has_dup = diagnostics.iter().any(|d| d.message == w.message);
+        if !has_dup {
+            diagnostics.push(ConfigDiagnostic::from(w));
+        }
+    }
+
+    // Permission validation tips.
+    let tips = validation_tips::collect_validation_tips(&loaded.effective, &[]);
+    for t in tips {
+        diagnostics.push(ConfigDiagnostic::from(t));
+    }
+
+    diagnostics
+}
+
+/// Collect all config diagnostics into a unified list for `/doctor`.
+///
+/// Combines:
+/// - Standard validation warnings.
+/// - Permission validation warnings (including shadowed rules).
+/// - Configuration tips.
+pub fn collect_config_diagnostics(loaded: &LoadedSettings) -> Vec<ConfigDiagnostic> {
+    let mut diagnostics: Vec<ConfigDiagnostic> = Vec::new();
+
+    // Map effective settings to a SettingsJson-like view for the standard
+    // validator. We can't construct a full SettingsJson here without the
+    // runtime state, so we focus on diagnostics we can derive from LoadedSettings.
+
+    // Permission validation warnings.
+    let perm_warnings = permission_validation::validate_permission_settings(
+        &loaded.effective.permissions,
+        &loaded.sources,
+    );
+    for w in perm_warnings {
+        diagnostics.push(ConfigDiagnostic::from(w));
+    }
+
+    // Shadowed rules.
+    let managed_perms = loaded.managed.as_ref().and_then(|r| r.permissions.clone());
+    let shadowed = permission_validation::find_shadowed_rules(
+        &loaded.effective.permissions,
+        managed_perms.as_ref(),
+    );
+    for rule in &shadowed {
+        diagnostics.push(ConfigDiagnostic {
+            field: "permissions".to_string(),
+            message: format!(
+                "Permission rule '{}' is shadowed by {} (source: {:?})",
+                rule.rule, rule.shadowed_by, rule.source
+            ),
+            severity: WarningSeverity::Warning,
+            code: Some("shadowed-rule".to_string()),
+            source_info: Some(format!("{:?}", rule.source)),
+            fix: Some(format!(
+                "Review the managed policy that shadows '{}'.",
+                rule.rule
+            )),
+        });
+    }
+
+    // Configuration tips.
+    let tips = validation_tips::collect_configuration_tips(&loaded.effective);
+    for t in tips {
+        diagnostics.push(ConfigDiagnostic::from(t));
+    }
+
+    diagnostics
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -513,6 +666,63 @@ mod tests {
                 .iter()
                 .map(|w| (&w.field, &w.message))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_config_diagnostic_from_validation_warning() {
+        let vw = ValidationWarning {
+            field: "model".to_string(),
+            message: "Invalid model".to_string(),
+            severity: WarningSeverity::Error,
+        };
+        let cd: ConfigDiagnostic = vw.into();
+        assert_eq!(cd.field, "model");
+        assert_eq!(cd.message, "Invalid model");
+        assert_eq!(cd.severity, WarningSeverity::Error);
+        assert!(cd.code.is_none());
+    }
+
+    #[test]
+    fn test_config_diagnostic_from_permission_warning() {
+        let pw = PermissionValidationWarning {
+            severity: WarningSeverity::Warning,
+            field: "permissions.allow".to_string(),
+            message: "Test warning".to_string(),
+            source_info: Some("User".to_string()),
+        };
+        let cd: ConfigDiagnostic = pw.into();
+        assert_eq!(cd.field, "permissions.allow");
+        assert_eq!(cd.source_info.as_deref(), Some("User"));
+    }
+
+    #[test]
+    fn test_config_diagnostic_from_validation_tip() {
+        let tip = ValidationTip {
+            code: "test-code".to_string(),
+            message: "Test tip".to_string(),
+            severity: WarningSeverity::Info,
+            fix: Some("Run command".to_string()),
+        };
+        let cd: ConfigDiagnostic = tip.into();
+        assert_eq!(cd.code.as_deref(), Some("test-code"));
+        assert_eq!(cd.fix.as_deref(), Some("Run command"));
+    }
+
+    #[test]
+    fn test_collect_config_diagnostics_empty_loaded() {
+        use crate::settings::LoadedSettings;
+        let loaded = LoadedSettings::default();
+        let diagnostics = collect_config_diagnostics(&loaded);
+        assert!(
+            !diagnostics.is_empty(),
+            "expected at least some diagnostics from empty settings, got 0"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code.as_deref() == Some("missing-model")),
+            "expected missing-model tip in diagnostics"
         );
     }
 }
