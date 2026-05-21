@@ -33,6 +33,9 @@ pub mod tools;
 pub mod types;
 pub mod worktree_hooks;
 
+#[cfg(feature = "telemetry")]
+pub mod telemetry_bridge;
+
 pub use cc_bootstrap as bootstrap;
 pub use cc_compact as compact;
 pub use cc_config as config;

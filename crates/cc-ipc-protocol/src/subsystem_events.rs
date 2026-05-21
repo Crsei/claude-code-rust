@@ -72,6 +72,14 @@ pub enum LspEvent {
     /// [`LspCommand::QuerySettings`]). Lets the frontend show "muted
     /// plugins" or "all disabled" state in an LSP settings view.
     SettingsSnapshot { settings: LspRecommendationSettings },
+    /// User decision on an LSP recommendation — emitted for telemetry/audit
+    /// after the frontend replies to a `RecommendationRequest`.
+    RecommendationDecision {
+        plugin_id: String,
+        recommendation_id: String,
+        /// One of "accepted", "dismissed", "remind_later".
+        decision: String,
+    },
 }
 
 /// Events emitted by the MCP subsystem.
@@ -162,6 +170,30 @@ pub enum PluginEvent {
     /// `count` is the number of plugins in the registry post-reload.
     /// `had_error` is true when any plugin failed to load.
     Reloaded { count: usize, had_error: bool },
+
+    // ── Phase 2 variants (Serial Integration Lane) ──
+    /// A plugin was installed.
+    Installed {
+        plugin_id: String,
+        name: String,
+        version: String,
+    },
+    /// A plugin was updated to a new version.
+    Updated {
+        plugin_id: String,
+        name: String,
+        version: String,
+    },
+    /// A plugin was uninstalled.
+    Uninstalled { plugin_id: String, name: String },
+    /// Plugin validation failed.
+    ValidationFailed {
+        plugin_id: String,
+        name: String,
+        errors: Vec<String>,
+    },
+    /// Plugin configuration was changed externally.
+    ConfigChanged { plugin_id: String, name: String },
 }
 
 /// Events emitted by the IDE-integration subsystem.
@@ -477,6 +509,17 @@ pub enum SubsystemEvent {
     Skill(SkillEvent),
     Ide(IdeEvent),
     AgentSettings(Box<AgentSettingsEvent>),
+
+    // ── Phase 2 integration (Serial Integration Lane) ──
+    /// A completion was provided/accepted by the user.
+    CompletionProvided {
+        request_id: String,
+        accepted: bool,
+        item_index: usize,
+    },
+    /// Request telemetry data flush (emitted by periodic timer or
+    /// explicit `RefreshPluginTelemetry` frontend message).
+    TelemetryFlush,
 }
 
 // ===========================================================================

@@ -29,6 +29,11 @@ Rust 对应: 无 (完全缺失)
 Rust 中没有 `cc-suggestions` 或类似的 crate。  
 `cc-engine/src/input_processing.rs` 只有基础的斜杠命令检测，远不完整。
 
+### IPC 协议扩展 (Phase 2)
+- 新增 `FrontendMessage::RequestCompletions { input, cursor_pos, request_id }` 和 `BackendMessage::Completions { items, request_id }`，为前端输入补全提供协议层支持
+- 新增 `FrontendMessage::AcceptCompletion { request_id, index }`，支持补全项选择
+- 新增 `FrontendMessage::RequestLspRecommendations { language }` 和 `BackendMessage::LspRecommendations { recommendations }`，支持 LSP 推荐查询
+
 ## 建议系统缺失细节
 
 ### 1. 命令补全 (576 行)

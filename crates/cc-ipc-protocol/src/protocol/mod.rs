@@ -127,6 +127,26 @@ pub enum FrontendMessage {
         #[serde(default)]
         max_results: Option<usize>,
     },
+
+    // ── Phase 2 integration: completions, telemetry, LSP recommendations ──
+    /// Request input completions for the given text and cursor position.
+    RequestCompletions {
+        input: String,
+        cursor_pos: usize,
+        request_id: String,
+    },
+    /// Accept a completion item at the given index from the last
+    /// `RequestCompletions` response.
+    AcceptCompletion { request_id: String, index: usize },
+    /// Install a recommended plugin from the LSP recommendation engine.
+    InstallRecommendedPlugin { plugin_id: String },
+    /// Request a telemetry status refresh.
+    RefreshPluginTelemetry,
+    /// Request LSP recommendations for a specific language (or all known).
+    RequestLspRecommendations {
+        #[serde(default)]
+        language: Option<String>,
+    },
 }
 
 fn default_true() -> bool {
@@ -334,6 +354,30 @@ pub enum BackendMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+
+    // ── Phase 2 integration: completions, telemetry, LSP recommendations ──
+    /// Completion items for the frontend popup.
+    Completions {
+        items: Vec<CompletionItemDTO>,
+        request_id: String,
+    },
+    /// Plugin installation progress update.
+    PluginInstallProgress {
+        plugin_id: String,
+        status: InstallProgress,
+    },
+    /// Telemetry subsystem status snapshot.
+    TelemetryStatus {
+        enabled: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        #[serde(default)]
+        errors: Vec<String>,
+    },
+    /// LSP recommendations from the recommendation engine.
+    LspRecommendations {
+        recommendations: Vec<LspRecommendationDTO>,
+    },
 }
 
 /// A single file-search hit. Matches the upstream
@@ -347,6 +391,45 @@ pub struct FileSearchMatch {
     pub line: u64,
     /// Line text, trimmed of trailing whitespace.
     pub text: String,
+}
+
+// ---------------------------------------------------------------------------
+// DTO types for Phase 2 integration (Serial Integration Lane)
+// ---------------------------------------------------------------------------
+
+/// A completion item sent to the frontend for display.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CompletionItemDTO {
+    pub label: String,
+    pub insert_text: String,
+    /// Completion kind: "command", "path", "shell_history", "slack_channel",
+    /// "skill", "arg".
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// An LSP recommendation sent to the frontend.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LspRecommendationDTO {
+    pub plugin_id: String,
+    pub plugin_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub languages: Vec<String>,
+    pub confidence: f64,
+    pub is_installed: bool,
+    pub is_dismissed: bool,
+}
+
+/// Progress status for plugin installation.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum InstallProgress {
+    Downloading,
+    Extracting,
+    Validating,
+    Installed,
+    Failed { error: String },
 }
 
 #[cfg(test)]

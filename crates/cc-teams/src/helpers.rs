@@ -14,6 +14,7 @@ use tracing::{debug, info, warn};
 
 use super::constants::*;
 use super::identity;
+use super::layout_manager;
 use super::mailbox;
 use super::types::*;
 
@@ -178,6 +179,35 @@ pub fn assign_color(team_file: &TeamFile) -> String {
         .to_string()
 }
 
+/// Assign a stable color for a specific teammate ID.
+pub fn assign_color_for_teammate(team_file: &TeamFile, teammate_id: &str) -> String {
+    if let Some(existing) = team_file
+        .members
+        .iter()
+        .find(|m| m.agent_id == teammate_id)
+        .and_then(|m| m.color.clone())
+    {
+        layout_manager::remember_teammate_color(teammate_id, &existing);
+        return existing;
+    }
+
+    let assigned = layout_manager::assign_teammate_color(teammate_id).to_string();
+    let used_by_other = team_file
+        .members
+        .iter()
+        .filter(|m| m.agent_id != teammate_id)
+        .filter_map(|m| m.color.as_deref())
+        .any(|color| color == assigned);
+
+    if used_by_other && team_file.members.len() < AGENT_COLORS.len() {
+        let fallback = assign_color(team_file);
+        layout_manager::remember_teammate_color(teammate_id, &fallback);
+        fallback
+    } else {
+        assigned
+    }
+}
+
 /// Map a logical color name to a tmux color.
 pub fn tmux_color(color: &str) -> &str {
     match color {
@@ -231,6 +261,8 @@ pub fn cleanup_team_directories(team_name: &str) -> Result<()> {
         debug!(team = %team_name, "tasks directory removed");
     }
 
+    layout_manager::clear_teammate_colors();
+
     info!(team = %team_name, "team directories cleaned up");
     Ok(())
 }
@@ -282,6 +314,32 @@ fn sanitize_team_name(name: &str) -> String {
 /// Check if a team exists on disk.
 pub fn team_exists(team_name: &str) -> bool {
     team_config_path(team_name).exists()
+}
+
+/// List team names that have a readable config path on disk.
+pub fn list_team_names() -> Result<Vec<String>> {
+    let teams_root = cc_config::paths::teams_dir();
+    if !teams_root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut names = Vec::new();
+    for entry in fs::read_dir(&teams_root)
+        .with_context(|| format!("failed to read teams dir: {}", teams_root.display()))?
+    {
+        let entry = entry?;
+        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        if team_exists(&name) {
+            names.push(name);
+        }
+    }
+    names.sort();
+    Ok(names)
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +582,28 @@ mod tests {
         let color = assign_color(&tf);
         assert_ne!(color, "red");
         assert!(AGENT_COLORS.contains(&color.as_str()));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_assign_color_for_teammate_uses_layout_cache() {
+        layout_manager::clear_teammate_colors();
+        let tf = TeamFile {
+            name: "t".into(),
+            description: None,
+            created_at: 0,
+            lead_agent_id: "lead@t".into(),
+            lead_session_id: None,
+            hidden_pane_ids: vec![],
+            team_allowed_paths: vec![],
+            members: vec![],
+        };
+
+        let color = assign_color_for_teammate(&tf, "worker@t");
+        assert_eq!(
+            layout_manager::get_teammate_color("worker@t"),
+            Some(color.as_str())
+        );
     }
 
     #[test]

@@ -83,7 +83,28 @@ impl SafetyClassifierRequest {
         sandbox_mode: Option<String>,
         auto_mode_policy: AutoModeSettings,
     ) -> Self {
-        let tool_classifier_input = tool_input.clone();
+        Self::auto_mode_tool_with_classifier_input(
+            tool_name,
+            tool_input.clone(),
+            tool_input,
+            transcript,
+            cwd,
+            permission_mode,
+            sandbox_mode,
+            auto_mode_policy,
+        )
+    }
+
+    pub fn auto_mode_tool_with_classifier_input(
+        tool_name: impl Into<String>,
+        tool_input: Value,
+        tool_classifier_input: Value,
+        transcript: Vec<Message>,
+        cwd: PathBuf,
+        permission_mode: PermissionMode,
+        sandbox_mode: Option<String>,
+        auto_mode_policy: AutoModeSettings,
+    ) -> Self {
         Self {
             purpose: SafetyClassifierPurpose::AutoModeToolUse,
             tool_name: tool_name.into(),
@@ -293,6 +314,11 @@ fn build_stage_prompt(
         .as_ref()
         .map(pretty_json)
         .unwrap_or_else(|| "null".to_string());
+    let tool_input = if request.tool_input == request.tool_classifier_input {
+        pretty_json(&request.tool_input)
+    } else {
+        "[omitted: tool-specific classifier input is provided below]".to_string()
+    };
 
     let user = format!(
         "purpose: {purpose}\nstage: {stage:?}\npermission_mode: {permission_mode:?}\nsandbox_mode: {sandbox_mode}\ncwd: {cwd}\ntool_name: {tool_name}\ntool_input:\n{tool_input}\ntool_classifier_input:\n{tool_classifier_input}\nauto_mode_policy:\n{policy}\nhook_context:\n{hook_context}\nrecent_transcript:\n{transcript}\n\nReturn JSON: {{\"verdict\":\"allow|deny|ask\",\"reason\":\"short reason\",\"thinking\":\"optional private summary\",\"escalate\":false}}\n",
@@ -301,7 +327,7 @@ fn build_stage_prompt(
         sandbox_mode = request.sandbox_mode.as_deref().unwrap_or("unknown"),
         cwd = request.cwd.display(),
         tool_name = request.tool_name,
-        tool_input = pretty_json(&request.tool_input),
+        tool_input = tool_input,
         tool_classifier_input = pretty_json(&request.tool_classifier_input),
     );
 
@@ -413,7 +439,7 @@ fn message_content_text(content: &MessageContent) -> String {
     }
 }
 
-fn assistant_text(message: &AssistantMessage) -> String {
+pub fn assistant_text(message: &AssistantMessage) -> String {
     message
         .content
         .iter()
@@ -817,9 +843,7 @@ sandbox_mode: workspace
 cwd: F:/repo
 tool_name: Bash
 tool_input:
-{
-  "command": "echo $ANTHROPIC_API_KEY"
-}
+[omitted: tool-specific classifier input is provided below]
 tool_classifier_input:
 {
   "command": "echo",
@@ -829,6 +853,8 @@ tool_classifier_input:
     "password": "<redacted>"
   }
 }
+auto_mode_policy:
+{
 "###
         );
     }

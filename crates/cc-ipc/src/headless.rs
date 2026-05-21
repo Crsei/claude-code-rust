@@ -191,6 +191,13 @@ pub async fn run_headless(config: HeadlessRuntimeConfig) -> anyhow::Result<()> {
                     cc_ipc_protocol::subsystem_events::SubsystemEvent::AgentSettings(e) => {
                         BackendMessage::AgentSettingsEvent { event: *e }
                     }
+                    // Phase 2 integration: internal audit events, not forwarded
+                    cc_ipc_protocol::subsystem_events::SubsystemEvent::CompletionProvided { .. } => {
+                        continue;
+                    }
+                    cc_ipc_protocol::subsystem_events::SubsystemEvent::TelemetryFlush => {
+                        continue;
+                    }
                 };
                 let _ = sink.send(&msg);
             }

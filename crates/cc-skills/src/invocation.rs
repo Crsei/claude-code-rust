@@ -156,12 +156,17 @@ pub fn make_skill_message(
 }
 
 /// Prepare a skill invocation without touching engine-owned runtime state.
+///
+/// Records usage via `crate::record_skill_usage` on successful preparation.
 pub fn prepare_skill_invocation(
     skill: &SkillDefinition,
     args: &str,
     main_loop_model: &str,
     session_id: Option<&str>,
 ) -> PreparedSkillInvocation {
+    // Record usage for this skill invocation
+    crate::record_skill_usage(&skill.name);
+
     match skill.frontmatter.context {
         SkillContext::Inline => {
             let mut data = json!({

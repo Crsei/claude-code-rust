@@ -21,6 +21,7 @@ pub(crate) fn install_command_runtime_providers() {
         team_task_snapshots_for_commands,
     );
     cc_commands::runtime::set_team_command_executor(team_command_for_commands);
+    cc_commands::runtime::set_team_context_for_session_provider(team_context_for_session);
     cc_commands::runtime::set_command_metadata_provider(command_metadata_for_commands);
     cc_commands::runtime::set_worktree_status_provider(
         crate::ui::status_line_resolver::current_worktree_status,
@@ -56,6 +57,13 @@ pub(crate) fn install_command_runtime_providers() {
             register_plugin: cc_plugins::register_plugin,
             emit_event_external: emit_plugin_event_external_for_commands,
             uninstall_plugin: cc_plugins::uninstall_plugin,
+            // Marketplace / installation / validation (Phase 2, Serial Integration Lane)
+            install_plugin: install_plugin_for_commands,
+            list_marketplace: list_marketplace_for_commands,
+            refresh_marketplace_cache: refresh_marketplace_cache_for_commands,
+            update_plugin: update_plugin_for_commands,
+            validate_plugin: validate_plugin_for_commands,
+            get_plugin_info: get_plugin_info_for_commands,
         },
     );
     cc_commands::reload_plugins_cmd::set_reload_plugins_runtime(
@@ -162,6 +170,20 @@ fn team_command_for_commands<'a>(
     ctx: &'a mut CommandContext,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = String> + Send + 'a>> {
     Box::pin(cc_teams::command::execute_team_command(args, ctx))
+}
+
+fn team_context_for_session(session_id: &str) -> Option<cc_types::teams::TeamContext> {
+    cc_teams::reconnection::restore_team_context_for_session(session_id)
+        .map_err(|err| {
+            tracing::warn!(
+                session_id,
+                error = %err,
+                "failed to restore team context for session"
+            );
+            err
+        })
+        .ok()
+        .flatten()
 }
 
 fn command_metadata_for_commands() -> Vec<cc_commands::CommandMetadata> {
@@ -304,6 +326,36 @@ fn emit_plugin_event_external_for_commands(
             error,
         },
         PluginEvent::PluginList { .. } => return,
+        PluginEvent::Installed {
+            plugin_id,
+            name,
+            version,
+        } => cc_plugins::PluginSubsystemEvent::Installed {
+            plugin_id,
+            name,
+            version,
+        },
+        PluginEvent::Updated {
+            plugin_id,
+            name,
+            version,
+        } => cc_plugins::PluginSubsystemEvent::Updated {
+            plugin_id,
+            name,
+            old_version: "unknown".to_string(),
+            new_version: version,
+        },
+        PluginEvent::Uninstalled { plugin_id, name } => {
+            cc_plugins::PluginSubsystemEvent::Uninstalled { plugin_id, name }
+        }
+        PluginEvent::ValidationFailed {
+            plugin_id,
+            name: _,
+            errors,
+        } => cc_plugins::PluginSubsystemEvent::ValidationFailed { plugin_id, errors },
+        PluginEvent::ConfigChanged { plugin_id, name: _ } => {
+            cc_plugins::PluginSubsystemEvent::ConfigChanged { plugin_id }
+        }
     };
     cc_plugins::emit_event_external(adapted);
 }
@@ -454,4 +506,132 @@ fn remote_stop_run_for_commands(
             diagnostic: response.diagnostic,
         })
     })
+}
+
+// ---------------------------------------------------------------------------
+// PluginCommandRuntime marketplace/installation implementations (Phase 2,
+// Serial Integration Lane) — replaces previous stubs with real wiring to
+// cc-plugins APIs.
+// ---------------------------------------------------------------------------
+
+fn install_plugin_for_commands(
+    source: &str,
+    _version: Option<&str>,
+) -> Result<String, anyhow::Error> {
+    use std::collections::HashMap;
+
+    let engine_version = Some(env!("CARGO_PKG_VERSION"));
+    let available_plugins: HashMap<String, String> = HashMap::new();
+    let all_manifests: HashMap<String, cc_plugins::manifest::PluginManifest> = HashMap::new();
+
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
+    let result = rt
+        .block_on(cc_plugins::installation::install_plugin(
+            source,
+            None,
+            engine_version,
+            None,
+            &available_plugins,
+            &all_manifests,
+        ))
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    Ok(format!(
+        "Installed {} v{}",
+        result.plugin.name, result.plugin.version
+    ))
+}
+
+fn list_marketplace_for_commands(_query: &str) -> Result<Vec<String>, anyhow::Error> {
+    let all = cc_plugins::marketplace::list_all_marketplaces();
+    if all.is_empty() {
+        // No marketplace entries cached yet; return empty list without error
+        // so the caller can distinguish "not implemented" from "nothing found".
+        return Ok(Vec::new());
+    }
+    let lines: Vec<String> = all
+        .iter()
+        .map(|entry| {
+            format!(
+                "{} v{} — {} ({})",
+                entry.name, entry.version, entry.description, entry.source_name
+            )
+        })
+        .collect();
+    Ok(lines)
+}
+
+fn refresh_marketplace_cache_for_commands() -> Result<String, anyhow::Error> {
+    // GLOBAL_MARKETPLACE_INDEX loads from known_marketplaces.json; the
+    // refresh itself is a no-op in the current phase (marketplace sources
+    // are static until Lane E integration).
+    let path = cc_plugins::marketplaces_dir().join("known_marketplaces.json");
+    let idx = &*cc_plugins::marketplace::GLOBAL_MARKETPLACE_INDEX;
+    if path.exists() {
+        idx.load_from_file(&path)?;
+        Ok("Marketplace cache refreshed".to_string())
+    } else {
+        Ok("No known marketplaces file found; cache is empty".to_string())
+    }
+}
+
+fn update_plugin_for_commands(plugin_id: &str) -> Result<String, anyhow::Error> {
+    use std::collections::HashMap;
+
+    let engine_version = Some(env!("CARGO_PKG_VERSION"));
+    let available_plugins: HashMap<String, String> = HashMap::new();
+    let all_manifests: HashMap<String, cc_plugins::manifest::PluginManifest> = HashMap::new();
+
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
+    let result = rt
+        .block_on(cc_plugins::installation::update_plugin(
+            plugin_id,
+            engine_version,
+            None,
+            &available_plugins,
+            &all_manifests,
+        ))
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    Ok(format!(
+        "Updated {} to v{}",
+        result.plugin.name, result.plugin.version
+    ))
+}
+
+fn validate_plugin_for_commands(plugin_id: &str) -> Result<Vec<String>, anyhow::Error> {
+    let plugin = cc_plugins::find_plugin(plugin_id)
+        .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?;
+    let cache_path = plugin
+        .cache_path
+        .ok_or_else(|| anyhow::anyhow!("Plugin '{}' has no cache path", plugin_id))?;
+    let errors = cc_plugins::validation::PluginValidator::validate_plugin(&cache_path);
+    let messages: Vec<String> = errors
+        .iter()
+        .map(|e| format!("[{:?}] {}: {}", e.severity, e.field, e.message))
+        .collect();
+    if messages.is_empty() {
+        Ok(vec!["Plugin validation passed".to_string()])
+    } else {
+        Ok(messages)
+    }
+}
+
+fn get_plugin_info_for_commands(plugin_id: &str) -> Result<String, anyhow::Error> {
+    let plugin = cc_plugins::find_plugin(plugin_id)
+        .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?;
+    let info = serde_json::to_string_pretty(&serde_json::json!({
+        "id": plugin.id,
+        "name": plugin.name,
+        "version": plugin.version,
+        "description": plugin.description,
+        "status": format!("{:?}", plugin.status),
+        "source": format!("{:?}", plugin.source),
+        "marketplace": plugin.marketplace,
+        "tools": plugin.tools,
+        "skills": plugin.skills,
+        "mcp_servers": plugin.mcp_servers,
+        "installed_at": plugin.installed_at,
+    }))?;
+    Ok(info)
 }

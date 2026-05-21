@@ -182,10 +182,18 @@ pub fn handle_lsp_command(
                 "LSP recommendation response"
             );
             let (settings, info_text) = apply_recommendation_decision(&plugin_name, &decision);
-            let mut msgs = Vec::with_capacity(2);
+            let mut msgs = Vec::with_capacity(3);
             msgs.push(BackendMessage::LspEvent {
                 event: LspEvent::SettingsSnapshot { settings },
             });
+            // For "yes", also perform the actual plugin installation
+            if decision == "yes" {
+                let install_info = install_recommended_plugin(&plugin_name);
+                msgs.push(BackendMessage::SystemInfo {
+                    text: install_info,
+                    level: "info".to_string(),
+                });
+            }
             if let Some(text) = info_text {
                 msgs.push(BackendMessage::SystemInfo {
                     text,
@@ -299,18 +307,17 @@ fn save_lsp_recommendation_settings(settings: &LspRecommendationSettings) {
 /// Returns the updated settings snapshot plus an optional info-level
 /// message the frontend can surface in its system log. `yes` / `no` do
 /// not mutate persistent state — the install itself is carried out
-/// elsewhere (or postponed to the next session); only `never` and
-/// `disable` are sticky.
+/// by [`install_recommended_plugin`]; only `never` and `disable` are sticky.
 fn apply_recommendation_decision(
     plugin_name: &str,
     decision: &str,
 ) -> (LspRecommendationSettings, Option<String>) {
     let mut settings = load_lsp_recommendation_settings();
     let info = match decision {
-        "yes" => Some(format!(
-            "Install of LSP plugin '{}' is not yet wired up — track in /lsp when the install path lands.",
-            plugin_name
-        )),
+        "yes" => {
+            // Installation is handled by install_recommended_plugin()
+            None
+        }
         "no" => None,
         "never" => {
             if !settings.muted_plugins.iter().any(|p| p == plugin_name) {
@@ -335,6 +342,42 @@ fn apply_recommendation_decision(
         }
     };
     (settings, info)
+}
+
+/// Install a plugin in response to a LSP recommendation "yes" decision.
+///
+/// Uses a one-shot tokio runtime to call the async installation API.
+/// Returns an info message suitable for the frontend system log.
+fn install_recommended_plugin(plugin_name: &str) -> String {
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            return format!(
+                "Failed to create runtime for installing LSP plugin '{}': {}",
+                plugin_name, e
+            );
+        }
+    };
+
+    let engine_version = Some(env!("CARGO_PKG_VERSION"));
+    let available_plugins = std::collections::HashMap::<String, String>::new();
+    let all_manifests =
+        std::collections::HashMap::<String, cc_plugins::manifest::PluginManifest>::new();
+
+    match rt.block_on(cc_plugins::installation::install_plugin(
+        plugin_name,
+        None,
+        engine_version,
+        None,
+        &available_plugins,
+        &all_manifests,
+    )) {
+        Ok(result) => format!(
+            "Installed LSP plugin '{}' v{}",
+            result.plugin.name, result.plugin.version
+        ),
+        Err(e) => format!("Failed to install LSP plugin '{}': {}", plugin_name, e),
+    }
 }
 
 /// Remove `plugin_name` from the muted list and persist the result.
@@ -1817,15 +1860,11 @@ mod tests {
     }
 
     #[test]
-    fn apply_recommendation_decision_yes_emits_placeholder_info() {
-        // Until the install path is wired up, `yes` returns the placeholder
-        // info text. When the real install lands this test should be
-        // replaced — the point here is that `yes` *does* surface a message
-        // so the user knows something happened.
+    fn apply_recommendation_decision_yes_returns_no_info() {
+        // `yes` does not mutate settings; installation is handled by
+        // `install_recommended_plugin` at the caller site.
         let (_settings, info) = apply_recommendation_decision("rust-analyzer", "yes");
-        assert!(info.is_some());
-        let text = info.unwrap();
-        assert!(text.contains("rust-analyzer"));
+        assert!(info.is_none(), "\"yes\" should not return info text");
     }
 
     #[test]

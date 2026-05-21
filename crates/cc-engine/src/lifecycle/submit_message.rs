@@ -14,6 +14,9 @@ use futures::Stream;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+#[cfg(feature = "telemetry")]
+use crate::telemetry_bridge;
+
 use crate::codex_exec;
 use crate::command_runtime::{CommandContext, CommandResult};
 use crate::input_processing;
@@ -611,6 +614,7 @@ impl QueryEngine {
         let hook_runner = self.hook_runner.clone();
         let command_dispatcher = self.command_dispatcher.clone();
         let command_executor = self.command_executor.clone();
+        let auto_classifier_fn = self.auto_classifier_fn.clone();
 
         let stream = async_stream::stream! {
             let mut submit_turn = SubmitTurnState::new();
@@ -635,6 +639,8 @@ impl QueryEngine {
             // ================================================================
             // PHASE A-pre: Fire UserPromptSubmit hook
             // ================================================================
+            #[cfg(feature = "telemetry")]
+            let user_prompt_hook_span: Option<telemetry_bridge::SpanId> = telemetry_bridge::with_bridge(|b| b.start_hook("UserPromptSubmit"));
             {
                 let hooks_map = state_ref.read().app_state.hooks.clone();
                 let configs = hook_runner.load_hook_configs(&hooks_map, "UserPromptSubmit");
@@ -649,6 +655,10 @@ impl QueryEngine {
                         Ok(output) => {
                             if !output.should_continue {
                                 info!("UserPromptSubmit hook blocked prompt");
+                                #[cfg(feature = "telemetry")]
+                                if let Some(span_id) = user_prompt_hook_span {
+                                    telemetry_bridge::with_bridge(|b| b.end_hook(span_id, "blocked"));
+                                }
                                 let reason = output.reason
                                     .or(output.stop_reason)
                                     .unwrap_or_else(|| "Blocked by UserPromptSubmit hook".to_string());
@@ -670,10 +680,23 @@ impl QueryEngine {
                                 });
                                 return;
                             }
+                            #[cfg(feature = "telemetry")]
+                            if let Some(span_id) = user_prompt_hook_span {
+                                telemetry_bridge::with_bridge(|b| b.end_hook(span_id, "passed"));
+                            }
                         }
                         Err(e) => {
                             warn!(error = %e, "UserPromptSubmit hook error, continuing");
+                            #[cfg(feature = "telemetry")]
+                            if let Some(span_id) = user_prompt_hook_span {
+                                telemetry_bridge::with_bridge(|b| b.end_hook(span_id, "error"));
+                            }
                         }
+                    }
+                } else {
+                    #[cfg(feature = "telemetry")]
+                    if let Some(span_id) = user_prompt_hook_span {
+                        telemetry_bridge::with_bridge(|b| b.end_hook(span_id, "skipped"));
                     }
                 }
             }
@@ -790,6 +813,13 @@ impl QueryEngine {
                 return;
             }
 
+            // ── Start telemetry submit span (after early exits) ────────────
+            #[cfg(feature = "telemetry")]
+            let submit_span_id: std::cell::Cell<Option<telemetry_bridge::SpanId>> =
+                std::cell::Cell::new(telemetry_bridge::with_bridge(|b| {
+                    b.start_submit(&session_id, &Uuid::new_v4().to_string())
+                }));
+
             // ================================================================
             // PHASE B: System Prompt Build
             // ================================================================
@@ -861,6 +891,10 @@ impl QueryEngine {
                     uuid: Uuid::new_v4(),
                     errors: vec![result],
                 });
+                #[cfg(feature = "telemetry")]
+                if let Some(span_id) = submit_span_id.take() {
+                    telemetry_bridge::with_bridge(|b| b.end_submit(span_id, &model_name, 0, 0));
+                }
                 return;
             }
 
@@ -910,6 +944,7 @@ impl QueryEngine {
                 pending_bg_results: pending_bg_results.clone(),
                 hook_runner: hook_runner.clone(),
                 command_dispatcher: command_dispatcher.clone(),
+                auto_classifier_fn: auto_classifier_fn.clone(),
             });
 
             // Run the query loop
@@ -1107,6 +1142,10 @@ impl QueryEngine {
                                     uuid: Uuid::new_v4(),
                                     errors: submit_turn.collected_errors.clone(),
                                 });
+                                #[cfg(feature = "telemetry")]
+                                if let Some(span_id) = submit_span_id.take() {
+                                    telemetry_bridge::with_bridge(|b| b.end_submit(span_id, &model_name, 0, 0));
+                                }
                                 return;
                             }
 
@@ -1290,6 +1329,10 @@ impl QueryEngine {
                             uuid: Uuid::new_v4(),
                             errors: submit_turn.collected_errors.clone(),
                         });
+                        #[cfg(feature = "telemetry")]
+                        if let Some(span_id) = submit_span_id.take() {
+                            telemetry_bridge::with_bridge(|b| b.end_submit(span_id, &model_name, 0, 0));
+                        }
                         return;
                     }
                 }
@@ -1361,6 +1404,13 @@ impl QueryEngine {
                     Some(crate::services::langfuse::TraceStatus::Error)
                 },
             );
+
+            #[cfg(feature = "telemetry")]
+            if let Some(span_id) = submit_span_id.take() {
+                let input_tokens = usage_snap.input_tokens.as_ref().map(|t| t.total as u64).unwrap_or(0);
+                let output_tokens = usage_snap.output_tokens.as_ref().map(|t| t.total as u64).unwrap_or(0);
+                telemetry_bridge::with_bridge(|b| b.end_submit(span_id, &model_name, input_tokens, output_tokens));
+            }
 
             yield SdkMessage::Result(SdkResult {
                 subtype,
@@ -1434,6 +1484,98 @@ fn recent_tool_names(messages: &[Message], limit: usize) -> Vec<String> {
         }
     }
     names
+}
+
+// ---------------------------------------------------------------------------
+// submit_preprocessed_input — centralized submit entry point
+// ---------------------------------------------------------------------------
+
+/// Submit a pre-processed input directly into the conversation.
+///
+/// This is the centralized submit entry point for both TUI and headless
+/// frontends. It handles:
+///
+/// 1. Building attachment content blocks from `ProcessedInput.attachments`
+/// 2. Emitting a user prompt progress message during submission
+/// 3. Injecting the permission mode into the submit context
+/// 4. Calling the existing submit pipeline
+///
+/// This function consumes the `ProcessedInput` and converts it into messages
+/// ready for the main submit_message pipeline.
+#[allow(dead_code)]
+pub fn build_attachment_content_blocks(
+    attachments: &[crate::input_processing::AttachmentInfo],
+) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+
+    for attachment in attachments {
+        if let Some(block) = &attachment.content_block {
+            blocks.push(block.clone());
+        } else if let Some(path) = &attachment.file_path {
+            // Attempt to load the file and create a content block
+            if let Ok(content) = std::fs::read_to_string(path) {
+                blocks.push(ContentBlock::Text { text: content });
+            }
+        }
+    }
+
+    blocks
+}
+
+/// Create a user prompt progress message to show during submission.
+#[allow(dead_code)]
+pub fn build_submit_progress_message(prompt_len: usize) -> Message {
+    Message::Progress(crate::types::message::ProgressMessage {
+        uuid: Uuid::new_v4(),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+        tool_use_id: "submit".to_string(),
+        data: serde_json::json!({
+            "event": "user_prompt_submit",
+            "prompt_len": prompt_len,
+        }),
+    })
+}
+
+/// Submit a pre-processed input into the conversation.
+///
+/// This is the centralized submit entry point for both TUI and headless
+/// frontends. It takes a `ProcessedInput` and converts attachments into
+/// content blocks before passing the messages to the main pipeline.
+///
+/// Returns the modified `ProcessedInput` with built attachment content blocks.
+#[allow(dead_code)]
+pub fn submit_preprocessed_input(
+    mut preprocessed: crate::input_processing::ProcessedInput,
+) -> crate::input_processing::ProcessedInput {
+    // Build attachment content blocks
+    if !preprocessed.attachments.is_empty() {
+        let blocks = build_attachment_content_blocks(&preprocessed.attachments);
+
+        // If there are content blocks, update the first message
+        if let Some(Message::User(ref mut user)) = preprocessed.messages.first_mut() {
+            let mut all_blocks = Vec::new();
+
+            // Add existing text content
+            match &user.content {
+                MessageContent::Text(text) if !text.trim().is_empty() => {
+                    all_blocks.push(ContentBlock::Text { text: text.clone() });
+                }
+                MessageContent::Blocks(existing) => {
+                    all_blocks.extend(existing.clone());
+                }
+                _ => {}
+            }
+
+            // Add attachment blocks
+            all_blocks.extend(blocks);
+
+            if !all_blocks.is_empty() {
+                user.content = MessageContent::Blocks(all_blocks);
+            }
+        }
+    }
+
+    preprocessed
 }
 
 #[cfg(test)]

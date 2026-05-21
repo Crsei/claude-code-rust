@@ -292,11 +292,7 @@ fn shell_command(command: &str) -> Command {
 /// serialized JSON string. Stability across runs isn't required — we only
 /// compare within a single process.
 fn fingerprint_str(s: &str) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    s.hash(&mut h);
-    h.finish()
+    cc_utils::hash::hash_content(s.as_bytes())
 }
 
 /// Build a payload from a plain `serde_json::Value` (for tests and

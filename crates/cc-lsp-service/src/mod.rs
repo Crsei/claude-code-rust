@@ -10,6 +10,7 @@
 
 pub mod client;
 pub mod conversions;
+pub mod recommendation;
 pub mod tool;
 pub mod types;
 
@@ -83,6 +84,45 @@ static CONFIG_PROVIDER: LazyLock<parking_lot::Mutex<Option<LspConfigProvider>>> 
 /// Install or replace the external config provider.
 pub fn set_config_provider(provider: Option<LspConfigProvider>) {
     *CONFIG_PROVIDER.lock() = provider;
+}
+
+/// Global recommendation engine instance.
+static RECOMMENDATION_ENGINE: LazyLock<
+    parking_lot::Mutex<Option<recommendation::RecommendationEngine>>,
+> = LazyLock::new(|| parking_lot::Mutex::new(None));
+
+/// Install or replace the recommendation engine.
+pub fn set_recommendation_engine(engine: recommendation::RecommendationEngine) {
+    *RECOMMENDATION_ENGINE.lock() = Some(engine);
+}
+
+/// Access the recommendation engine with a closure.
+///
+/// Returns `f(None)` when no engine has been installed.
+pub fn with_recommendation_engine<R>(
+    f: impl FnOnce(Option<&recommendation::RecommendationEngine>) -> R,
+) -> R {
+    let guard = RECOMMENDATION_ENGINE.lock();
+    f(guard.as_ref())
+}
+
+/// Generate recommendations for a project directory using the installed engine.
+///
+/// Returns an empty vec when no engine has been installed.
+pub fn generate_recommendations(
+    project_dir: &std::path::Path,
+    installed: &[String],
+) -> Vec<recommendation::PluginLspRecommendation> {
+    let guard = RECOMMENDATION_ENGINE.lock();
+    match guard.as_ref() {
+        Some(engine) => engine.recommend_for_project(project_dir, installed),
+        None => Vec::new(),
+    }
+}
+
+/// Get a reference to the installed recommendation engine, if any.
+pub fn get_recommendation_engine() -> Option<recommendation::RecommendationEngine> {
+    RECOMMENDATION_ENGINE.lock().clone()
 }
 
 /// Known default LSP server configurations.

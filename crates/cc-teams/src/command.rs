@@ -269,8 +269,8 @@ async fn spawn(ctx: &mut cc_commands::CommandContext, rest: &str) -> String {
         return format!("Teammate '{}' already exists in team '{}'", name, team_name);
     }
 
-    let color = helpers::assign_color(&team_file);
     let agent_id = identity::format_agent_id(name, &team_name);
+    let color = helpers::assign_color_for_teammate(&team_file, &agent_id);
     let now = chrono::Utc::now().timestamp();
     let cwd = ctx.cwd.to_string_lossy().into_owned();
     let agent_type = crate::coordinator::default_teammate_agent_type().to_string();

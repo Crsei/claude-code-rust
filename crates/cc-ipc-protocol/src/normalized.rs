@@ -188,6 +188,10 @@ pub fn legacy_backend_type(message: &BackendMessage) -> &'static str {
         BackendMessage::AgentSettingsEvent { .. } => "agent_settings_event",
         BackendMessage::AgentEvent { .. } => "agent_event",
         BackendMessage::TeamEvent { .. } => "team_event",
+        BackendMessage::Completions { .. } => "completions",
+        BackendMessage::PluginInstallProgress { .. } => "plugin_install_progress",
+        BackendMessage::TelemetryStatus { .. } => "telemetry_status",
+        BackendMessage::LspRecommendations { .. } => "lsp_recommendations",
     }
 }
 

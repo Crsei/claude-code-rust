@@ -18,6 +18,7 @@
 // Core modules
 mod app_runtime_adapters;
 mod app_subsystem_handlers;
+mod classifier_model;
 mod cli;
 mod command_runtime_bridge;
 mod ui;
@@ -466,13 +467,158 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         cc_browser::session::ChromeEnablement::Enabled
     );
 
-    // B.3: Register tools
+    // B.3: Initialize plugins, tools, and skills
     cc_plugins::init_plugins();
-    let mut tools = registry::get_tools_for_active_session();
-    info!(count = tools.len(), "tools registered");
+    let all_plugins = cc_plugins::get_all_plugins();
+    if !all_plugins.is_empty() {
+        info!(count = all_plugins.len(), "plugins loaded");
+    }
 
-    // B.3b: Initialize plugin system
-    cc_plugins::init_plugins();
+    // B.3a-i: Wire plugin LSP declarations into the LSP config provider
+    // (Phase 2 integration: Serial Integration Lane)
+    {
+        let enabled_plugins = cc_plugins::get_enabled_plugins();
+        let lsp_decls = cc_plugins::lsp::collect_plugin_lsp_declarations(&enabled_plugins);
+        if !lsp_decls.is_empty() {
+            let provider_configs: Vec<cc_lsp_service::LspServerConfig> = lsp_decls
+                .into_iter()
+                .map(|decl| cc_lsp_service::LspServerConfig {
+                    name: Some(format!("{}:{}", decl.plugin_id, decl.language)),
+                    language_id: decl.language,
+                    extensions: decl.extensions,
+                    extension_to_language: std::collections::HashMap::new(),
+                    command: decl.server_command,
+                    args: decl.args,
+                    env: std::collections::HashMap::new(),
+                    workspace_folder: None,
+                    init_options: decl.config,
+                    source: Some(format!("plugin:{}", decl.plugin_id)),
+                })
+                .collect();
+            if !provider_configs.is_empty() {
+                cc_lsp_service::set_config_provider(Some(std::sync::Arc::new(move || {
+                    provider_configs.clone()
+                })));
+            }
+        }
+    }
+
+    // B.3a-ii: Register plugin commands in Lane C's DynamicRegistry
+    // (Phase 2 integration: Serial Integration Lane)
+    {
+        use cc_commands::dynamic_registry::{CommandSource, DynamicCommandEntry};
+        for plugin in &all_plugins {
+            if !matches!(plugin.status, cc_plugins::PluginStatus::Installed) {
+                continue;
+            }
+            if let Some(ref cache_path) = plugin.cache_path {
+                if let Ok(manifest) = cc_plugins::manifest::load_manifest(cache_path) {
+                    for cmd in manifest.commands {
+                        cc_commands::DYNAMIC_REGISTRY
+                            .lock()
+                            .register(DynamicCommandEntry {
+                                name: cmd.name,
+                                aliases: cmd.aliases,
+                                description: cmd.description,
+                                source: CommandSource::Plugin,
+                                hidden: false,
+                                usage_score: 0.0,
+                                execution_strategy:
+                                    cc_commands::dynamic_registry::ExecutionStrategy::Plugin,
+                            });
+                    }
+                }
+            }
+        }
+    }
+
+    // B.3a-iii: Initialize telemetry subsystem
+    // (Phase 2 integration: Serial Integration Lane)
+    #[cfg(feature = "telemetry")]
+    {
+        use cc_engine::telemetry_bridge::{self, EngineTelemetry, SpanId};
+        use cc_services::telemetry::{
+            init_telemetry, TelemetryConfig, TelemetryExporter, TelemetryHandle, TelemetryRedaction,
+        };
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Mutex;
+
+        let telemetry_config = TelemetryConfig {
+            enabled: true,
+            exporter: TelemetryExporter::Log,
+            sampling_rate: 1.0,
+            redaction: TelemetryRedaction::default(),
+        };
+        let telemetry_handle = init_telemetry(telemetry_config);
+        info!("telemetry subsystem initialized");
+
+        // Wrap the handle in an EngineTelemetry bridge so submit_message.rs
+        // can start/end InteractionSpan and HookSpan via the trait.
+        struct EngineTelemetryBridge {
+            handle: TelemetryHandle,
+            span_counter: AtomicU64,
+            // Live spans keyed by SpanId so finish() can find them.
+            active_spans:
+                Mutex<std::collections::HashMap<SpanId, cc_services::telemetry::InteractionSpan>>,
+            // Live hook spans
+            active_hooks:
+                Mutex<std::collections::HashMap<SpanId, cc_services::telemetry::HookSpan>>,
+        }
+
+        impl EngineTelemetry for EngineTelemetryBridge {
+            fn start_submit(&self, session_id: &str, submit_id: &str) -> SpanId {
+                let id = self.span_counter.fetch_add(1, Ordering::Relaxed);
+                let span = self
+                    .handle
+                    .start_interaction(session_id.to_string(), submit_id.to_string());
+                self.active_spans.lock().unwrap().insert(id, span);
+                id
+            }
+
+            fn end_submit(
+                &self,
+                span_id: SpanId,
+                model: &str,
+                input_tokens: u64,
+                output_tokens: u64,
+            ) {
+                if let Some(mut span) = self.active_spans.lock().unwrap().remove(&span_id) {
+                    span.finish(model, input_tokens as u32, output_tokens as u32);
+                }
+            }
+
+            fn start_hook(&self, hook_name: &str) -> SpanId {
+                let id = self.span_counter.fetch_add(1, Ordering::Relaxed);
+                let span = cc_services::telemetry::HookSpan::start(
+                    hook_name.to_string(),
+                    self.handle.clone(),
+                );
+                self.active_hooks.lock().unwrap().insert(id, span);
+                id
+            }
+
+            fn end_hook(&self, span_id: SpanId, _result: &str) {
+                if let Some(mut span) = self.active_hooks.lock().unwrap().remove(&span_id) {
+                    if _result == "error" {
+                        span.record_error("hook returned error");
+                    } else {
+                        span.finish();
+                    }
+                }
+            }
+        }
+
+        let bridge = EngineTelemetryBridge {
+            handle: telemetry_handle.clone(),
+            span_counter: AtomicU64::new(1),
+            active_spans: Mutex::new(std::collections::HashMap::new()),
+            active_hooks: Mutex::new(std::collections::HashMap::new()),
+        };
+        telemetry_bridge::install(Box::new(bridge));
+        info!("telemetry bridge installed");
+    }
+
+    let mut tools = registry::get_tools_for_active_session();
 
     // B.3c: Initialize skills (bundled/user/project + plugin)
     let plugin_skills = discover_plugin_skills_for_root();
@@ -639,7 +785,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
     let is_codex_backend = cc_engine::codex_exec::is_codex_backend(&backend);
     let detected_client = cc_api::api::client::ApiClient::from_backend_result(Some(&backend))
-        .context("invalid API provider configuration")?;
+        .context("invalid API provider configuration")?
+        .map(Arc::new);
     let provider_default_model = detected_client.as_ref().and_then(|client| {
         matches!(
             client.config().provider,
@@ -713,7 +860,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         sources.insert("sandbox".into(), settings::SettingsSource::Cli);
     }
 
-    let app_state = AppState {
+    let mut app_state = AppState {
         settings: SettingsJson {
             model: Some(model.clone()),
             backend: Some(backend.clone()),
@@ -776,28 +923,31 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     }
 
     // B.6: Handle session resume (before engine creation)
-    let resume_messages: Option<Vec<cc_types::message::Message>> = if cli.resume {
+    let (resume_messages, resumed_session_id): (
+        Option<Vec<cc_types::message::Message>>,
+        Option<String>,
+    ) = if cli.resume {
         match cc_session::resume::get_last_session(std::path::Path::new(&cwd)) {
             Ok(Some(info)) => {
                 info!(session = %info.session_id, "resuming last session");
                 match cc_session::resume::resume_session(&info.session_id) {
                     Ok(msgs) => {
                         info!(count = msgs.len(), "loaded messages from previous session");
-                        Some(msgs)
+                        (Some(msgs), Some(info.session_id))
                     }
                     Err(e) => {
                         warn!(error = %e, "failed to load session messages");
-                        None
+                        (None, None)
                     }
                 }
             }
             Ok(None) => {
                 warn!("no session to resume");
-                None
+                (None, None)
             }
             Err(e) => {
                 warn!(error = %e, "failed to find session to resume");
-                None
+                (None, None)
             }
         }
     } else if let Some(ref session_id) = cli.continue_session {
@@ -805,16 +955,32 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         match cc_session::resume::resume_session(session_id) {
             Ok(msgs) => {
                 info!(count = msgs.len(), "loaded messages for --continue");
-                Some(msgs)
+                (Some(msgs), Some(session_id.clone()))
             }
             Err(e) => {
                 warn!(error = %e, "failed to load session {}", session_id);
-                None
+                (None, None)
             }
         }
     } else {
-        None
+        (None, None)
     };
+
+    if let Some(session_id) = resumed_session_id.as_deref() {
+        match cc_teams::reconnection::restore_team_context_for_session(session_id) {
+            Ok(Some(team_context)) => {
+                app_state.team_context = Some(team_context);
+            }
+            Ok(None) => {}
+            Err(err) => {
+                warn!(
+                    session_id,
+                    error = %err,
+                    "failed to restore team context for resumed session"
+                );
+            }
+        }
+    }
 
     // Install root runtime adapters before QueryEngine can spawn agents. This
     // keeps cc-engine free of direct cc-ipc dependencies while preserving the
@@ -853,14 +1019,58 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     };
 
     // B.8: Create QueryEngine
-    let engine = Arc::new({
+    let engine = {
         let mut e = QueryEngine::new(engine_config);
         e.set_hook_runner(Arc::new(cc_tools::hooks::ShellHookRunner::new()));
         e.set_command_dispatcher(Arc::new(
             cc_commands::DefaultCommandDispatcher::for_full_registry(),
         ));
-        e
-    });
+
+        // Wire auto-mode classifier if an API client is available.
+        if let Some(ref client) = detected_client {
+            let auto_mode_policy = Arc::new(
+                merged_config
+                    .permissions
+                    .auto_mode
+                    .clone()
+                    .unwrap_or_default(),
+            );
+            let classifier_model = Arc::new(classifier_model::ApiClientClassifierModel {
+                client: client.clone(),
+                model: model.clone(),
+            });
+            let shared_classifier = Arc::new(cc_safety::classifier::SharedSafetyClassifier::new(
+                classifier_model,
+            ));
+
+            e.set_auto_classifier_fn(Some(Arc::new(
+                move |tool_name: String,
+                      tool_input: serde_json::Value,
+                      tool_classifier_input: serde_json::Value,
+                      messages: Vec<cc_engine::types::message::Message>,
+                      cwd: String| {
+                    let classifier = shared_classifier.clone();
+                    let auto_mode_policy = auto_mode_policy.clone();
+                    Box::pin(async move {
+                        use cc_safety::classifier::SafetyClassifierRequest;
+                        let request = SafetyClassifierRequest::auto_mode_tool_with_classifier_input(
+                            tool_name,
+                            tool_input,
+                            tool_classifier_input,
+                            messages,
+                            std::path::PathBuf::from(cwd),
+                            cc_types::permissions::PermissionMode::Auto,
+                            None,
+                            auto_mode_policy.as_ref().clone(),
+                        );
+                        Some(classifier.classify(&request).await)
+                    })
+                },
+            )));
+        }
+
+        Arc::new(e)
+    };
     info!(session = %engine.session_id, "QueryEngine created");
     crate::dashboard::init_session_id(engine.session_id.as_str());
 
