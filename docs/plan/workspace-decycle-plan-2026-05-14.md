@@ -88,3 +88,18 @@
 - 新下沉的类型必须是 DTO/trait，不携带 root runtime。
 - 每次至少跑对应 crate 的 `cargo check`；触碰 root glue 时再跑 `cargo check -p claude-code-rs`。
 - 如果出现 warning，优先修掉真实 unused import/dead code；确属机器环境的 build-script warning 单独记录。
+
+---
+
+## 完成状态（2026-05-21）
+
+**判定：⚠️ 部分完成**
+
+已完成：
+- **Cut 1**：切断 `cc-engine -> cc-ipc` 已完成。`cc-engine` 不再依赖 `cc-ipc` crate，agent tree 通过 `AgentTreeRuntime` 抽象，root 在 `main.rs` 中安装 runtime adapter。验证命令通过。
+
+未完成：
+- **Cut 2**：收紧 `cc-engine -> cc-ipc-client` 尚未开始。
+- **Cut 3**：收敛 `engine <-> tools` 尚未开始。
+- **Cut 4**：处理 `browser <-> mcp` 尚未开始。
+- **Cut 5**：整理 `commands/ui/ipc` 边界尚未开始。

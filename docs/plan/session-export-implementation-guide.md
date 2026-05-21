@@ -50,6 +50,31 @@ cargo test -p cc-commands session_export
 cargo test -p cc-engine lifecycle
 ```
 
+---
+
+## 完成状态（2026-05-21）
+
+**判定：⚠️ 部分完成（11/15 项完成，4 项 release residual）**
+
+已完成功能（11 项）：
+1. `transcript.messages` 全量导出 — `build_transcript_data()` 支持所有消息类型
+2. `rawTranscript` vs `apiView` 基础结构 — `SessionExport` schema v2
+3. API 请求快照 — `cc-session::request_snapshot` + `cc-engine::lifecycle::deps`
+4. tool call timeline 重建 — `reconstruct_tool_timeline()`
+5. compact boundary 提取 — `extract_compression_events()`
+6. content replacement 检测 — `detect_content_replacement()`
+7. microcompact 检测 — `detect_microcompact()`
+8. context snapshot — `build_context_snapshot()`
+9. session 元数据 — git branch/sha/model/project_path/时间戳
+10. `/session-export` 命令 — export/list/export-to-path/export-by-id + summary
+11. `/audit-export` 命令 — SHA-256 哈希链、防篡改验证
+
+仍未实现的 release residual（4 项）：
+1. **Context collapse 事件** — 阻塞于 `compact/pipeline.rs` Step 4 未实现
+2. **Session mode/tag/permission_mode 来源** — schema 已预留但 runtime 无稳定来源
+3. **完整 apiView 投影** — 当前是 `ApiRequestSnapshot` 摘要，不是 `projectView()` 等价
+4. **Microcompact boundary 系统消息** — 当前只通过文本标记间接检测
+
 ## 原版 TypeScript 架构参考
 
 以下内容描述原版 TypeScript 实现的架构，供 Rust 版对齐参考。

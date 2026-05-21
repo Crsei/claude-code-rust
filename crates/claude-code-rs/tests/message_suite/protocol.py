@@ -44,7 +44,7 @@ class WebClient:
     def __init__(self, base_url: str, *, default_timeout: float = 60.0):
         self.base_url = base_url.rstrip("/")
         self.default_timeout = default_timeout
-        self._client = httpx.AsyncClient(timeout=default_timeout)
+        self._client = httpx.AsyncClient(timeout=default_timeout, trust_env=False)
 
     async def close(self) -> None:
         await self._client.aclose()

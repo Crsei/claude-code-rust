@@ -957,3 +957,29 @@ remote-control gateway 进入可用状态必须满足：
 - `cargo test -p claude-code-rs remote_cmd ui::components::command_palette ui::components::command_surface ui::components::status_widget` 通过。
 - 至少一个 loopback smoke 证明 start -> create run -> events -> stop 闭环。
 - 至少一个本地 smoke 证明 `/remote status`、`/remote adapters`、`/remote runs` 在 daemon running/stopped 状态下输出稳定。
+
+---
+
+## 完成状态（2026-05-21）
+
+**判定：⚠️ 部分完成（Phase 0-9 已有实现记录，但文件中无执行完成标记）**
+
+已有配套实现报告：`remote-control-gateway-implementation-report-2026-05-08.md`
+
+报告记载：Sessions 00-16 全部完成，对应 20 个 commits，覆盖从 Phase 0 边界冻结到 Phase 9 文档发布门的完整实现链条。Session 17（Final Verification）尚未执行。
+
+各 Phase 完成状态：
+- Phase 0（边界冻结）：✅ 已完成
+- Phase 1（RemoteSource/session key/run schema）：✅ 已完成
+- Phase 2（Telegram/Lark adapter 连通性）：✅ 已完成
+- Phase 3（GatewayRunner + daemon bridge）：✅ 已完成
+- Phase 4（HTTP/SSE gateway API）：✅ 已完成
+- Phase 4.5（`/remote` 命令 + TUI 展示）：✅ 已完成
+- Phase 5（安全硬化）：✅ 已完成
+- Phase 6（Webhook 声明式入口）：✅ 已完成
+- Phase 7（DeliveryRouter）：✅ 已完成
+- Phase 8（恢复/队列/长期运行）：✅ 已完成
+- Phase 9（文档/发布门槛）：✅ Session 16 已完成
+
+未完成：
+- **Session 17（Final Verification）**：尚未执行完整验证命令（`cargo test -p gateway`、`cargo test -p claude-code-rs` 全套）

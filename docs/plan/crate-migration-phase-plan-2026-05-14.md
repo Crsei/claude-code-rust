@@ -180,7 +180,7 @@ surface，但不得被 `cc-*` crates 反向依赖或通过 `#[path]` 读取。
 目标：冻结迁移基线，形成 owner matrix 和 guard matrix，避免后续 phase 只凭目录名移动。
 
 Phase 0 阶段产物：
-[`docs/plan/crate-migration-phase-0-inventory-2026-05-14.md`](crate-migration-phase-0-inventory-2026-05-14.md)。
+[`docs/archive/plan/crate-migration-phase-0-inventory-2026-05-14.md`](../archive/plan/crate-migration-phase-0-inventory-2026-05-14.md)。
 该文档冻结当前 root 一级模块 owner matrix、guard matrix、后续 phase blocker /
 focused verification 索引，以及当前 `#[path]` baseline 语义。
 
@@ -703,3 +703,63 @@ rg '~/.Codex|\\.Codex/|~/.codex|service.*Codex|service.*Claude' crates -g '*.rs'
 | 10 | UI And TUI Boundary Closure | Rust TUI source intentional root-owned，`cc-ui` 为空边界 crate |
 | 11 | Root Binary Thinning And Shim Deletion | 删除 migration shims 和 duplicate implementation |
 | 12 | Full Verification And Documentation Closeout | workspace final gates 与 docs/archive 收口 |
+
+---
+
+## 完成状态（2026-05-21）
+
+**判定：部分完成。Phase 0 已完成；Phase 1-12 已有 implementation slices 和
+final gate 快照，但 crate ownership closeout 尚未完成，因此本文档仍保持 active plan。**
+
+已完成并可作为后续基线的内容：
+
+- **Phase 0：Baseline And Ownership Inventory** 已完成；owner matrix、guard
+  matrix、`#[path]` baseline 已冻结在
+  [`crate-migration-phase-0-inventory-2026-05-14.md`](../archive/plan/crate-migration-phase-0-inventory-2026-05-14.md)。
+- 已完成若干迁移基础切片：contract / DTO 下沉、root engine 重复实现清理、
+  `cc-daemon` protocol owner 补齐、`cc-mcp` loopback HTTP proxy 隔离、
+  `cc-session` fork path 固定，以及多处测试全局状态隔离。
+- **Phase 10 的方向已更新**：Rust TUI source intentional root-owned，仍由
+  `claude-code-rs/src/ui/**` 持有；`cc-ui` 仅保留为空边界 crate，不再作为
+  当前阶段的 UI source owner。
+- **Phase 12 final verification snapshot 已跑过并通过主要 gate**：
+  `cargo fmt --all --check`、`cargo check --workspace --all-targets`、
+  `cargo test --workspace`、`cargo build --workspace --release`。本机 `npm`
+  缺失导致 web-ui dependency install skip 仍按已知环境 warning 处理。
+- 当前 guard 已确认：library crates 不再通过 `#[path]` 读取 root source，root
+  不再通过 `#[path]` 读取 `cc-*` source，library crates 内的 root-style runtime
+  import string guard 已归零。
+
+仍未完成、不能关闭为 Completed Full 的内容：
+
+- `claude_code_rs_hits_in_cc_crates` 仍有 14 处待分类；当前多为 docs/comments、
+  test temp path names、version/client-name strings 和 `cc-types::mcp::CLIENT_NAME`，
+  关闭前需要逐项标记为 intentional 或清理。
+- `codex_path_hits` 仍有 12 处待分类；当前多为 Codex CLI read-only fallback
+  docs/code 和 UI/login text，需要确认均未写入 upstream Codex 路径。
+- `allow_unused_dead` 仍有 457 处；后续 owner 收口 slice 必须同步删除对应
+  `allow(dead_code|unused_imports|unused)`，不能用 allow 掩盖迁移残留。
+- **Phase 1 / 11 未完成**：`#[path]` bridge 已归零，但 `main.rs` 仍存在
+  `use cc_* as ...` compatibility alias，root re-export / alias / facade 仍需删除。
+- **Phase 5 / 8 未完成**：root-style import string guard 已归零，但 `cargo tree`
+  仍显示 `cc-engine` / `cc-query` 直接依赖多个 runtime crates；需要继续按
+  adapter trait / shared DTO 收敛 Cargo graph ownership。
+- **Phase 4 / 6 / 7 / 8 / 9 / 11 未完成**：非 UI root implementation gap 仍包括
+  `commands/`、`tools/`、`daemon/`、`ipc/`、`teams/`、`plugins/`、`mcp/`、
+  `browser/`、`lsp_service/`、`computer_use/`、`voice/`、`services/`、`web/`
+  以及可复用 loose modules。
+- **Phase 12 未完成**：虽然 final gates 曾通过，但 ownership blockers 未归零；
+  文档不能迁入 `docs/archive/`，也不能写入 `COMPLETED_FULL` 宣称完成。
+
+下一步收口顺序建议：
+
+1. 先分类并处理 `claude_code_rs_hits_in_cc_crates` 和 `codex_path_hits`，把
+   intentional residual 与真实迁移残留分开。
+2. 删除 `main.rs` 中仅服务旧 `crate::...` 路径的 compatibility alias，并更新
+   call sites 直接使用 owner crate。
+3. 按 owner 分批收敛非 UI root implementation gap，优先处理 `commands/`、
+   `tools/`、`daemon/`、`ipc/` 这类仍影响 thin-binary 判定的目录。
+4. 每个 owner 收口 slice 同步清理对应 `allow(dead_code|unused_imports|unused)`，
+   并补充 focused crate tests 或 root wiring e2e。
+5. 全部 ownership blockers 归零后，再重跑 Phase 12 final gates，更新
+   `WORK_STATUS.md`、`IMPLEMENTATION_GAPS.md`、`docs/README.md`，并将本文档归档。

@@ -11,7 +11,7 @@
 >
 > - [`docs/reference/CRATE_DEPENDENCY_TARGETS.md`](../reference/CRATE_DEPENDENCY_TARGETS.md)
 > - [`docs/plan/crate-migration-phase-plan-2026-05-14.md`](crate-migration-phase-plan-2026-05-14.md)
-> - [`docs/plan/crate-migration-phase-0-inventory-2026-05-14.md`](crate-migration-phase-0-inventory-2026-05-14.md)
+> - [`docs/archive/plan/crate-migration-phase-0-inventory-2026-05-14.md`](../archive/plan/crate-migration-phase-0-inventory-2026-05-14.md)
 > - [`docs/plan/workspace-decycle-plan-2026-05-14.md`](workspace-decycle-plan-2026-05-14.md)
 
 本文是剩余 root source 清空计划。它不取代 2026-05-14 的 crate migration phase

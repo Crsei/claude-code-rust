@@ -369,3 +369,22 @@ cargo test -p claude-code-rs agents
 
 如果涉及 UI snapshot，按现有仓库流程重新生成并审阅相关 `target/ui-snapshots` 或
 insta snapshots。
+
+---
+
+## 完成状态（2026-05-21）
+
+**判定：⚠️ 部分完成（审计已交付，7 个实施建议均未开始）**
+
+已完成：
+- 全部审计工作已完成：已记录 11 个已有 Surface 的实现程度（`/config`、`/sandbox`、`/login`、`/agents`、`/mcp`、`/hooks`、`/memory`、`/permissions`、`/plugin`、`/keybindings`、`/statusline` 等）
+- 所有建议实施计划已写入 §6（7 项）
+
+未开始（7 项实施建议）：
+1. 按已有计划完成 `/plugin` — 未开始
+2. 新增 `/permissions` surface — 未开始
+3. 升级 `/agents`（selector → list/detail/create wizard）— 未开始
+4. 新增 `/resume` picker — 未开始
+5. Advisor/Fast/Experimental 扩展进 `/config` — 未开始
+6. 新增 `/statusline`、`/keybindings`、`/ide` surfaces — 未开始
+7. 增强 `/mcp`、`/hooks`、`/memory` in-surface forms — 未开始

@@ -490,3 +490,25 @@ Rust 端必须继续遵守路径隔离：所有 cc-rust daemon 状态写入 `~/.
 - 有真实模型凭据的 HTTP submit -> SSE result live e2e。
 - worker 崩溃/重启自动化 e2e。
 - bridge worker 远程注册与远程控制结果回传。
+
+---
+
+## 完成状态（2026-05-21）
+
+**判定：⚠️ 部分完成（8 个 Phase 主干均已落地，少量收尾项未覆盖）**
+
+已完成：
+- **Phase 0**（文档/设计基线）：已完成 — 明确状态根、目标架构、安全边界
+- **Phase 1**（跨进程状态文件和管理命令 MVP）：已完成 — `daemon start/status/stop/restart`、stale PID 检测、shutdown request
+- **Phase 2**（Supervisor 进程与 worker registry）：已完成 — `--daemon-worker`、worker 状态 schema、supervisor loop/restart policy/进程树终止
+- **Phase 3**（文件系统 command/event 协议）：已完成 — command 文件、event NDJSON、idempotency key、worker ack 循环
+- **Phase 4**（KAIROS HTTP/SSE 迁移）：已完成 — `/api/submit/abort/permission/status/history` 写入 command/event 协议，SSE event replay
+- **Phase 5**（remote-control/BRIDGE_MODE 安全边界）：已完成 — control token 生成/校验/清理、HTTP mutating endpoint token 认证
+- **Phase 6**（Proactive/scheduler/长期运行）：已完成 — 跨进程 daemon sleep state、SleepTool/`/sleep` 写入持久化 sleep state、`tick_loop` 读取 active sleep
+- **Phase 7**（测试/文档/发布门槛）：已完成 — `docs/DAEMON_OPERATIONS.md`、e2e 测试、验证命令
+
+未覆盖（发布阻塞/后续增强）：
+- 30 分钟以上 daemon soak
+- 有真实模型凭据的 HTTP submit → SSE result live e2e
+- worker 崩溃/重启自动化 e2e
+- bridge worker 远程注册与远程控制结果回传

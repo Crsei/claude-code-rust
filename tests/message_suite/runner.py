@@ -44,8 +44,18 @@ from assertions import AssertOutcome, StepRecord, run_assertion  # noqa: E402
 from protocol import WebClient  # noqa: E402
 
 
-REPO_ROOT = SUITE_DIR.parent.parent  # rust/
-DEFAULT_BINARY = REPO_ROOT / "target" / "debug" / "claude-code-rs.exe"
+def find_repo_root() -> Path:
+    for candidate in (SUITE_DIR, *SUITE_DIR.parents):
+        if (candidate / "Cargo.toml").exists() and (
+            candidate / "crates" / "claude-code-rs"
+        ).exists():
+            return candidate
+    return SUITE_DIR.parent.parent
+
+
+REPO_ROOT = find_repo_root()
+BINARY_NAME = "claude-code-rs.exe" if os.name == "nt" else "claude-code-rs"
+DEFAULT_BINARY = REPO_ROOT / "target" / "debug" / BINARY_NAME
 
 # Make sure unicode icons print on Windows GBK consoles
 if hasattr(sys.stdout, "reconfigure"):
@@ -688,6 +698,7 @@ def main() -> int:
         help="write JUnit XML here (default: <run_dir>/junit.xml)",
     )
     args = ap.parse_args()
+    args.binary = args.binary.expanduser().resolve()
 
     if not args.binary.exists():
         print(f"binary not found: {args.binary}", file=sys.stderr)

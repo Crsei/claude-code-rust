@@ -318,3 +318,22 @@ Computer Use 不能直接复用普通 Bash/File 的权限语义，需要单独�
 ## 9. 一句话决策
 
 **先补"图片型 tool_result 贯通"再接外置 Computer Use MCP；内置 `--computer-use-mcp` 和原生平台 backend 放在第二阶段。**
+
+---
+
+## 完成状态（2026-05-21）
+
+**判定：⚠️ 部分完成（约 48/60 项完成，~12 项待办）**
+
+已完成的主要里程碑：
+- **里程碑 A（图像 tool_result 打通）**：全部 4 项 ✅ — `ToolResult` 结构改造、`mcp/tools.rs` 改造、`query/loop_impl.rs` 改造、fake MCP image 测试
+- **里程碑 B（外置 MCP MVP）**：全部 3 项 ✅ — MCP 配置文档、screenshot→image→next turn、一个输入动作
+- **里程碑 C（权限与 UX）**：全部 3 项 ✅ — session-level request_access、权限 matcher/危险分类、TUI/headless 显示优化
+- **里程碑 D（内置化/原生化）**：全部 15 项 ✅ — `--computer-use` CLI flag、动态注册、原生平台 backend（Windows/macOS/Linux）、并发锁、退出热键、应用名映射、主机适配器、事件循环 drain、执行器编排、输入/Swift 加载器、Win32 COM/UI 自动化、虚拟光标、窗口边框/输入指示器
+
+Phase 0~5 核心实现已大部分完成。
+
+仍未完成（~12 项）：
+- **Phase 0**：session save/restore 图片块回归验证（1 项 ⬜）
+- **Phase 5（会话/导出/前端）**：`cc-ipc-protocol` `ToolResult` 增加 `content_blocks`、`ui/messages.rs` Computer Use 工具调用更清晰呈现（2 项 ⬜）
+- **Phase 6（测试清单）**：单元测试 3 项 ⬜、集成测试 3 项 ⬜、平台 smoke test 3 项 ⬜（共 ~9 项 ⬜）

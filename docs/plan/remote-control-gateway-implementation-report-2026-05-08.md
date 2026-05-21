@@ -113,3 +113,20 @@ The observed implementation chain for remote-control gateway work is:
 ## Remaining Risk
 
 The documentation now describes the intended release boundary, but Session 16 did not execute the full Rust test/check gate. Release readiness still depends on Session 17 verification and any fixes it requires.
+
+---
+
+## 完成状态（2026-05-21）
+
+**判定：⚠️ 部分完成**
+
+报告本身是 Session 16（Phase 9 Docs Release Gate）的交付物，记录了完整的实现结果。代码实现已完成（20 个 commits 覆盖 Phase 0-9），但最终验证门（Session 17）尚未执行。
+
+需执行的 Session 17 验证命令：
+```bash
+git diff --check
+cargo test -p gateway
+cargo test -p claude-code-rs remote_cmd ui::components::command_palette ui::components::command_surface ui::components::status_widget
+cargo test -p claude-code-rs daemon::protocol daemon::routes daemon::sse daemon::supervisor
+cargo check -p claude-code-rs --message-format short
+```

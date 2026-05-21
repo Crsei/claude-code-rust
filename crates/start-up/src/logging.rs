@@ -56,6 +56,7 @@ pub fn init_tracing(verbose: bool) -> WorkerGuard {
     let subscriber = tracing_subscriber::registry()
         .with(
             tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
                 .with_target(false)
                 .with_filter(stderr_filter),
         )

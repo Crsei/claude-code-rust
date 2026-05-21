@@ -772,3 +772,37 @@ cargo check -p claude-code-rs --message-format short
 - 最终报告保存在 `docs/plan/remote-control-gateway-implementation-report-2026-05-08.md`。
 - `docs/KNOWN_ISSUES.md` 记录仍未完成或有用户可见影响的缺陷。
 - 最终验证命令、未测项和后续跟踪方案写入报告。
+
+---
+
+## 完成状态（2026-05-21）
+
+**判定：⚠️ 部分完成（Session 00-16 已完成，Session 17 最终验证未执行）**
+
+已完成（Session 00-16，对应 20 个 commits）：
+- **Session 00**（Baseline）：已完成
+- **Session 01**（Phase 0 Boundary Docs）：已完成
+- **Session 02**（Phase 1A Gateway Crate Foundation）：已完成
+- **Session 03**（Phase 1B Run Store And Policy）：已完成
+- **Review A**（Schema Store Review）：已完成
+- **Session 04**（Phase 2A Adapter Registry + Telegram）：已完成
+- **Session 05**（Phase 2B Lark + Adapter Status）：已完成
+- **Session 06**（Phase 3A Runner + Daemon Bridge）：已完成
+- **Session 07**（Phase 3B Worker Ownership）：已完成
+- **Review B**（Execution Ownership Review）：已完成
+- **Session 08**（Phase 4A HTTP API + Runs）：已完成
+- **Session 09**（Phase 4B Events/Stop/Approval/AskUser）：已完成
+- **Review C**（API Contract Review）：已完成
+- **Session 10**（Phase 4.5A Local Gateway Client + `/remote`）：已完成
+- **Session 11**（Phase 4.5B TUI Remote Surface）：已完成
+- **Review D**（Local UX And Redaction Review）：已完成
+- **Session 12**（Phase 5 Security Hardening）：已完成
+- **Review E**（Security Gate）：已完成
+- **Session 13**（Phase 6 Declarative Webhooks）：已完成
+- **Session 14**（Phase 7 Delivery Router）：已完成
+- **Session 15**（Phase 8 Recovery Queue E2E）：已完成
+- **Review F**（Recovery Gate）：已完成
+- **Session 16**（Phase 9 Docs Release Gate）：已完成
+
+未完成：
+- **Session 17**（Final Verification）：未执行 — 依赖最终的 `cargo test -p gateway`、`cargo test -p claude-code-rs` 全套验证命令
