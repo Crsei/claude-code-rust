@@ -29,7 +29,7 @@ pub struct TerminalEnvConfig {
     pub sync_updates: bool,
     /// Whether to skip crossterm mouse capture so native terminal text
     /// selection/copy keeps working. This defaults to false so the TUI can
-    /// route wheel events by pane; users can opt out with
+    /// route wheel events to chat history; users can opt out with
     /// `CLAUDE_CODE_DISABLE_MOUSE=1` or `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE=0`.
     pub disable_mouse: bool,
     /// Lines per scroll step for PageUp / PageDown and related keys.

@@ -23,6 +23,7 @@ use crate::ui::welcome;
 /// allowed to take up. Arbitrary but small so a runaway script can't
 /// eat the messages pane.
 const STATUS_LINE_MAX_LINES: usize = 3;
+const MESSAGE_BOTTOM_GAP_HEIGHT: u16 = 1;
 
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {
@@ -107,7 +108,10 @@ impl App {
             status: status_height,
         };
         let bottom_height = bottom_pane.total();
-        let max_content_height = size.height.saturating_sub(bottom_height);
+        let message_bottom_gap_height = u16::from(bottom_height > 0) * MESSAGE_BOTTOM_GAP_HEIGHT;
+        let max_content_height = size
+            .height
+            .saturating_sub(bottom_height.saturating_add(message_bottom_gap_height));
         let content_height = if self.show_welcome {
             welcome::welcome_height_for(size.width).min(max_content_height)
         } else {
@@ -135,13 +139,14 @@ impl App {
 
         let chunks = Layout::vertical([
             Constraint::Length(content_height),
+            Constraint::Length(message_bottom_gap_height),
             Constraint::Length(bottom_height),
             Constraint::Min(0),
         ])
         .split(size);
 
         let message_area = chunks[0];
-        let bottom_area = chunks[1];
+        let bottom_area = chunks[2];
         self.message_area = Some(message_area);
 
         if self.show_welcome {

@@ -47,8 +47,12 @@ fn render_places_prompt_after_compact_welcome() {
 
     let content = buffer_to_lines(terminal.backend().buffer(), 80, 24);
     assert!(
-        content[9].trim_start().starts_with(">"),
-        "prompt should sit on the middle line of the 3-line input area below the welcome panel"
+        content[8].trim().is_empty(),
+        "welcome panel and prompt input should have a blank spacer row"
+    );
+    assert!(
+        content[10].trim_start().starts_with(">"),
+        "prompt should sit on the middle line of the 3-line input area after the spacer row"
     );
     assert!(
         !content[22].trim_start().starts_with(">"),
@@ -76,8 +80,12 @@ fn render_places_prompt_after_short_chat_content() {
     assert!(content[1].contains("hello"));
     assert!(!content[1].contains("You:"));
     assert!(
-        content[4].trim_start().starts_with(">"),
-        "prompt should sit on the middle line of the 3-line input area after chat content"
+        content[3].trim().is_empty(),
+        "chat content and prompt input should have a blank spacer row"
+    );
+    assert!(
+        content[5].trim_start().starts_with(">"),
+        "prompt should sit on the middle line of the 3-line input area after the spacer row"
     );
     assert!(
         !content[22].trim_start().starts_with(">"),
@@ -607,8 +615,9 @@ fn mouse_wheel_scrolls_transcript_view() {
 }
 
 #[test]
-fn mouse_wheel_over_prompt_drives_input_history() {
+fn mouse_wheel_over_prompt_scrolls_messages_not_input_history() {
     let mut app = App::new();
+    app.scroll_offset = 10;
     app.push_history("first".to_string());
     app.push_history("second".to_string());
 
@@ -621,21 +630,24 @@ fn mouse_wheel_over_prompt_drives_input_history() {
     );
     assert_eq!(
         send_mouse_at(&mut app, MouseEventKind::ScrollUp, 1, 9),
-        AppAction::None
+        AppAction::ScrollUp
     );
-    assert_eq!(app.prompt.input, "second");
+    assert_eq!(app.scroll_offset, 9);
+    assert!(app.prompt.input.is_empty());
 
     assert_eq!(
         send_mouse_at(&mut app, MouseEventKind::ScrollUp, 1, 9),
-        AppAction::None
+        AppAction::ScrollUp
     );
-    assert_eq!(app.prompt.input, "first");
+    assert_eq!(app.scroll_offset, 8);
+    assert!(app.prompt.input.is_empty());
 
     assert_eq!(
         send_mouse_at(&mut app, MouseEventKind::ScrollDown, 1, 9),
-        AppAction::None
+        AppAction::ScrollDown
     );
-    assert_eq!(app.prompt.input, "second");
+    assert_eq!(app.scroll_offset, 9);
+    assert!(app.prompt.input.is_empty());
 }
 
 #[test]

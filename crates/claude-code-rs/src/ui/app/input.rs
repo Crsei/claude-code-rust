@@ -586,11 +586,8 @@ impl App {
     pub fn handle_mouse_event(&mut self, mouse: MouseEvent) -> AppAction {
         match mouse.kind {
             MouseEventKind::ScrollUp => {
-                if self.mouse_targets_prompt(mouse) {
-                    self.history_up();
-                    self.sync_command_palette();
-                    AppAction::None
-                } else if self.view_mode.is_transcript_like() {
+                self.update_mouse_focus(mouse);
+                if self.view_mode.is_transcript_like() {
                     self.scroll_transcript_up(1);
                     AppAction::ScrollUp
                 } else {
@@ -599,11 +596,8 @@ impl App {
                 }
             }
             MouseEventKind::ScrollDown => {
-                if self.mouse_targets_prompt(mouse) {
-                    self.history_down();
-                    self.sync_command_palette();
-                    AppAction::None
-                } else if self.view_mode.is_transcript_like() {
+                self.update_mouse_focus(mouse);
+                if self.view_mode.is_transcript_like() {
                     self.scroll_transcript_down(1);
                     AppAction::ScrollDown
                 } else {
@@ -635,20 +629,13 @@ impl App {
         }
     }
 
-    fn mouse_targets_prompt(&mut self, mouse: MouseEvent) -> bool {
-        self.update_mouse_focus(mouse);
-        self.view_mode == ViewMode::Prompt
-            && self.prompt.is_active
-            && self.mouse_focus == MouseFocus::Prompt
-    }
-
-    fn update_mouse_focus(&mut self, mouse: MouseEvent) {
+    fn update_mouse_focus(&mut self, mouse: MouseEvent) -> MouseFocus {
         if self
             .prompt_area
             .is_some_and(|area| rect_contains(area, mouse.column, mouse.row))
         {
             self.mouse_focus = MouseFocus::Prompt;
-            return;
+            return self.mouse_focus;
         }
         if self
             .message_area
@@ -656,6 +643,7 @@ impl App {
         {
             self.mouse_focus = MouseFocus::Messages;
         }
+        self.mouse_focus
     }
 
     fn mouse_on_session_scrollbar(&self, mouse: MouseEvent) -> bool {

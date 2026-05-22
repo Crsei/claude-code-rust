@@ -211,11 +211,11 @@ pub struct App {
     /// Last rendered session scrollbar, used for mouse click/drag control.
     session_scrollbar: Option<SessionScrollbarState>,
     session_scrollbar_dragging: bool,
-    /// Last rendered chat history area, used to route mouse wheel events.
+    /// Last rendered chat history area, used to track mouse focus.
     message_area: Option<Rect>,
-    /// Last rendered prompt input area, used to route mouse wheel events.
+    /// Last rendered prompt input area, used to track mouse focus.
     prompt_area: Option<Rect>,
-    /// Area the user last clicked, so wheel events keep affecting that pane.
+    /// Area the user last clicked or scrolled over.
     mouse_focus: MouseFocus,
     /// Dirty flag; when false, the TUI skips `terminal.draw()`.
     dirty: bool,

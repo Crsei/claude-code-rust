@@ -60,9 +60,11 @@ With mouse capture enabled, fullscreen rendering captures mouse events and handl
 * **Click a collapsed tool result** to expand it and see the full output. Click again to collapse. The tool call and its result expand together. Only messages that have more to show are clickable.
 * **Click a URL or file path** to open it. File paths in tool output, like the ones printed after an Edit or Write, open in your default application. Plain `http://` and `https://` URLs open in your browser. In most terminals this replaces native `Cmd`-click or `Ctrl`-click, which mouse capture intercepts. In the VS Code integrated terminal and similar xterm.js-based terminals, keep using `Cmd`-click. Claude Code defers to the terminal's own link handler there to avoid opening links twice.
 * **Click and drag** to select text anywhere in the conversation. Double-click selects a word, matching iTerm2's word boundaries so a file path selects as one unit. Triple-click selects the line.
-* **Scroll with the mouse wheel** to move through the conversation.
+* **Scroll with the mouse wheel** to move through the conversation. The wheel always scrolls the conversation or transcript, even when the pointer is over the prompt input.
 
 Selected text copies to your clipboard automatically on mouse release. To turn this off, toggle Copy on select in `/config`. With it off, press `Ctrl+Shift+c` to copy manually. On terminals that support the kitty keyboard protocol, such as kitty, WezTerm, Ghostty, and iTerm2, `Cmd+c` also works. If you have a selection active, `Ctrl+c` copies instead of cancelling.
+
+Prompt input history is keyboard-only: press `↑` and `↓` to move through previous prompts.
 
 ## Scroll the conversation
 
