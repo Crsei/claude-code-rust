@@ -73,9 +73,14 @@ fn render_captures_debug_snapshot_and_exports_file() {
     terminal.draw(|frame| app.render(frame)).expect("draw");
     let path = app.export_debug_snapshot().expect("export snapshot");
 
-    assert_eq!(path, tempdir.path().join("target/tui-snapshots/latest.txt"));
+    let snapshot_dir = tempdir.path().join("target/tui-snapshots");
+    assert_eq!(path.parent(), Some(snapshot_dir.as_path()));
+    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap();
+    assert!(file_name.starts_with("snapshot-"));
+    assert!(file_name.ends_with(".txt"));
     let exported = std::fs::read_to_string(path).expect("read snapshot");
     assert!(exported.contains("# cc-rust TUI debug snapshot"));
+    assert!(exported.contains("exported_at: "));
     assert!(exported.contains("session_id: debug-session"));
     assert!(exported.contains("model: deepseek-v4-pro"));
     assert!(exported.contains("backend: anthropic"));

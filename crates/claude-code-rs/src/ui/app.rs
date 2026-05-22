@@ -363,7 +363,17 @@ impl App {
         };
         let dir = cwd.join("target").join("tui-snapshots");
         std::fs::create_dir_all(&dir)?;
-        let path = dir.join("latest.txt");
+        let timestamp = chrono::Local::now()
+            .format("%Y%m%d-%H%M%S%.9f")
+            .to_string()
+            .replace('.', "-");
+        let mut path = dir.join(format!("snapshot-{timestamp}.txt"));
+        for suffix in 1.. {
+            if !path.exists() {
+                break;
+            }
+            path = dir.join(format!("snapshot-{timestamp}-{suffix}.txt"));
+        }
         let body = self.debug_snapshot_body();
         std::fs::write(&path, body)?;
         Ok(path)
@@ -372,6 +382,10 @@ impl App {
     fn debug_snapshot_body(&self) -> String {
         let mut body = String::new();
         body.push_str("# cc-rust TUI debug snapshot\n\n");
+        body.push_str(&format!(
+            "exported_at: {}\n",
+            chrono::Local::now().to_rfc3339()
+        ));
         body.push_str(&format!("cwd: {}\n", self.cwd));
         body.push_str(&format!("session_id: {}\n", self.session_id));
         body.push_str(&format!("model: {}\n", self.model_name));

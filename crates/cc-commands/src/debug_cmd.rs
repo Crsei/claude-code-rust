@@ -19,7 +19,7 @@ impl CommandHandler for DebugHandler {
         }
 
         Ok(CommandResult::Output(
-            "Usage: /debug snapshot\n\nExports the current Rust TUI frame to target/tui-snapshots/latest.txt when run inside the interactive TUI.".to_string(),
+            "Usage: /debug snapshot\n\nExports the current Rust TUI frame to a timestamped target/tui-snapshots/snapshot-*.txt file when run inside the interactive TUI.".to_string(),
         ))
     }
 }
@@ -66,7 +66,7 @@ mod tests {
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("Usage: /debug snapshot"));
-                assert!(text.contains("target/tui-snapshots/latest.txt"));
+                assert!(text.contains("target/tui-snapshots/snapshot-*.txt"));
             }
             _ => panic!("expected output"),
         }
