@@ -1,10 +1,13 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
 use super::theme::Theme;
+
+const USER_INPUT_BACKGROUND: Color = Color::Rgb(31, 35, 42);
 
 /// A single-line text input widget with cursor support.
 ///
@@ -226,8 +229,11 @@ impl PromptInput {
             return;
         }
 
+        fill_input_background(area, buf);
+        let text_y = input_text_y(area);
+
         let prompt_str = "> ";
-        let prompt_span = Span::styled(prompt_str, theme.prompt);
+        let prompt_span = Span::styled(prompt_str, with_input_background(theme.prompt));
         let prompt_width = 2u16; // "> " is always 2 columns
 
         let mode_width = context
@@ -242,16 +248,17 @@ impl PromptInput {
             if self.is_active {
                 spans.push(Span::styled(
                     " ",
-                    ratatui::style::Style::default()
-                        .fg(ratatui::style::Color::Black)
-                        .bg(ratatui::style::Color::White),
+                    Style::default().fg(Color::Black).bg(Color::White),
                 ));
                 if let Some(placeholder) = context.placeholder {
-                    spans.push(Span::styled(format!(" {placeholder}"), theme.dim));
+                    spans.push(Span::styled(
+                        format!(" {placeholder}"),
+                        with_input_background(theme.dim),
+                    ));
                 }
             }
             push_mode_indicator(&mut spans, context.mode_indicator, theme);
-            buf.set_line(area.x, area.y, &Line::from(spans), area.width);
+            buf.set_line(area.x, text_y, &Line::from(spans), area.width);
             return;
         }
 
@@ -293,19 +300,26 @@ impl PromptInput {
         let mut spans = vec![prompt_span];
 
         if self.is_active {
-            spans.push(Span::raw(before_cursor));
+            spans.push(Span::styled(
+                before_cursor,
+                Style::default().bg(USER_INPUT_BACKGROUND),
+            ));
             spans.push(Span::styled(
                 cursor_char,
-                ratatui::style::Style::default()
-                    .fg(ratatui::style::Color::Black)
-                    .bg(ratatui::style::Color::White),
+                Style::default().fg(Color::Black).bg(Color::White),
             ));
-            spans.push(Span::raw(after_cursor));
+            spans.push(Span::styled(
+                after_cursor,
+                Style::default().bg(USER_INPUT_BACKGROUND),
+            ));
             // Ghost suffix: dimmed text after cursor showing completion
             if self.show_ghost {
                 if let Some(suffix) = &self.ghost_suffix {
                     if !suffix.is_empty() && cursor_in_visible >= visible_text.len() {
-                        spans.push(Span::styled(suffix.clone(), theme.dim));
+                        spans.push(Span::styled(
+                            suffix.clone(),
+                            with_input_background(theme.dim),
+                        ));
                     }
                 }
             }
@@ -313,15 +327,18 @@ impl PromptInput {
                 .hint
                 .filter(|_| cursor_in_visible >= visible_text.len())
             {
-                spans.push(Span::styled(format!(" {hint}"), theme.dim));
+                spans.push(Span::styled(
+                    format!(" {hint}"),
+                    with_input_background(theme.dim),
+                ));
             }
         } else {
-            spans.push(Span::styled(visible_text, theme.dim));
+            spans.push(Span::styled(visible_text, with_input_background(theme.dim)));
         }
         push_mode_indicator(&mut spans, context.mode_indicator, theme);
 
         let line = Line::from(spans);
-        buf.set_line(area.x, area.y, &line, area.width);
+        buf.set_line(area.x, text_y, &line, area.width);
     }
 
     // ── Private helpers ─────────────────────────────────────────────
@@ -426,8 +443,34 @@ fn push_mode_indicator(
     theme: &Theme,
 ) {
     if let Some(label) = mode_indicator.filter(|label| !label.is_empty()) {
-        spans.push(Span::styled(format!("  [{label}]"), theme.dim));
+        spans.push(Span::styled(
+            format!("  [{label}]"),
+            with_input_background(theme.dim),
+        ));
     }
+}
+
+fn fill_input_background(area: Rect, buf: &mut Buffer) {
+    let style = Style::default().bg(USER_INPUT_BACKGROUND);
+    for y in area.y..area.y.saturating_add(area.height) {
+        for x in area.x..area.x.saturating_add(area.width) {
+            if let Some(cell) = buf.cell_mut((x, y)) {
+                cell.set_style(style);
+            }
+        }
+    }
+}
+
+fn input_text_y(area: Rect) -> u16 {
+    if area.height >= 3 {
+        area.y.saturating_add(1)
+    } else {
+        area.y
+    }
+}
+
+fn with_input_background(style: Style) -> Style {
+    style.bg(USER_INPUT_BACKGROUND)
 }
 
 impl Default for PromptInput {
@@ -541,5 +584,36 @@ mod tests {
         assert!(input.large_paste_notice().is_some());
         assert!(input.take_large_paste_notice().is_some());
         assert!(input.large_paste_notice().is_none());
+    }
+
+    #[test]
+    fn prompt_input_paints_user_message_background_across_row() {
+        let mut input = PromptInput::new();
+        input.insert_str("hello");
+        let area = Rect::new(0, 0, 24, 3);
+        let mut buf = Buffer::empty(area);
+
+        input.render_with_context(
+            area,
+            &mut buf,
+            &Theme::default(),
+            PromptInputRenderContext {
+                hint: None,
+                placeholder: None,
+                mode_indicator: Some("INS"),
+            },
+        );
+
+        for y in 0..3 {
+            assert_eq!(buf[(0, y)].style().bg, Some(USER_INPUT_BACKGROUND));
+            assert_eq!(buf[(23, y)].style().bg, Some(USER_INPUT_BACKGROUND));
+        }
+
+        let top: String = (0..area.width).map(|x| buf[(x, 0)].symbol()).collect();
+        let middle: String = (0..area.width).map(|x| buf[(x, 1)].symbol()).collect();
+        let bottom: String = (0..area.width).map(|x| buf[(x, 2)].symbol()).collect();
+        assert!(top.trim().is_empty());
+        assert!(middle.contains("hello"));
+        assert!(bottom.trim().is_empty());
     }
 }

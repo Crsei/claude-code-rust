@@ -251,6 +251,26 @@ impl App {
             }
         }
 
+        if self.prompt.is_active && self.is_streaming {
+            match (key.modifiers, key.code) {
+                (KeyModifiers::NONE, KeyCode::Tab) => {
+                    return self
+                        .take_prompt_submission()
+                        .map_or(AppAction::None, AppAction::Queue);
+                }
+                (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Enter) => {
+                    self.add_notification(super::notification_from_app_event(
+                        "queue-hint".to_string(),
+                        "Press Tab to queue this message after the current response.".to_string(),
+                        "low".to_string(),
+                        Some(3000),
+                    ));
+                    return AppAction::None;
+                }
+                _ => {}
+            }
+        }
+
         if let Some(action) = self.resolve_bound_action(&key) {
             if let Some(app_action) = self.dispatch_bound_action(&action) {
                 return app_action;
@@ -963,6 +983,16 @@ impl App {
             "messageActions:enter" => {
                 self.selected_message_expanded = !self.selected_message_expanded;
                 self.dirty = true;
+                return Some(AppAction::None);
+            }
+            "messageActions:o" => {
+                if let Some(text) = self
+                    .selected_message
+                    .and_then(|idx| self.messages.get(idx))
+                    .and_then(message_primary_reference)
+                {
+                    return Some(AppAction::OpenPath(text));
+                }
                 return Some(AppAction::None);
             }
             "messageActions:c" => {

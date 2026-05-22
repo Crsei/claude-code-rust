@@ -447,6 +447,16 @@ pub(super) fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut Stream
                     content: result.result,
                 }));
             }
+            if result.duration_ms > 0 {
+                app.add_message(Message::System(SystemMessage {
+                    uuid: uuid::Uuid::new_v4(),
+                    timestamp: now_ts(),
+                    subtype: SystemSubtype::Informational {
+                        level: InfoLevel::Info,
+                    },
+                    content: format!("worked for {}", format_duration_ms(result.duration_ms)),
+                }));
+            }
 
             // Generate next-prompt suggestions from last assistant turn
             generate_suggestions(app);
@@ -478,6 +488,16 @@ pub(super) fn handle_sdk_message(app: &mut App, msg: SdkMessage, ss: &mut Stream
         }
 
         _ => {}
+    }
+}
+
+fn format_duration_ms(ms: u64) -> String {
+    if ms < 1000 {
+        format!("{ms}ms")
+    } else if ms < 10_000 {
+        format!("{:.1}s", ms as f64 / 1000.0)
+    } else {
+        format!("{}s", ms / 1000)
     }
 }
 

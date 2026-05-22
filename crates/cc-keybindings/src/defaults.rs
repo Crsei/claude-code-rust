@@ -446,6 +446,11 @@ pub const DEFAULTS: &[Default] = &[
     },
     Default {
         context: Context::MessageActions,
+        chord: "o",
+        action: "messageActions:o",
+    },
+    Default {
+        context: Context::MessageActions,
         chord: "c",
         action: "messageActions:c",
     },

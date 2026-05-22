@@ -1184,70 +1184,84 @@ impl QueryDeps for QueryEngineDeps {
         {
             // Normal permission check via tool-local checks and the central rule engine
             let perm_audit_ctx = self.audit_ctx.with_tool_use(&request.tool_use_id);
-            let perm_result = match tool.check_permissions(&effective_input, &ctx).await {
-                PermissionResult::Allow { updated_input } => {
-                    effective_input = updated_input;
-                    let app_state = self.state.read().app_state.clone();
-                    let mut decision = central_permission_decision_for_tool(
-                        &request.tool_name,
-                        &effective_input,
-                        &app_state,
-                        hook_decision.as_ref(),
-                        None,
-                        None,
-                    );
-
-                    if auto_classifier_needed(&decision) {
-                        let mut classifier_input = tool.to_auto_classifier_input(&effective_input);
-                        if matches!(&classifier_input, serde_json::Value::String(s) if s.is_empty())
-                        {
-                            classifier_input = effective_input.clone();
-                        }
-                        if self
-                            .state
-                            .read()
-                            .auto_denial_tracker
-                            .should_fallback_to_interactive()
-                        {
-                            let mut state = self.state.write();
-                            let app_state = state.app_state.clone();
-                            decision = central_permission_decision_for_tool(
-                                &request.tool_name,
-                                &effective_input,
-                                &app_state,
-                                hook_decision.as_ref(),
-                                None,
-                                Some(&mut state.auto_denial_tracker),
-                            );
-                        } else if let Some(auto_classifier) = self
-                            .compute_auto_classifier(
-                                &request.tool_name,
-                                &effective_input,
-                                &classifier_input,
-                            )
-                            .await
-                        {
-                            let mut state = self.state.write();
-                            let app_state = state.app_state.clone();
-                            decision = central_permission_decision_for_tool(
-                                &request.tool_name,
-                                &effective_input,
-                                &app_state,
-                                hook_decision.as_ref(),
-                                Some(&auto_classifier),
-                                Some(&mut state.auto_denial_tracker),
-                            );
-                        }
-                    }
-
-                    emit_permission_decision_debug(&ctx, &request.tool_name, &app_state, &decision);
-                    permission_result_from_decision(
-                        &request.tool_name,
-                        &mut effective_input,
-                        decision,
-                    )
+            let bypass_permissions =
+                self.state.read().app_state.tool_permission_context.mode == PermissionMode::Bypass;
+            let perm_result = if bypass_permissions {
+                PermissionResult::Allow {
+                    updated_input: effective_input.clone(),
                 }
-                other => other,
+            } else {
+                match tool.check_permissions(&effective_input, &ctx).await {
+                    PermissionResult::Allow { updated_input } => {
+                        effective_input = updated_input;
+                        let app_state = self.state.read().app_state.clone();
+                        let mut decision = central_permission_decision_for_tool(
+                            &request.tool_name,
+                            &effective_input,
+                            &app_state,
+                            hook_decision.as_ref(),
+                            None,
+                            None,
+                        );
+
+                        if auto_classifier_needed(&decision) {
+                            let mut classifier_input =
+                                tool.to_auto_classifier_input(&effective_input);
+                            if matches!(&classifier_input, serde_json::Value::String(s) if s.is_empty())
+                            {
+                                classifier_input = effective_input.clone();
+                            }
+                            if self
+                                .state
+                                .read()
+                                .auto_denial_tracker
+                                .should_fallback_to_interactive()
+                            {
+                                let mut state = self.state.write();
+                                let app_state = state.app_state.clone();
+                                decision = central_permission_decision_for_tool(
+                                    &request.tool_name,
+                                    &effective_input,
+                                    &app_state,
+                                    hook_decision.as_ref(),
+                                    None,
+                                    Some(&mut state.auto_denial_tracker),
+                                );
+                            } else if let Some(auto_classifier) = self
+                                .compute_auto_classifier(
+                                    &request.tool_name,
+                                    &effective_input,
+                                    &classifier_input,
+                                )
+                                .await
+                            {
+                                let mut state = self.state.write();
+                                let app_state = state.app_state.clone();
+                                decision = central_permission_decision_for_tool(
+                                    &request.tool_name,
+                                    &effective_input,
+                                    &app_state,
+                                    hook_decision.as_ref(),
+                                    Some(&auto_classifier),
+                                    Some(&mut state.auto_denial_tracker),
+                                );
+                            }
+                        }
+
+                        emit_permission_decision_debug(
+                            &ctx,
+                            &request.tool_name,
+                            &app_state,
+                            &decision,
+                        );
+                        permission_result_from_decision(
+                            &request.tool_name,
+                            &mut effective_input,
+                            decision,
+                        )
+                    }
+                    other => other,
+                }
             };
             match perm_result {
                 PermissionResult::Allow { updated_input } => {
@@ -2807,7 +2821,7 @@ mod tests {
             seen_input: seen_input.clone(),
             progress_payload: None,
         });
-        let deps = make_deps(vec![tool], PermissionMode::Bypass);
+        let deps = make_deps(vec![tool], PermissionMode::Default);
 
         let result = deps
             .execute_tool(
@@ -2829,6 +2843,50 @@ mod tests {
             seen_input.lock().is_none(),
             "permission denial must stop before Tool::call"
         );
+    }
+
+    #[tokio::test]
+    async fn execute_tool_bypass_skips_tool_local_permission_prompt() {
+        let seen_input = Arc::new(parking_lot::Mutex::new(None));
+        let tool = Arc::new(CanonicalTool {
+            name: "AskMe",
+            validation_error: None,
+            permission: Some(PermissionResult::Ask {
+                message: "needs approval".to_string(),
+            }),
+            result: ToolResult {
+                data: json!("ran"),
+                new_messages: vec![],
+                ..Default::default()
+            },
+            max_result_size_chars: 100_000,
+            seen_input: seen_input.clone(),
+            progress_payload: None,
+        });
+        let mut deps = make_deps(vec![tool], PermissionMode::Bypass);
+        let callback_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        deps.permission_callback = Some(Arc::new({
+            let callback_calls = callback_calls.clone();
+            move |_| {
+                callback_calls.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { PermissionResponsePayload::decision("deny") })
+            }
+        }));
+
+        let result = deps
+            .execute_tool(
+                tool_request("AskMe", json!({"value": true})),
+                &deps.get_tools(),
+                &parent_message(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+        assert_eq!(result.result.data, json!("ran"));
+        assert_eq!(callback_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(seen_input.lock().clone(), Some(json!({"value": true})));
     }
 
     #[tokio::test]

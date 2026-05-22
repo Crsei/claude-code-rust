@@ -38,7 +38,8 @@ impl PermissionMode {
         match value.trim().to_ascii_lowercase().as_str() {
             "default" | "ask" => Some(PermissionMode::Default),
             "auto" => Some(PermissionMode::Auto),
-            "bypass" | "bypasspermissions" | "bypass-permissions" => Some(PermissionMode::Bypass),
+            "bypass" | "bypasspermissions" | "bypass-permissions" | "fullaccess"
+            | "full-access" | "full_access" | "full access" => Some(PermissionMode::Bypass),
             "plan" | "readonly" | "read-only" => Some(PermissionMode::Plan),
             "acceptedits" | "accept-edits" | "accept_edits" => Some(PermissionMode::AcceptEdits),
             "dontask" | "dont-ask" | "dont_ask" | "no-ask" => Some(PermissionMode::DontAsk),
@@ -194,5 +195,14 @@ mod tests {
     #[test]
     fn permissions_legacy_parse_still_defaults_unknown_runtime_input() {
         assert_eq!(PermissionMode::parse("surprise"), PermissionMode::Default);
+    }
+
+    #[test]
+    fn permissions_full_access_alias_maps_to_bypass() {
+        assert_eq!(PermissionMode::parse("full access"), PermissionMode::Bypass);
+        assert_eq!(
+            PermissionMode::parse_configured(Some("fullAccess")).unwrap(),
+            PermissionMode::Bypass
+        );
     }
 }

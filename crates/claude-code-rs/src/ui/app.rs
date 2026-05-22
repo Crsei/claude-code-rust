@@ -56,6 +56,7 @@ pub enum AppAction {
     Quit,
     ScrollUp,
     ScrollDown,
+    Queue(String),
     PermissionResponse(PermissionChoice),
     QuestionResponse(String),
     BypassPermissionsModeResponse(BypassPermissionsModeChoice),
@@ -71,6 +72,7 @@ pub enum AppAction {
     /// spawns the editor so `App` stays free of IO.
     ExportTranscript(String),
     CopyMessage(String),
+    OpenPath(String),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -156,6 +158,7 @@ pub struct App {
     prompt: PromptInput,
     scroll_offset: usize,
     is_streaming: bool,
+    queued_prompt_count: usize,
     spinner_state: SpinnerState,
     bypass_permissions_mode_dialog: Option<BypassPermissionsModeDialog>,
     permission_dialog: Option<PermissionDialog>,
@@ -262,6 +265,7 @@ impl App {
             prompt: PromptInput::new(),
             scroll_offset: 0,
             is_streaming: false,
+            queued_prompt_count: 0,
             spinner_state: SpinnerState::new(),
             bypass_permissions_mode_dialog: None,
             permission_dialog: None,
@@ -407,7 +411,7 @@ impl App {
             self.is_streaming = streaming;
             if streaming {
                 self.spinner_state.start(Some("Thinking...".to_string()));
-                self.prompt.is_active = false;
+                self.prompt.is_active = true;
                 self.suggestions = None; // clear stale suggestions
             } else {
                 self.spinner_state.stop();
@@ -453,6 +457,17 @@ impl App {
         self.should_quit
     }
 
+    pub fn is_streaming(&self) -> bool {
+        self.is_streaming
+    }
+
+    pub fn set_queued_prompt_count(&mut self, count: usize) {
+        if self.queued_prompt_count != count {
+            self.queued_prompt_count = count;
+            self.dirty = true;
+        }
+    }
+
     /// Tick the spinner. Called at 16ms interval; spinner frame advances
     /// every 5th tick (~80ms) to keep a pleasant animation speed.
     pub fn tick(&mut self) {
@@ -491,6 +506,10 @@ impl App {
         self.workspace_trust_pending = !self.cwd.is_empty() && !is_workspace_trusted(&self.cwd);
         self.workspace_trust_selection = 0;
         self.dirty = true;
+    }
+
+    pub fn cwd(&self) -> &str {
+        &self.cwd
     }
 
     pub fn set_output_style(&mut self, output_style: Option<String>) {

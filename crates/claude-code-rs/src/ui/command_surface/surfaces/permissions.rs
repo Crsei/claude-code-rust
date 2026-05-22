@@ -184,7 +184,7 @@ impl PermissionsSurface {
                     CommandSurfaceOutcome::Submit("/permissions mode auto --confirm".to_string())
                 }
                 "mode-bypass" => {
-                    CommandSurfaceOutcome::Submit("/permissions mode bypass".to_string())
+                    CommandSurfaceOutcome::Submit("/permissions mode bypass --confirm".to_string())
                 }
                 "mode-plan" => CommandSurfaceOutcome::Submit("/permissions mode plan".to_string()),
                 "mode-accept-edits" => {

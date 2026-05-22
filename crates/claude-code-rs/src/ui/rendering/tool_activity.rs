@@ -73,9 +73,9 @@ impl ToolActivity {
 
     pub fn compact_line(&self) -> String {
         let mut parts = vec![
+            format!("  ● {}", self.display_call()),
             format!("[{}]", self.state.label()),
-            format_elapsed(self.elapsed_ms),
-            self.display_call(),
+            format!("worked for {}", format_elapsed(self.elapsed_ms)),
         ];
 
         if let Some(progress) = self.progress_text() {
@@ -112,21 +112,25 @@ impl ToolActivity {
             ToolState::Failed => theme.error,
             ToolState::Cancelled => theme.warning,
         };
+        let name_style = match self.state {
+            ToolState::Succeeded => theme.diff_add,
+            _ => theme.tool_name,
+        };
+        let display = self.display_call();
+        spans.push(Span::styled("  ● ", theme.dim));
+        spans.push(Span::styled(display, name_style));
+        spans.push(Span::raw(" | "));
+
         spans.push(Span::styled(
             format!("[{}]", self.state.label()),
             status_style,
         ));
         spans.push(Span::raw(" | "));
 
-        spans.push(Span::styled(format_elapsed(self.elapsed_ms), theme.dim));
-        spans.push(Span::raw(" | "));
-
-        let name_style = match self.state {
-            ToolState::Succeeded => theme.diff_add,
-            _ => theme.tool_name,
-        };
-        let display = self.display_call();
-        spans.push(Span::styled(display, name_style));
+        spans.push(Span::styled(
+            format!("worked for {}", format_elapsed(self.elapsed_ms)),
+            theme.dim,
+        ));
 
         if let Some((done, total)) = self.progress {
             spans.push(Span::raw(" | "));

@@ -86,7 +86,7 @@ impl App {
             u16::from(self.prompt.large_paste_notice().is_some() && !immediate_notification);
         let notification_height = u16::from(current_notification.is_some());
         let agent_footer_height = u16::from(self.agent_footer_visible() && !immediate_notification);
-        let input_height = 1u16;
+        let input_height = 3u16;
         let status_height = if custom_lines.is_empty() {
             1u16
         } else {
@@ -381,7 +381,7 @@ impl App {
 
     fn prompt_placeholder(&self) -> &'static str {
         if self.is_streaming {
-            "Waiting for response..."
+            "Type next message; Tab queues it"
         } else if self.prompt.input.starts_with('/') || self.command_palette.active() {
             "Type a command"
         } else if self.vim.enabled {
@@ -433,6 +433,12 @@ impl App {
 
         // 2. Built-in default footer; keep the prompt-adjacent chrome quiet.
         let mut parts = Vec::new();
+        if self.is_streaming && !self.prompt.input.trim().is_empty() {
+            parts.push("tab to queue message".to_string());
+        }
+        if self.queued_prompt_count > 0 {
+            parts.push(format!("{} queued", self.queued_prompt_count));
+        }
         if !self.model_name.is_empty() {
             parts.push(self.model_name.clone());
         }

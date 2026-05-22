@@ -6,7 +6,7 @@ use super::TaskStatus;
 pub fn render_background_task(task: &TaskStatus, selected: bool) -> String {
     let marker = if selected { ">" } else { " " };
     format!(
-        "{marker} {:<18} {:<9} {:<9} {:>6} [{}] {}",
+        "{marker} ● {:<18} {:<9} {:<9} worked for {:>6} [{}] {}",
         task.title,
         kind_label(task.kind),
         state_label(task.state),

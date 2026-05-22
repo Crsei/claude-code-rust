@@ -95,7 +95,7 @@ pub fn progress_detail(task: &TaskStatus) -> String {
 
 pub fn task_header(task: &TaskStatus) -> String {
     format!(
-        "{} [{}] {} {}",
+        "● {} [{}] {} worked for {}",
         task.title,
         kind_label(task.kind),
         state_label(task.state),

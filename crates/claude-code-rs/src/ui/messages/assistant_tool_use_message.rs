@@ -49,7 +49,7 @@ fn is_transparent_wrapper_tool(tool_name: &str) -> bool {
 ///
 /// TS reference: `AssistantToolUseMessage.tsx:138-140` (queued dot)
 fn render_tool_use_queued_message(tool_name: &str) -> String {
-    format!("● {tool_name}")
+    format!("  ● {tool_name}")
 }
 
 /// Render a tool that is currently executing with progress.
@@ -66,9 +66,9 @@ fn render_tool_use_progress_message(
         format!("{tool_name}({input_summary})")
     };
     if has_hook_progress {
-        format!("● {summary} [hook running]")
+        format!("  ● {summary} [hook running]")
     } else {
-        format!("● {summary}")
+        format!("  ● {summary}")
     }
 }
 
@@ -79,21 +79,21 @@ fn render_tool_use_error_state(tool_name: &str, input_summary: &str) -> String {
     } else {
         format!("{tool_name}({input_summary})")
     };
-    format!("● {summary} [error]")
+    format!("  ● {summary} [error]")
 }
 
 /// Render a tool that is being checked by the content classifier.
 ///
 /// TS reference: `AssistantToolUseMessage.tsx:173-178`
 fn render_classifier_checking(tool_name: &str) -> String {
-    format!("● {tool_name} (classifier checking...)")
+    format!("  ● {tool_name} (classifier checking...)")
 }
 
 /// Render a tool waiting for user permission.
 ///
 /// TS reference: `AssistantToolUseMessage.tsx:179-182`
 fn render_waiting_for_permission(tool_name: &str) -> String {
-    format!("● {tool_name} (waiting for permission...)")
+    format!("  ● {tool_name} (waiting for permission...)")
 }
 
 /// Render the main tool-use message for a given state.
@@ -132,14 +132,14 @@ pub fn render_assistant_tool_use_message(
             if is_transparent_wrapper_tool(tool_name) {
                 // Keep an explicit completion marker unless the main render path
                 // replaces this helper with a richer tool-result row.
-                format!("● {tool_name}")
+                format!("  ● {tool_name}")
             } else {
                 let summary = if summary_only.is_empty() {
                     tool_name.to_string()
                 } else {
                     format!("{tool_name}({summary_only})")
                 };
-                format!("● {summary}")
+                format!("  ● {summary}")
             }
         }
         ToolUseState::Error => render_tool_use_error_state(tool_name, summary_only),
@@ -161,7 +161,7 @@ mod tests {
             false,
             &Theme::default(),
         );
-        assert_eq!(result, "● Read");
+        assert_eq!(result, "  ● Read");
     }
 
     #[test]
@@ -199,7 +199,7 @@ mod tests {
             false,
             &Theme::default(),
         );
-        assert_eq!(result, "● Bash");
+        assert_eq!(result, "  ● Bash");
     }
 
     #[test]

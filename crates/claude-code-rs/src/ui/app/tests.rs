@@ -8,7 +8,7 @@ use cc_ipc_protocol::BackendMessage;
 use cc_keybindings::action::Action;
 use cc_services::prompt_suggestion::{PromptSuggestion, SuggestionCategory};
 use cc_types::agent_events::AgentEvent;
-use cc_types::message::{ContentBlock, MessageContent, UserMessage};
+use cc_types::message::{AssistantMessage, ContentBlock, MessageContent, UserMessage};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
@@ -47,8 +47,8 @@ fn render_places_prompt_after_compact_welcome() {
 
     let content = buffer_to_lines(terminal.backend().buffer(), 80, 24);
     assert!(
-        content[8].trim_start().starts_with(">"),
-        "prompt should sit directly under the 8-line welcome panel"
+        content[9].trim_start().starts_with(">"),
+        "prompt should sit on the middle line of the 3-line input area below the welcome panel"
     );
     assert!(
         !content[22].trim_start().starts_with(">"),
@@ -76,8 +76,8 @@ fn render_places_prompt_after_short_chat_content() {
     assert!(content[1].contains("hello"));
     assert!(!content[1].contains("You:"));
     assert!(
-        content[3].trim_start().starts_with(">"),
-        "prompt should follow the rendered chat content"
+        content[4].trim_start().starts_with(">"),
+        "prompt should sit on the middle line of the 3-line input area after chat content"
     );
     assert!(
         !content[22].trim_start().starts_with(">"),
@@ -132,6 +132,29 @@ fn long_chat_renders_session_scrollbar() {
 }
 
 #[test]
+fn long_chat_defaults_to_bottom_of_session() {
+    let mut app = App::new();
+    for i in 0..20 {
+        app.add_message(Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: i,
+            role: "user".to_string(),
+            content: MessageContent::Text(format!("message {i}")),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        }));
+    }
+    let mut terminal = Terminal::new(TestBackend::new(40, 12)).expect("terminal");
+
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+
+    let content = buffer_to_lines(terminal.backend().buffer(), 40, 12).join("\n");
+    assert!(content.contains("message 19"));
+    assert!(!content.contains("message 0"));
+}
+
+#[test]
 fn mouse_click_session_scrollbar_controls_prompt_messages() {
     let mut app = App::new();
     for i in 0..20 {
@@ -153,7 +176,7 @@ fn mouse_click_session_scrollbar_controls_prompt_messages() {
         app.handle_mouse_event(MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 39,
-            row: 9,
+            row: 7,
             modifiers: KeyModifiers::NONE,
         }),
         AppAction::ScrollDown
@@ -181,6 +204,42 @@ fn immediate_notification_overrides_spinner_row() {
     let content = buffer_to_lines(terminal.backend().buffer(), 80, 24).join("\n");
     assert!(content.contains("Rate limit reached"));
     assert!(!content.contains("Thinking..."));
+}
+
+#[test]
+fn prompt_stays_editable_while_streaming_and_tab_queues() {
+    let mut app = App::new();
+    app.set_streaming(true);
+
+    assert_eq!(send_key(&mut app, KeyCode::Char('n')), AppAction::None);
+    assert_eq!(send_key(&mut app, KeyCode::Char('e')), AppAction::None);
+    assert_eq!(send_key(&mut app, KeyCode::Char('x')), AppAction::None);
+    assert_eq!(send_key(&mut app, KeyCode::Char('t')), AppAction::None);
+
+    assert_eq!(app.prompt.input, "next");
+    assert_eq!(send_key(&mut app, KeyCode::Enter), AppAction::None);
+    assert_eq!(app.prompt.input, "next");
+    assert_eq!(
+        send_key(&mut app, KeyCode::Tab),
+        AppAction::Queue("next".to_string())
+    );
+    assert!(app.prompt.input.is_empty());
+}
+
+#[test]
+fn streaming_draft_renders_tab_queue_hint_below_prompt() {
+    let mut app = App::new();
+    app.set_streaming(true);
+    app.prompt.input = "follow up".to_string();
+    app.prompt.cursor_position = app.prompt.input.len();
+    app.set_queued_prompt_count(2);
+    let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+
+    let content = buffer_to_lines(terminal.backend().buffer(), 100, 24).join("\n");
+    assert!(content.contains("tab to queue message"));
+    assert!(content.contains("2 queued"));
 }
 
 #[test]
@@ -750,6 +809,33 @@ fn messages_action_copies_primary_path_reference() {
     assert_eq!(
         send_key(&mut app, KeyCode::Char('p')),
         AppAction::CopyMessage("path=src/lib.rs".to_string())
+    );
+}
+
+#[test]
+fn messages_action_opens_code_path_from_assistant_text() {
+    let mut app = App::new();
+    app.add_message(Message::Assistant(AssistantMessage {
+        uuid: uuid::Uuid::new_v4(),
+        timestamp: 0,
+        role: "assistant".to_string(),
+        content: vec![ContentBlock::Text {
+            text: "Updated `crates/claude-code-rs/src/ui/app.rs:42`.".to_string(),
+        }],
+        usage: None,
+        stop_reason: None,
+        is_api_error_message: false,
+        api_error: None,
+        cost_usd: 0.0,
+    }));
+
+    assert_eq!(
+        send_key_with_modifiers(&mut app, KeyCode::Up, KeyModifiers::SHIFT),
+        AppAction::None
+    );
+    assert_eq!(
+        send_key(&mut app, KeyCode::Char('o')),
+        AppAction::OpenPath("path=crates/claude-code-rs/src/ui/app.rs:42".to_string())
     );
 }
 

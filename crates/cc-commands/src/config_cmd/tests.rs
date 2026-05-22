@@ -92,6 +92,32 @@ async fn test_config_set_permission_mode_updates_live_context() {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn test_config_set_permission_mode_full_access_canonicalizes_to_bypass() {
+    let dir = tempfile::tempdir().unwrap();
+    let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+    let handler = ConfigHandler;
+    let mut ctx = test_ctx();
+    let result = handler
+        .execute("set permissionMode full access", &mut ctx)
+        .await
+        .unwrap();
+    let CommandResult::Output(text) = result else {
+        panic!("expected output")
+    };
+    assert!(text.contains("Permission mode set to: bypass"));
+    assert_eq!(
+        ctx.app_state.tool_permission_context.mode,
+        PermissionMode::Bypass
+    );
+
+    let settings: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("settings.json")).unwrap())
+            .unwrap();
+    assert_eq!(settings["permissionMode"], "bypass");
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn test_config_set_permission_mode_auto_respects_disabled_policy() {
     let dir = tempfile::tempdir().unwrap();
     let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());

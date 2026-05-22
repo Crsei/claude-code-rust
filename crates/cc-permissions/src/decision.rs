@@ -398,6 +398,20 @@ pub fn has_permissions_to_use_tool_with_hook_and_auto_classifier(
     // Pick the input the rest of the flow sees.
     let effective_input: &Value = updated_input.as_ref().unwrap_or(input);
 
+    if ctx.mode == PermissionMode::Bypass {
+        if let Some(tracker) = denial_tracker {
+            tracker.record_allow();
+        }
+        return PermissionDecision {
+            behavior: PermissionBehavior::Allow,
+            updated_input,
+            message: None,
+            reason: PermissionDecisionReason::Mode {
+                mode: "bypass".into(),
+            },
+        };
+    }
+
     // ── Phase 1b: Deny rules.
     if let Some((source, pattern)) =
         check_pattern_rules(tool_name, effective_input, &ctx.always_deny_rules)
@@ -499,19 +513,7 @@ pub fn has_permissions_to_use_tool_with_hook_and_auto_classifier(
 
     // ── Phase 4: Mode fallback ──────────────────────────────────────────
     match ctx.mode {
-        PermissionMode::Bypass => {
-            if let Some(tracker) = denial_tracker {
-                tracker.record_allow();
-            }
-            PermissionDecision {
-                behavior: PermissionBehavior::Allow,
-                updated_input,
-                message: None,
-                reason: PermissionDecisionReason::Mode {
-                    mode: "bypass".into(),
-                },
-            }
-        }
+        PermissionMode::Bypass => unreachable!("bypass mode returns before rule evaluation"),
         PermissionMode::Auto => {
             if let Some(tracker) = denial_tracker.as_mut() {
                 if tracker.should_fallback_to_interactive() {
@@ -781,6 +783,22 @@ mod tests {
         ctx.mode = PermissionMode::Bypass;
         let decision = has_permissions_to_use_tool("Bash", &Value::Null, &ctx, None);
         assert_eq!(decision.behavior, PermissionBehavior::Allow);
+    }
+
+    #[test]
+    fn test_bypass_mode_ignores_ask_and_deny_rules() {
+        let mut ctx = default_ctx();
+        ctx.mode = PermissionMode::Bypass;
+        ctx.always_ask_rules
+            .insert("user".into(), vec!["Bash".into()]);
+        ctx.always_deny_rules
+            .insert("user".into(), vec!["Write".into()]);
+
+        let bash = has_permissions_to_use_tool("Bash", &Value::Null, &ctx, None);
+        let write = has_permissions_to_use_tool("Write", &Value::Null, &ctx, None);
+
+        assert_eq!(bash.behavior, PermissionBehavior::Allow);
+        assert_eq!(write.behavior, PermissionBehavior::Allow);
     }
 
     #[test]

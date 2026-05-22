@@ -59,3 +59,95 @@ pub(super) async fn export_to_editor(body: &str) -> anyhow::Result<std::path::Pa
     }
     Ok(path)
 }
+
+pub(super) async fn open_reference_in_editor(
+    reference: &str,
+    cwd: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    let (path_text, line) = parse_path_reference(reference);
+    let path = std::path::PathBuf::from(path_text);
+    let path = if path.is_absolute() {
+        path
+    } else {
+        std::path::Path::new(cwd).join(path)
+    };
+    let path = path
+        .canonicalize()
+        .map_err(|e| anyhow::anyhow!("could not resolve {}: {}", path.display(), e))?;
+    if !path.is_file() {
+        anyhow::bail!("{} is not a file", path.display());
+    }
+
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Set $VISUAL or $EDITOR to open {}", path.display()))?;
+
+    let _ = execute!(std::io::stdout(), LeaveAlternateScreen, cursor::Show);
+    let _ = terminal::disable_raw_mode();
+
+    let parts = shell_words::split(&editor)
+        .map_err(|e| anyhow::anyhow!("could not parse editor command '{}': {}", editor, e))?;
+    let (program, args) = parts
+        .split_first()
+        .ok_or_else(|| anyhow::anyhow!("editor command is empty"))?;
+    let mut command = tokio::process::Command::new(program);
+    command.args(args);
+    append_editor_location_args(&mut command, program, &path, line);
+    let status = command.status().await;
+
+    let _ = terminal::enable_raw_mode();
+    let _ = execute!(std::io::stdout(), EnterAlternateScreen, cursor::Hide);
+
+    match status {
+        Ok(s) if s.success() => Ok(path),
+        Ok(s) => Err(anyhow::anyhow!(
+            "{} exited with status {}",
+            editor,
+            s.code().unwrap_or(-1)
+        )),
+        Err(e) => Err(anyhow::anyhow!("could not launch '{}': {}", editor, e)),
+    }
+}
+
+fn parse_path_reference(reference: &str) -> (&str, Option<u32>) {
+    let raw = reference
+        .strip_prefix("path=")
+        .or_else(|| reference.strip_prefix("file="))
+        .unwrap_or(reference)
+        .trim();
+    if let Some((path, line)) = raw.rsplit_once(':') {
+        if let Ok(line) = line.parse::<u32>() {
+            return (path, Some(line));
+        }
+    }
+    (raw, None)
+}
+
+fn append_editor_location_args(
+    command: &mut tokio::process::Command,
+    program: &str,
+    path: &std::path::Path,
+    line: Option<u32>,
+) {
+    let name = std::path::Path::new(program)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+    match line {
+        Some(line) if matches!(name.as_str(), "code" | "code-insiders" | "codium") => {
+            command.arg("-g").arg(format!("{}:{line}", path.display()));
+        }
+        Some(line)
+            if name.contains("vim")
+                || matches!(name.as_str(), "vi" | "nvim" | "nano" | "emacs") =>
+        {
+            command.arg(format!("+{line}")).arg(path);
+        }
+        _ => {
+            command.arg(path);
+        }
+    }
+}

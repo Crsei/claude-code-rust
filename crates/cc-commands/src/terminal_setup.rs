@@ -504,10 +504,10 @@ mod tests {
     }
 
     #[test]
-    fn env_table_reports_default_native_selection() {
+    fn env_table_reports_default_mouse_capture() {
         let p = EnvProbe::from_pairs(Vec::<(&str, &str)>::new());
         let out = render_env(&p);
-        assert!(out.contains("disabled (native selection/copy)"));
+        assert!(out.contains("enabled for wheel events"));
     }
 
     #[test]

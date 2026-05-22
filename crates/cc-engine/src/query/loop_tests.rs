@@ -1001,6 +1001,51 @@ async fn test_fallback_tombstones_partial_assistant_after_stream_error() {
 }
 
 #[tokio::test]
+async fn test_chunk_read_error_after_text_accepts_partial_assistant() {
+    let deps = Arc::new(MockDeps::from_steps(vec![MockStreamStep::Events(vec![
+        Ok(StreamEvent::MessageStart {
+            usage: Usage::default(),
+        }),
+        Ok(StreamEvent::ContentBlockStart {
+            index: 0,
+            content_block: ContentBlock::Text {
+                text: String::new(),
+            },
+        }),
+        Ok(StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: serde_json::json!({
+                "type": "text_delta",
+                "text": "partial but usable"
+            }),
+        }),
+        Err("error reading response chunk: connection closed".to_string()),
+    ])]));
+
+    let stream = query(
+        make_query_params(vec![make_user_message_for_test("Use compatible gateway")]),
+        deps,
+    );
+    let items: Vec<QueryYield> = stream.collect().await;
+
+    assert!(
+        !has_api_error_containing(&items, "error reading response chunk"),
+        "chunk read errors after text should not replace the response with an API error"
+    );
+    assert!(
+        items.iter().any(|item| matches!(
+            item,
+            QueryYield::Message(Message::Assistant(msg))
+                if msg.content.iter().any(|block| matches!(
+                    block,
+                    ContentBlock::Text { text } if text == "partial but usable"
+                ))
+        )),
+        "partial text should be finalized as the assistant response"
+    );
+}
+
+#[tokio::test]
 async fn test_fallback_exhaustion_releases_terminal_stream_start_error() {
     let deps = Arc::new(MockDeps::from_steps(vec![
         MockStreamStep::Error("529 overloaded primary".to_string()),

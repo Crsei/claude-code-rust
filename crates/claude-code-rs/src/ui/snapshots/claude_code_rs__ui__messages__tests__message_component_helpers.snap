@@ -1,5 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/messages.rs
+assertion_line: 322
 expression: rendered
 ---
 ## advisor
@@ -16,7 +17,7 @@ Hello
 Assistant thinking: I will inspect the files
 
 ## assistant-tool-use
-● read_file(path=src/main.rs)
+  ● read_file(path=src/main.rs)
 
 ## attachment
 Attachment: log -> appended
@@ -50,8 +51,8 @@ File edit canceled: src/lib.rs
 
 ## grouped-tool-use
 Grouped tool uses:
-[queued] | 0ms | Read
-[queued] | 0ms | Edit
+  ● Read | [queued] | worked for 0ms
+  ● Edit | [queued] | worked for 0ms
 
 ## highlighted-thinking
 [THINKING] cache warmup

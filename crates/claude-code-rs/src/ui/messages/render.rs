@@ -1112,11 +1112,6 @@ pub fn render_messages(
     let viewport_h = area.height as usize;
     let (start, end) = vscroll.visual_range(scroll, viewport_h);
 
-    // Where the first visible message starts in wrapped visual line space.
-    let first_offset = vscroll.visual_offset_of(start);
-    // How many lines to skip inside the first visible message.
-    let skip_in_first = scroll.saturating_sub(first_offset);
-
     let mut y = 0usize; // current row in the viewport
 
     for idx in start..end.min(renderable_messages.len()) {
@@ -1142,7 +1137,8 @@ pub fn render_messages(
         let has_sep = idx < renderable_messages.len() - 1;
         let total_for_msg = msg_lines.len() + if has_sep { 1 } else { 0 };
 
-        let skip = if idx == start { skip_in_first } else { 0 };
+        let message_offset = vscroll.visual_offset_of(idx);
+        let skip = scroll.saturating_sub(message_offset).min(total_for_msg);
 
         for li in skip..total_for_msg {
             if y >= viewport_h {
@@ -1372,6 +1368,7 @@ fn decorate_selected_message<'a>(
             theme.selected,
         ),
         Span::styled(" · c copy", theme.dim),
+        Span::styled(" · o open", theme.dim),
         Span::styled(" · enter detail", theme.dim),
     ];
     if let Some(meta) = selected_message_meta(msg) {
@@ -2145,7 +2142,7 @@ fn message_content_copy_text(content: &MessageContent) -> String {
 
 fn message_content_reference(content: &MessageContent) -> Option<String> {
     match content {
-        MessageContent::Text(_) => None,
+        MessageContent::Text(text) => extract_code_path_reference(text),
         MessageContent::Blocks(blocks) => blocks.iter().find_map(content_block_reference),
     }
 }
@@ -2171,11 +2168,81 @@ fn content_block_reference(block: &ContentBlock) -> Option<String> {
         | ContentBlock::ServerToolUse { name, input, .. } => tool_primary_input(name, input),
         ContentBlock::Image { source } => Some(image_reference(source)),
         ContentBlock::ToolResult { content, .. } => match content {
-            ToolResultContent::Text(_) => None,
+            ToolResultContent::Text(text) => extract_code_path_reference(text),
             ToolResultContent::Blocks(blocks) => blocks.iter().find_map(content_block_reference),
         },
+        ContentBlock::Text { text }
+        | ContentBlock::ConnectorText {
+            connector_text: text,
+            ..
+        } => extract_code_path_reference(text),
         _ => None,
     }
+}
+
+fn extract_code_path_reference(text: &str) -> Option<String> {
+    text.split(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | '<' | '>' | '(' | ')'))
+        .filter_map(clean_path_candidate)
+        .find(|candidate| looks_like_code_path(candidate))
+        .map(|path| format!("path={path}"))
+}
+
+fn clean_path_candidate(raw: &str) -> Option<String> {
+    let trimmed = raw.trim_matches(|ch: char| {
+        matches!(
+            ch,
+            '`' | ',' | ';' | ':' | '.' | '!' | '?' | '[' | ']' | '{' | '}'
+        )
+    });
+    if trimmed.is_empty() || trimmed.contains("://") {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+fn looks_like_code_path(candidate: &str) -> bool {
+    let without_line = candidate
+        .rsplit_once(':')
+        .and_then(|(path, line)| line.parse::<u32>().ok().map(|_| path))
+        .unwrap_or(candidate);
+    let Some(file_name) = without_line.rsplit('/').next() else {
+        return false;
+    };
+    let Some((_, ext)) = file_name.rsplit_once('.') else {
+        return false;
+    };
+    let known_ext = matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "rs" | "toml"
+            | "lock"
+            | "json"
+            | "jsonl"
+            | "md"
+            | "yml"
+            | "yaml"
+            | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "py"
+            | "go"
+            | "java"
+            | "c"
+            | "cc"
+            | "cpp"
+            | "h"
+            | "hpp"
+            | "sh"
+            | "bash"
+            | "zsh"
+            | "css"
+            | "scss"
+            | "html"
+            | "vue"
+            | "svelte"
+            | "sql"
+    );
+    known_ext && (without_line.contains('/') || without_line.starts_with('.'))
 }
 
 fn image_reference(source: &cc_types::message::ImageSource) -> String {

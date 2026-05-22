@@ -167,8 +167,16 @@ impl PermissionDialog {
 
     /// Render the permission dialog as a centered overlay.
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
-        let dialog_width = (area.width * 68 / 100).max(48).min(area.width);
-        let preferred_height = if self.is_typing_feedback() { 15 } else { 13 };
+        let dialog_width = area.width.saturating_sub(2).clamp(48, 120).min(area.width);
+        let labels = self.normalized_options();
+        let estimated_footer_width = dialog_width.saturating_sub(4) as usize;
+        let estimated_button_rows =
+            button_lines_for_width(&labels, self.selected, estimated_footer_width, theme).len();
+        let footer_height = (estimated_button_rows as u16)
+            .saturating_add(if self.is_typing_feedback() { 2 } else { 1 })
+            .max(if self.is_typing_feedback() { 4 } else { 3 });
+        let preferred_height =
+            footer_height.saturating_add(if self.is_typing_feedback() { 14 } else { 12 });
         let dialog_height = preferred_height.min(area.height).max(8);
         let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
         let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
@@ -189,9 +197,9 @@ impl PermissionDialog {
         }
 
         let chunks = Layout::vertical([
-            Constraint::Length(2),                                             // tool info
-            Constraint::Min(2),                                                // request body
-            Constraint::Length(if self.is_typing_feedback() { 3 } else { 2 }), // buttons + feedback/hint
+            Constraint::Length(2),             // tool info
+            Constraint::Min(2),                // request body
+            Constraint::Length(footer_height), // buttons + feedback/hint
         ])
         .split(inner);
 
@@ -224,12 +232,18 @@ impl PermissionDialog {
                 .render_ref(request_inner, buf);
         }
 
-        let labels = self.normalized_options();
         let footer_width = chunks[2].width.saturating_sub(2) as usize;
-        let button_spans = button_spans_for_width(&labels, self.selected, footer_width, theme);
-        let button_line = Line::from(button_spans);
-        let button_y = chunks[2].y + (chunks[2].height.saturating_sub(2)) / 2;
-        buf.set_line(chunks[2].x + 1, button_y, &button_line, footer_width as u16);
+        let button_lines = button_lines_for_width(&labels, self.selected, footer_width, theme);
+        let reserved_footer_rows = 1 + u16::from(self.is_typing_feedback());
+        let max_button_rows = chunks[2].height.saturating_sub(reserved_footer_rows).max(1) as usize;
+        for (idx, button_line) in button_lines.iter().take(max_button_rows).enumerate() {
+            buf.set_line(
+                chunks[2].x + 1,
+                chunks[2].y + idx as u16,
+                button_line,
+                footer_width as u16,
+            );
+        }
 
         if self.is_typing_feedback() && chunks[2].height >= 2 {
             let feedback = self.active_feedback_with_cursor();
@@ -242,7 +256,9 @@ impl PermissionDialog {
             ]);
             buf.set_line(
                 chunks[2].x + 1,
-                chunks[2].y + 1,
+                chunks[2]
+                    .y
+                    .saturating_add(button_lines.len().min(max_button_rows) as u16),
                 &input,
                 footer_width as u16,
             );
@@ -406,12 +422,23 @@ impl PermissionDialog {
 
 fn choice_for_label(label: &str) -> Option<PermissionDecisionChoice> {
     let normalized = label.trim().to_ascii_lowercase();
+    if normalized.contains("always") {
+        return Some(PermissionDecisionChoice::AlwaysAllow);
+    }
+    if normalized.contains("escalate") {
+        return Some(PermissionDecisionChoice::Escalate);
+    }
+    if normalized.contains("deny") || normalized.contains("reject") || normalized == "no" {
+        return Some(PermissionDecisionChoice::Deny);
+    }
+    if normalized.contains("allow") || normalized == "yes" {
+        return Some(PermissionDecisionChoice::Allow);
+    }
     match normalized.as_str() {
-        "allow" | "yes" | "allow edit" | "allow write" => Some(PermissionDecisionChoice::Allow),
-        "deny" | "no" | "deny edit" | "deny write" => Some(PermissionDecisionChoice::Deny),
-        "always allow" | "always_allow" | "always" | "always allow path" | "always path"
-        | "always exact" => Some(PermissionDecisionChoice::AlwaysAllow),
-        "escalate" | "escalate request" | "ask lead" => Some(PermissionDecisionChoice::Escalate),
+        "always_allow" | "always path" | "always exact" => {
+            Some(PermissionDecisionChoice::AlwaysAllow)
+        }
+        "ask lead" => Some(PermissionDecisionChoice::Escalate),
         _ => None,
     }
 }
@@ -538,6 +565,28 @@ mod tests {
 
         assert!(rendered.contains("command: cargo test"));
         assert!(!rendered.contains(r#"{"command":"#));
+    }
+
+    #[test]
+    fn bash_dialog_shows_and_selects_always_exact() {
+        let mut dialog = PermissionDialog::new("Bash", r#"{"command":"cargo test"}"#, "");
+        let rendered = render_dialog_text(&dialog);
+
+        assert!(rendered.contains("Always exact"));
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(PermissionChoice::from_decision(
+                PermissionDecisionChoice::AlwaysAllow,
+            ))
+        );
     }
 
     #[test]
@@ -722,56 +771,94 @@ fn shortcut_for_label(label: &str) -> Option<&'static str> {
     }
 }
 
-fn button_spans_for_width(
+fn button_lines_for_width(
     labels: &[String],
     selected: usize,
     max_width: usize,
     theme: &Theme,
-) -> Vec<Span<'static>> {
-    let mut spans = button_spans(labels, selected, max_width, theme, true);
-    if spans_width(&spans) <= max_width {
-        return spans;
+) -> Vec<Line<'static>> {
+    let single_line = button_spans(labels, selected, max_width, theme, true);
+    if spans_width(&single_line) <= max_width {
+        return vec![Line::from(single_line)];
     }
 
-    spans = button_spans(labels, selected, max_width, theme, false);
-    if spans_width(&spans) <= max_width {
-        return spans;
+    let mut rows: Vec<Vec<Span<'static>>> = Vec::new();
+    let mut current: Vec<Span<'static>> = Vec::new();
+    let mut current_width = 0usize;
+
+    for (idx, label) in labels.iter().enumerate() {
+        let mut button = button_span(label, idx == selected, theme, true);
+        let mut button_width = spans_width(&button);
+        if button_width > max_width {
+            button = vec![Span::styled(
+                truncate_str(&spans_text(&button), max_width),
+                if idx == selected {
+                    theme.selected
+                } else {
+                    theme.unselected
+                },
+            )];
+            button_width = spans_width(&button);
+        }
+
+        let separator_width = usize::from(!current.is_empty()) * 2;
+        if !current.is_empty() && current_width + separator_width + button_width > max_width {
+            rows.push(current);
+            current = Vec::new();
+            current_width = 0;
+        }
+
+        if !current.is_empty() {
+            current.push(Span::raw("  "));
+            current_width += 2;
+        }
+        current.extend(button);
+        current_width += button_width;
     }
 
-    vec![Span::styled(
-        truncate_str(&spans_text(&spans), max_width),
-        theme.unselected,
-    )]
+    if !current.is_empty() {
+        rows.push(current);
+    }
+
+    if rows.is_empty() {
+        rows.push(vec![Span::styled("".to_string(), theme.unselected)]);
+    }
+
+    rows.into_iter().map(Line::from).collect()
 }
 
 fn button_spans(
     labels: &[String],
     selected: usize,
-    max_width: usize,
+    _max_width: usize,
     theme: &Theme,
     padded: bool,
 ) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     for (idx, label) in labels.iter().enumerate() {
-        let style = if idx == selected {
-            theme.selected
-        } else {
-            theme.unselected
-        };
-        let label = button_bar_label(label);
-        let shortcut = shortcut_for_label(label);
-        let text = match (padded, shortcut) {
-            (true, Some(shortcut)) => format!(" {label} ({shortcut}) "),
-            (true, None) => format!(" {label} "),
-            (false, Some(shortcut)) => format!("{label}({shortcut})"),
-            (false, None) => label.to_string(),
-        };
-        spans.push(Span::styled(truncate_str(&text, max_width), style));
+        spans.extend(button_span(label, idx == selected, theme, padded));
         if idx + 1 < labels.len() {
             spans.push(Span::raw(if padded { "  " } else { " " }));
         }
     }
     spans
+}
+
+fn button_span(label: &str, selected: bool, theme: &Theme, padded: bool) -> Vec<Span<'static>> {
+    let style = if selected {
+        theme.selected
+    } else {
+        theme.unselected
+    };
+    let label = button_bar_label(label);
+    let shortcut = shortcut_for_label(label);
+    let text = match (padded, shortcut) {
+        (true, Some(shortcut)) => format!(" {label} ({shortcut}) "),
+        (true, None) => format!(" {label} "),
+        (false, Some(shortcut)) => format!("{label}({shortcut})"),
+        (false, None) => label.to_string(),
+    };
+    vec![Span::styled(text, style)]
 }
 
 fn button_bar_label(label: &str) -> &'static str {

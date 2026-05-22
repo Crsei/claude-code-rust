@@ -1,6 +1,6 @@
 # cc-rust 当前问题汇总
 
-> 更新日期: 2026-05-21
+> 更新日期: 2026-05-22
 
 本文是当前开放问题、代码审查发现和文档状态问题的唯一活跃入口。已修复、已失效或只具历史价值的问题已迁移到：
 
@@ -50,6 +50,7 @@
 | UI-007 | 低 | Review | Rust TUI dialog overlays | `Dialog::handle_key()`、`ExitGuard`、直接 dialog 路径和 Ctrl+C/Ctrl+D exit guard 已进入生产构建；overlay stack 仍主要保存 overlay metadata。 | 当前真实弹窗路径已有 Esc/取消/确认和 exit guard；只有需要多 overlay z-index/集中 dispatch 时，才继续补 overlay-stack runtime contract。 |
 | UI-008 | 低 | Review | Rust TUI tabs parity | `Tabs` production API、header/navigation helpers、content height/header focus 读路径和 snapshots 已接入；content-pane callback parity 仍是组件增强项。 | 已不属于 cfg-test 未接线问题；后续如调用方需要受控 pane callbacks，再按具体 surface 补测试。 |
 | UI-009 | 中 | Fixed | Rust TUI cfg-test production wiring | Phase 1-16 已完成：`CommandSurface`、agent create/edit、MCP detail/tools、permissions、tasks/team、dialog/tabs helpers 和 runtime snapshots 已进入生产构建。 | 验证: `cargo test -p claude-code-rs ui::`、`cargo build --workspace --release`、`git diff --check`；实现提交 `9ac3ae5`。 |
+| UI-010 | 中 | Fixed | Rust TUI prompt/resume/permissions/scroll | 用户反馈输入框未继承用户消息背景、运行中无法继续输入、`/resume` 缺少面板、permissions 弹窗窄终端下 `Always exact` 不完整、session 不默认显示底部且鼠标无法滚动。 | 已让 prompt 输入行整行使用用户消息背景；运行中输入保持可编辑，`Tab` 才显式排队并在当前 turn 结束后发送；`/resume` 空参数打开 session 面板；permission dialog 加宽并支持按钮换行；TUI 启动同步已恢复历史并默认定位底部；mouse capture 默认开启，`CLAUDE_CODE_DISABLE_MOUSE=1` 可恢复原生选择。 |
 
 ## 6. 文档状态问题
 

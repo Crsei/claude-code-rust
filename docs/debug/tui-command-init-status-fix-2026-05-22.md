@@ -33,8 +33,15 @@ API error provider=anthropic status=403 type=new_api_error: 用户额度不足
 
 - 继续在缺失时创建 `.cc-rust/settings.json`。
 - 缺失 `CLAUDE.md` 时生成完整模板。
-- 已存在 `CLAUDE.md` 时不覆盖用户内容，而是通过稳定 marker 刷新或追加 cc-rust 托管段落。
-- `/init` 执行结果需要在对话中展示清晰状态，包括创建、更新、跳过的路径，以及 `CLAUDE.md` 是新建还是刷新。
+- 已存在 `CLAUDE.md` 时不覆盖、不刷新、不追加用户文件内容，直接返回：
+  `CLAUDE.md already exists here. Skipping /init to avoid overwriting it.`
+- 新建模板中的项目说明改为 cc-rust，不再写 `Project instructions for Claude Code.`。
+
+### cc-rust 文案统一
+
+- 系统提示词前缀改为 `You are cc-rust, a coding CLI.`。
+- `/help` 系统提示、内置 general-purpose agent、statusline agent、hook source 描述、bundled `update-config` skill、Read/Bash 工具提示、CLI about 文案等用户或模型可见文本统一改为 cc-rust。
+- 保留真实协议、兼容性或路径语义中的名字，例如 `CLAUDE.md` 文件名、模型 ID、`Claude.ai` OAuth、上游规范说明和参考文档。
 
 ### 命令面板
 
@@ -82,17 +89,66 @@ API error provider=anthropic status=403 type=new_api_error: 用户额度不足
 - 面板主体默认使用纯白字体。
 - 已有 warning/error/accent 等显式语义样式可继续保留。
 
+### Session 内容滚动条
+
+- prompt session 和 transcript body 在内容高度超过终端可视区域时，右侧显示 1 列滚动条。
+- 滚动条包含顶部/底部箭头、轨道和当前位置滑块，用于提示还有隐藏内容。
+- 鼠标点击顶部/底部箭头按行滚动。
+- 鼠标点击或拖动中间轨道会按位置跳转 session 内容。
+- 鼠标捕获默认开启，滚轮无需额外设置即可发送到 TUI；如需恢复终端原生拖选，设置 `CLAUDE_CODE_DISABLE_MOUSE=1`。
+- TUI 启动时会把 `QueryEngine` 中已恢复的 session history 同步到 App，并默认定位到最底部。
+- 修复 virtual scroll overscan 下的 skip 计算：每条消息按自己的 visual offset 决定跳过行数，避免默认 bottom 或滚动到底部时仍显示旧内容。
+- 保留既有键盘滚动和 transcript 滚动行为。
+
+### 用户消息背景
+
+- 普通用户文本消息使用整行背景色，不再只给文本 span 上色。
+- 背景块额外包含用户消息上方一行和下方一行，使用户输入在 TUI 中形成完整高亮区域。
+- 工具结果、attachment、meta user message 等非普通用户输入不套用该背景。
+
+### 运行中输入与队列
+
+- 参考 `/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/codex/codex-rs/tui/src/bottom_pane/chat_composer.rs` 的语义：`Enter` 是提交，`Tab` 是显式 queue；Codex footer 对应提示为 `tab to queue message`。
+- cc-rust 运行中仍允许在输入框继续编辑草稿。
+- 运行中按 `Enter` 不再隐式把草稿入队，也不会清空输入框；TUI 会提示使用 `Tab` 排队，避免用户误以为当前 turn 被立即打断或在下一次工具调用时注入。
+- 运行中按 `Tab` 才把当前草稿转成内存 FIFO 队列项；队列保存在 TUI runner 的 `queued_prompts` 中。
+- 队列项不会在“下一次工具调用”时发送到对话；只有当前模型 turn 结束并收到 `EngineEvent::Done` 后，TUI 才从队列头取出一条，按正常用户输入路径写入对话并启动下一轮请求。
+- 输入框下方状态栏在运行中有草稿时显示 `tab to queue message`；已有队列时同时显示 `N queued`。
+
+### 兼容网关 stream 尾部错误
+
+- 非官方 Anthropic-compatible 网关可能在已经输出文本后关闭 chunked/SSE 响应，Rust 侧原先会把这类尾部 `error reading response chunk` 展示为 API error。
+- 当前只在“已经累积到纯文本/思考文本且没有 tool_use”的情况下接受部分 assistant response，并补 `end_turn` stop reason；带 tool_use 的中断仍按错误/回退处理，避免执行不完整工具调用。
+
+### 对话路径跳转、复制选择与任务耗时
+
+- 消息选择模式现在会从 assistant 文本、tool result 文本和 connector 文本中提取代码路径引用，支持 `path=...`、普通相对路径和可选 `:line` 行号。
+- 选中包含代码路径的消息后按 `o` 会通过 `$VISUAL` 或 `$EDITOR` 打开对应文件；`code`/`code-insiders`/`codium` 使用 `-g path:line`，常见终端编辑器使用 `+line path`。
+- 选中消息的 header 显示 `o open`，和已有复制动作一起作为消息动作入口。
+- TUI 默认不再启用 mouse capture，终端原生选择和复制对话内容可直接使用；需要恢复 TUI 鼠标捕获时设置 `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE=1`，旧的 `CLAUDE_CODE_DISABLE_MOUSE=0` 仍可显式启用。
+- 工具/任务展示统一以缩进后的 `●` 开始，避免和正文混在同一视觉层级。
+- 工具 compact line、后台任务行、任务 header 和回合结束消息都会显示 `worked for ...`，便于确认本轮或单个任务的运行耗时。
+
 ## 主要代码落点
 
 - `/init` 行为：`crates/cc-commands/src/init.rs`
+- cc-rust 提示词/可见文案：`crates/cc-config/src/constants.rs`、`crates/cc-engine/src/system_prompt.rs`、`crates/cc-engine/src/agent/builtin_agents.rs`、`crates/cc-services/src/agent_definitions/builtin.rs`、`crates/cc-tools/src/`、`crates/cc-skills/src/bundled.rs`、`crates/claude-code-rs/src/cli.rs`
 - 命令注册与隐藏策略：`crates/cc-commands/src/lib.rs`、`crates/claude-code-rs/src/ui/command_palette/filter.rs`
 - 命令面板渲染与 Enter 行为：`crates/claude-code-rs/src/ui/command_palette/`
 - TUI 输入事件分发：`crates/claude-code-rs/src/ui/app/input.rs`
-- 底部状态栏：`crates/claude-code-rs/src/ui/app/render.rs`
+- 底部状态栏、运行中 queue 提示与 session 滚动条：`crates/claude-code-rs/src/ui/app/render.rs`
+- 运行中输入队列调度：`crates/claude-code-rs/src/ui/tui.rs`
+- 用户消息背景与 virtual scroll：`crates/claude-code-rs/src/ui/messages/render.rs`
+- stream chunk 尾部错误降级：`crates/cc-engine/src/query/loop_impl.rs`
 - 启动环境变量注入：`crates/cc-config/src/settings.rs`、`crates/claude-code-rs/src/main.rs`、`crates/start-up/src/fast_paths.rs`
 - Anthropic-compatible 请求降级：`crates/cc-api/src/api/client/mod.rs`、`crates/cc-api/src/api/stream_provider.rs`、`crates/cc-api/src/api/providers.rs`
 - diff surface：`crates/claude-code-rs/src/ui/command_surface/surfaces/diff.rs`
 - 通用 overlay 背景与默认文本样式：`crates/claude-code-rs/src/ui/overlays/mod.rs`、`crates/claude-code-rs/src/ui/app/render.rs`
+- 消息路径提取与 `o open` 提示：`crates/claude-code-rs/src/ui/messages/render.rs`
+- 消息动作与默认快捷键：`crates/claude-code-rs/src/ui/app/input.rs`、`crates/cc-keybindings/src/defaults.rs`
+- 路径打开实现：`crates/claude-code-rs/src/ui/tui/export.rs`、`crates/claude-code-rs/src/ui/tui.rs`
+- 终端选择/复制默认策略：`crates/claude-code-rs/src/ui/platform/terminal_env.rs`
+- 任务 bullet 与耗时：`crates/claude-code-rs/src/ui/messages/assistant_tool_use_message.rs`、`crates/claude-code-rs/src/ui/messages/grouped_tool_use_content.rs`、`crates/claude-code-rs/src/ui/rendering/tool_activity.rs`、`crates/claude-code-rs/src/ui/tasks/background_task.rs`、`crates/claude-code-rs/src/ui/tasks/task_status_utils.rs`、`crates/claude-code-rs/src/ui/tui/engine_events.rs`
 
 ## 验证计划
 
@@ -113,7 +169,36 @@ cargo test -p cc-api startup_settings_env_overrides_inherited_anthropic_provider
 cargo test -p cc-api compatible_anthropic
 cargo test -p claude-code-rs command_palette
 cargo test -p claude-code-rs command_surface
+cargo test -p cc-engine builtin_agent
+cargo test -p claude-code-rs ui::messages::render::tests
+cargo test -p claude-code-rs ui::app::tests
+cargo test -p claude-code-rs ui::app::tests::prompt_stays_editable_while_streaming_and_tab_queues
 cargo build --workspace --release
+```
+
+本轮 TUI 文案、滚动条和用户消息背景修复已执行并通过：
+
+```bash
+cargo test -p cc-commands init -- --nocapture
+cargo test -p cc-engine builtin_agent -- --nocapture
+cargo test -p claude-code-rs ui::messages::render::tests -- --nocapture
+cargo test -p claude-code-rs ui::app::tests -- --nocapture
+cargo build --workspace --release
+git diff --check
+```
+
+本轮路径跳转、终端复制选择、任务 bullet 和耗时显示修复已执行并通过：
+
+```bash
+cargo fmt --all --check
+cargo test -p cc-keybindings -- --nocapture
+cargo test -p claude-code-rs ui::messages -- --nocapture
+cargo test -p claude-code-rs ui::tasks -- --nocapture
+cargo test -p claude-code-rs snapshot_grouped_activity_states -- --nocapture
+cargo test -p claude-code-rs messages_action_opens_code_path_from_assistant_text -- --nocapture
+cargo test -p claude-code-rs enable_mouse_capture_opts_into_mouse_events -- --nocapture
+cargo build --workspace --release
+git diff --check
 ```
 
 修复完成后需要检查新增 warning，并处理所有由本次改动引入的未使用项或 dead code。
@@ -123,3 +208,4 @@ cargo build --workspace --release
 - `/advisor` 只是从可见命令发现入口隐藏，不应删除 handler 或破坏直接执行。
 - 已有 `CLAUDE.md` 内容必须保留。
 - 状态栏里的“模型、工作区”按完整模型 ID 和完整工作区路径处理。
+- `CLAUDE.md` 是兼容既有项目指令约定的文件名，不属于需要替换成 cc-rust 的品牌文案。

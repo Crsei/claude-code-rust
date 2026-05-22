@@ -376,6 +376,19 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     }
                 }
 
+                if stream_error.as_deref().is_some_and(|err| {
+                    should_accept_partial_response_after_chunk_read_error(err, &accumulator)
+                }) {
+                    let err = stream_error.take().unwrap_or_default();
+                    warn!(
+                        error = %err,
+                        "stream ended with a chunk read error after text content; accepting partial assistant response"
+                    );
+                    if accumulator.stop_reason.is_none() {
+                        accumulator.stop_reason = Some("end_turn".to_string());
+                    }
+                }
+
                 if let Some(ref err) = stream_error {
                     if let Some(executor) = streaming_tool_executor.take() {
                         executor.abort();
@@ -776,6 +789,30 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
 
         info!(turns = state.turn_count, "query loop finished");
     }
+}
+
+fn should_accept_partial_response_after_chunk_read_error(
+    err: &str,
+    accumulator: &cc_api::api::streaming::StreamAccumulator,
+) -> bool {
+    if !err.contains("error reading response chunk") {
+        return false;
+    }
+
+    let has_text = accumulator.content_blocks.iter().any(|block| match block {
+        ContentBlock::Text { text } => !text.is_empty(),
+        ContentBlock::Thinking { thinking, .. } => !thinking.is_empty(),
+        ContentBlock::ConnectorText { connector_text, .. } => !connector_text.is_empty(),
+        _ => false,
+    });
+    let has_tool_use = accumulator.content_blocks.iter().any(|block| {
+        matches!(
+            block,
+            ContentBlock::ToolUse { .. } | ContentBlock::ServerToolUse { .. }
+        )
+    });
+
+    has_text && !has_tool_use
 }
 
 #[cfg(test)]

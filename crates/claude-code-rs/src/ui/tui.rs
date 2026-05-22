@@ -8,6 +8,7 @@
 //!
 //! The main entry point is [`run_tui`].
 
+use std::collections::VecDeque;
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
@@ -47,7 +48,7 @@ use engine_events::{
     install_tui_tool_progress_callback, now_ts, permission_choice_to_response, spawn_engine_query,
     EngineEvent, StreamingState,
 };
-use export::export_to_editor;
+use export::{export_to_editor, open_reference_in_editor};
 use subsystem_events::{
     add_system_error, add_system_info, handle_lsp_recommendation_response, handle_subsystem_event,
 };
@@ -303,6 +304,10 @@ pub async fn run_tui(
     // `CLAUDE_CODE_SCROLL_SPEED`. Cached for the duration of the session.
     app.set_terminal_env(terminal_env);
 
+    for message in engine.messages() {
+        app.add_message(message);
+    }
+
     // Voice dictation (issue #13) — build a controller from the null
     // backends for now. Real cpal + voice_stream backends can replace
     // these arguments without changing anything above.
@@ -338,6 +343,7 @@ pub async fn run_tui(
     let mut pending_permission_response: Option<oneshot::Sender<PermissionResponsePayload>> = None;
     let mut pending_question_response: Option<oneshot::Sender<String>> = None;
     let mut streaming_state = StreamingState::new();
+    let mut queued_prompts: VecDeque<String> = VecDeque::new();
 
     let subsystem_bus = SubsystemEventBus::new();
     let mut subsystem_rx = subsystem_bus.subscribe();
@@ -420,48 +426,24 @@ pub async fn run_tui(
                         let action = app.handle_key_event(key);
                         match action {
                             AppAction::Submit(text) => {
-                                app.push_history(text.clone());
-
-                                // Try slash command first
-                                if let Some(action) = try_execute_command(
-                                    &text, &engine, &mut app
+                                if submit_prompt_to_engine(
+                                    text,
+                                    &engine,
+                                    &mut app,
+                                    &engine_tx,
                                 ).await {
-                                    match action {
-                                        CmdAction::Handled => {}
-                                        CmdAction::Quit(msg) => {
-                                            add_system_info(&mut app, &msg);
-                                            break;
-                                        }
-                                        CmdAction::Query(msgs) => {
-                                            // Command wants to send messages to the model
-                                            let prompt = query_prompt_text(&msgs);
-                                            for m in msgs {
-                                                app.add_message(m);
-                                            }
-                                            app.set_streaming(true);
-                                            engine.reset_abort();
-                                            spawn_engine_query(
-                                                engine.clone(),
-                                                if prompt.trim().is_empty() {
-                                                    text
-                                                } else {
-                                                    prompt
-                                                },
-                                                engine_tx.clone(),
-                                            );
-                                        }
-                                    }
-                                } else {
-                                    app.add_message(create_user_message(&text));
-                                    // Regular message — send to engine
-                                    app.set_streaming(true);
-                                    engine.reset_abort();
-                                    spawn_engine_query(
-                                        engine.clone(),
-                                        text,
-                                        engine_tx.clone(),
-                                    );
+                                    break;
                                 }
+                            }
+                            AppAction::Queue(text) => {
+                                queued_prompts.push_back(text);
+                                app.set_queued_prompt_count(queued_prompts.len());
+                                app.handle_app_event(AppEvent::LocalNotice {
+                                    message: format!(
+                                        "Queued next prompt ({} pending).",
+                                        queued_prompts.len()
+                                    ),
+                                });
                             }
                             AppAction::Abort => {
                                 engine.abort();
@@ -561,6 +543,19 @@ pub async fn run_tui(
                                     ),
                                 }
                             }
+                            AppAction::OpenPath(reference) => {
+                                let cwd = app.cwd().to_string();
+                                match open_reference_in_editor(&reference, &cwd).await {
+                                    Ok(path) => add_system_info(
+                                        &mut app,
+                                        &format!("Opened {}", path.display()),
+                                    ),
+                                    Err(e) => add_system_info(
+                                        &mut app,
+                                        &format!("Open failed: {e}"),
+                                    ),
+                                }
+                            }
                             // Scroll actions are handled internally by App
                             _ => {}
                         }
@@ -646,6 +641,21 @@ pub async fn run_tui(
                     }
                     EngineEvent::Done => {
                         app.set_streaming(false);
+                        while let Some(text) = queued_prompts.pop_front() {
+                            app.set_queued_prompt_count(queued_prompts.len());
+                            app.handle_app_event(AppEvent::LocalNotice {
+                                message: format!(
+                                    "Running queued prompt ({} remaining).",
+                                    queued_prompts.len()
+                                ),
+                            });
+                            if submit_prompt_to_engine(text, &engine, &mut app, &engine_tx).await {
+                                break;
+                            }
+                            if app.is_streaming() {
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -698,4 +708,47 @@ pub async fn run_tui(
     terminal.show_cursor()?;
 
     Ok(())
+}
+
+async fn submit_prompt_to_engine(
+    text: String,
+    engine: &Arc<QueryEngine>,
+    app: &mut App,
+    engine_tx: &mpsc::UnboundedSender<EngineEvent>,
+) -> bool {
+    app.push_history(text.clone());
+
+    if let Some(action) = try_execute_command(&text, engine, app).await {
+        match action {
+            CmdAction::Handled => {}
+            CmdAction::Quit(msg) => {
+                add_system_info(app, &msg);
+                return true;
+            }
+            CmdAction::Query(msgs) => {
+                let prompt = query_prompt_text(&msgs);
+                for message in msgs {
+                    app.add_message(message);
+                }
+                app.set_streaming(true);
+                engine.reset_abort();
+                spawn_engine_query(
+                    engine.clone(),
+                    if prompt.trim().is_empty() {
+                        text
+                    } else {
+                        prompt
+                    },
+                    engine_tx.clone(),
+                );
+            }
+        }
+    } else {
+        app.add_message(create_user_message(&text));
+        app.set_streaming(true);
+        engine.reset_abort();
+        spawn_engine_query(engine.clone(), text, engine_tx.clone());
+    }
+
+    false
 }

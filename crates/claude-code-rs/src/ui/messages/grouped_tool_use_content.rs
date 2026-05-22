@@ -18,7 +18,7 @@ pub fn render_grouped_tool_use_lines(
     if view.count == 0 {
         return Vec::new();
     }
-    let mut status = format!("{} {} calls", view.count, view.tool_name);
+    let mut status = format!("  ● {} {} calls", view.count, view.tool_name);
     if view.error_count > 0 {
         status.push_str(&format!(" · {} failed", view.error_count));
     } else if view.resolved_count >= view.count {

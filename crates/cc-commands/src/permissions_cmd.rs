@@ -305,16 +305,24 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
         )));
     }
 
-    let requested = PermissionMode::parse(parts[0]);
-    let confirmed = parts[1..]
+    let confirmed = parts
         .iter()
         .any(|part| matches!(*part, "--confirm" | "--yes" | "--i-understand"));
-    if matches!(requested, PermissionMode::Default) && !parts[0].eq_ignore_ascii_case("default") {
-        return Ok(CommandResult::Output(format!(
-            "Unknown permission mode: '{}'.\nAvailable: default, auto, bypass, plan, acceptEdits, dontAsk",
-            parts[0]
-        )));
-    }
+    let mode_token = parts
+        .iter()
+        .copied()
+        .filter(|part| !matches!(*part, "--confirm" | "--yes" | "--i-understand"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let requested = match PermissionMode::parse_configured(Some(&mode_token)) {
+        Ok(mode) => mode,
+        Err(_) => {
+            return Ok(CommandResult::Output(format!(
+                "Unknown permission mode: '{}'.\nAvailable: default, ask, auto, bypass, full access, plan, acceptEdits, dontAsk",
+                mode_token
+            )));
+        }
+    };
 
     if matches!(requested, PermissionMode::Bypass)
         && !ctx
@@ -347,8 +355,8 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
     if matches!(requested, PermissionMode::Bypass) && !confirmed {
         return Ok(CommandResult::Output(
             "Bypass permissions mode skips permission prompts for potentially dangerous actions. \
-             Use only in a sandbox/container/VM you can restore.\n\
-             Confirm with: /permissions mode bypass --confirm"
+                 Use only in a sandbox/container/VM you can restore.\n\
+                 Confirm with: /permissions mode bypass --confirm"
                 .into(),
         ));
     }
@@ -738,6 +746,25 @@ mod tests {
             .execute("mode bypass --confirm", &mut ctx)
             .await
             .unwrap();
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::Bypass
+        );
+    }
+
+    #[tokio::test]
+    async fn test_permissions_mode_full_access_alias_sets_bypass() {
+        let handler = PermissionsHandler;
+        let mut ctx = test_ctx();
+        ctx.app_state
+            .tool_permission_context
+            .is_bypass_permissions_mode_available = true;
+
+        handler
+            .execute("mode full access --confirm", &mut ctx)
+            .await
+            .unwrap();
+
         assert_eq!(
             ctx.app_state.tool_permission_context.mode,
             PermissionMode::Bypass

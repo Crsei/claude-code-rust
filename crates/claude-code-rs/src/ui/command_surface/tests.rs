@@ -194,6 +194,7 @@ fn slash_command_surfaces_open_only_for_empty_interactive_commands() {
         "plugin",
         "plugins",
         "remote",
+        "resume",
         "tasks",
         "team",
     ] {
@@ -252,7 +253,7 @@ fn permissions_command_surface_routes_confirmed_safety_modes() {
     surface.handle_key(key(KeyCode::Down));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
-        CommandSurfaceOutcome::Submit("/permissions mode bypass".to_string())
+        CommandSurfaceOutcome::Submit("/permissions mode bypass --confirm".to_string())
     );
 }
 

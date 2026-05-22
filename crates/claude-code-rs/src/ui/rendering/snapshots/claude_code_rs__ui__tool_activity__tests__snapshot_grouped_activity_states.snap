@@ -1,12 +1,13 @@
 ---
 source: crates/claude-code-rs/src/ui/rendering/tool_activity.rs
+assertion_line: 409
 expression: "format!(\"## grouped\\n{}\\n\\n## transcript\\n{}\\n\\n## empty\\n{}\",\nrender_grouped_activity(&[running.clone(), failed.clone(), cancelled,\nqueued]), running.transcript_block(), render_grouped_activity(&[]))"
 ---
 ## grouped
-[running] | 12.4s | Bash(command=cargo test -p claude-code-rs) | 3/5 [██████    ] | running tests | 18 output lines
-[failed] | 900ms | Read(path=src/ui/app.rs) | error: permission denied
-[cancelled] | 0ms | unknown_tool | user interrupted
-[queued] | 0ms | Todo
+  ● Bash(command=cargo test -p claude-code-rs) | [running] | worked for 12.4s | 3/5 [██████    ] | running tests | 18 output lines
+  ● Read(path=src/ui/app.rs) | [failed] | worked for 900ms | error: permission denied
+  ● unknown_tool | [cancelled] | worked for 0ms | user interrupted
+  ● Todo | [queued] | worked for 0ms
 
 ## transcript
 tool: bash

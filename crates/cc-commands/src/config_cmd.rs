@@ -188,13 +188,14 @@ fn apply_set_in_memory(key: &str, value: &str, app_state: &mut AppState) -> Resu
             {
                 bail!("Auto mode is disabled by configuration (permissions.enableAutoMode=false).");
             }
-            s.permission_mode = Some(value.to_string());
-            s.permissions.default_mode = Some(value.to_string());
+            let canonical = mode.as_str().to_string();
+            s.permission_mode = Some(canonical.clone());
+            s.permissions.default_mode = Some(canonical.clone());
             cc_permissions::dangerous::set_permission_mode_with_auto_mode_safety(
                 &mut app_state.tool_permission_context,
                 mode,
             );
-            Ok(format!("Permission mode set to: {}", value))
+            Ok(format!("Permission mode set to: {}", canonical))
         }
         "outputStyle" | "output_style" => {
             s.output_style = Some(value.to_string());
@@ -325,10 +326,11 @@ fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) -> Result<()>
         "theme" => raw.theme = Some(value.into()),
         "verbose" => raw.verbose = Some(parse_config_bool(key, value)?),
         "permissionMode" | "permission_mode" => {
-            PermissionMode::parse_configured(Some(value))?;
-            raw.permission_mode = Some(value.into());
+            let mode = PermissionMode::parse_configured(Some(value))?;
+            let canonical = mode.as_str().to_string();
+            raw.permission_mode = Some(canonical.clone());
             let mut perms = raw.permissions.take().unwrap_or_default();
-            perms.default_mode = Some(value.into());
+            perms.default_mode = Some(canonical);
             raw.permissions = Some(perms);
         }
         "outputStyle" | "output_style" => raw.output_style = Some(value.into()),
