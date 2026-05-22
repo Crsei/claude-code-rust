@@ -49,6 +49,13 @@ fn test_agent_tool_name() {
 }
 
 #[test]
+fn test_task_tool_alias_name_and_schema() {
+    let tool = TaskAgentTool;
+    assert_eq!(tool.name(), "Task");
+    assert_eq!(tool.input_json_schema(), AgentTool.input_json_schema());
+}
+
+#[test]
 fn test_agent_user_facing_name() {
     let tool = AgentTool;
     assert_eq!(tool.user_facing_name(None), "Agent");

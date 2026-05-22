@@ -17,6 +17,7 @@ fn root_owned_base_tools() -> Tools {
     tools.extend(exec::tools());
     tools.extend([
         Arc::new(cc_engine::agent::AgentTool) as _,
+        Arc::new(cc_engine::agent::TaskAgentTool) as _,
         Arc::new(cc_engine::skill_tool::SkillTool) as _,
         Arc::new(EnterWorktreeTool) as _,
         Arc::new(ExitWorktreeTool) as _,
@@ -98,6 +99,9 @@ mod tests {
         let todo_write = tools.iter().find(|t| t.name() == "TodoWrite");
         assert!(todo_write.is_some(), "should find TodoWrite tool");
 
+        let task = tools.iter().find(|t| t.name() == "Task");
+        assert!(task.is_some(), "should find Task compatibility tool");
+
         let nonexistent = tools.iter().find(|t| t.name() == "NonExistentTool");
         assert!(nonexistent.is_none(), "should not find nonexistent tool");
     }
@@ -135,6 +139,7 @@ mod tests {
         let names = tool_names(get_tools_for_policy(ToolPolicy::Coordinator));
 
         assert!(names.contains(&"Agent".to_string()));
+        assert!(names.contains(&"Task".to_string()));
         assert!(names.contains(&"SendMessage".to_string()));
         assert!(names.contains(&"TaskList".to_string()));
         assert!(names.contains(&"TaskStop".to_string()));
@@ -153,6 +158,7 @@ mod tests {
         assert!(names.contains(&"SendMessage".to_string()));
         assert!(names.contains(&"TaskUpdate".to_string()));
         assert!(!names.contains(&"Agent".to_string()));
+        assert!(!names.contains(&"Task".to_string()));
         assert!(!names.contains(&"TeamSpawn".to_string()));
         assert!(!names.contains(&"TaskStop".to_string()));
     }
@@ -166,6 +172,7 @@ mod tests {
         assert!(names.contains(&"TaskUpdate".to_string()));
         assert!(names.contains(&"TaskOutput".to_string()));
         assert!(!names.contains(&"Agent".to_string()));
+        assert!(!names.contains(&"Task".to_string()));
         assert!(!names.contains(&"TeamSpawn".to_string()));
     }
 }

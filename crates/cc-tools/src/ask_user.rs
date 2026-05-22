@@ -238,8 +238,8 @@ mod tests {
     #[tokio::test]
     async fn test_ask_user_uses_callback_when_available() {
         let tool = AskUserQuestionTool;
-        let callback: AskUserCallback = std::sync::Arc::new(|question: String| {
-            Box::pin(async move { format!("answer for: {}", question) })
+        let callback: AskUserCallback = std::sync::Arc::new(|payload| {
+            Box::pin(async move { format!("answer for: {}", payload.question) })
         });
 
         let ctx = ToolUseContext {

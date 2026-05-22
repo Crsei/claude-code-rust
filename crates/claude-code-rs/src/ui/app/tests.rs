@@ -607,6 +607,61 @@ fn mouse_wheel_scrolls_transcript_view() {
 }
 
 #[test]
+fn mouse_wheel_over_prompt_drives_input_history() {
+    let mut app = App::new();
+    app.push_history("first".to_string());
+    app.push_history("second".to_string());
+
+    let mut terminal = Terminal::new(TestBackend::new(40, 12)).expect("terminal");
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+
+    assert_eq!(
+        send_mouse_at(&mut app, MouseEventKind::Down(MouseButton::Left), 1, 9),
+        AppAction::None
+    );
+    assert_eq!(
+        send_mouse_at(&mut app, MouseEventKind::ScrollUp, 1, 9),
+        AppAction::None
+    );
+    assert_eq!(app.prompt.input, "second");
+
+    assert_eq!(
+        send_mouse_at(&mut app, MouseEventKind::ScrollUp, 1, 9),
+        AppAction::None
+    );
+    assert_eq!(app.prompt.input, "first");
+
+    assert_eq!(
+        send_mouse_at(&mut app, MouseEventKind::ScrollDown, 1, 9),
+        AppAction::None
+    );
+    assert_eq!(app.prompt.input, "second");
+}
+
+#[test]
+fn mouse_wheel_over_messages_scrolls_history_after_prompt_focus() {
+    let mut app = App::new();
+    app.scroll_offset = 10;
+
+    let mut terminal = Terminal::new(TestBackend::new(40, 12)).expect("terminal");
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+
+    assert_eq!(
+        send_mouse_at(&mut app, MouseEventKind::Down(MouseButton::Left), 1, 9),
+        AppAction::None
+    );
+    assert_eq!(
+        send_mouse_at(&mut app, MouseEventKind::Down(MouseButton::Left), 1, 1),
+        AppAction::None
+    );
+    assert_eq!(
+        send_mouse_at(&mut app, MouseEventKind::ScrollUp, 1, 1),
+        AppAction::ScrollUp
+    );
+    assert_eq!(app.scroll_offset, 9);
+}
+
+#[test]
 fn transcript_arrow_keys_scroll_instead_of_history_fallback() {
     let mut app = App::new();
     app.view_mode = ViewMode::Transcript;
@@ -873,10 +928,14 @@ fn send_key_with_modifiers(app: &mut App, code: KeyCode, modifiers: KeyModifiers
 }
 
 fn send_mouse(app: &mut App, kind: MouseEventKind) -> AppAction {
+    send_mouse_at(app, kind, 0, 0)
+}
+
+fn send_mouse_at(app: &mut App, kind: MouseEventKind, column: u16, row: u16) -> AppAction {
     app.handle_mouse_event(MouseEvent {
         kind,
-        column: 0,
-        row: 0,
+        column,
+        row,
         modifiers: KeyModifiers::NONE,
     })
 }

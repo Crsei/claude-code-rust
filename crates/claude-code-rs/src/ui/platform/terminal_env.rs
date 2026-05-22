@@ -8,9 +8,8 @@
 //! |                             | `0` turns them off. Default is on (we already use  |
 //! |                             | them) so this is a way to opt out on terminals     |
 //! |                             | that behave badly.                                 |
-//! | `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE` | `1` turns on TUI mouse capture for wheel  |
-//! |                                    | events. Default is off so text selection  |
-//! |                                    | and terminal copy keep working.           |
+//! | `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE` | `0` turns off TUI mouse capture so native |
+//! |                                    | terminal selection/copy handles the mouse. |
 //! | `CLAUDE_CODE_DISABLE_MOUSE`        | Legacy override. `1` keeps native terminal |
 //! |                                    | mouse handling enabled.                    |
 //! | `CLAUDE_CODE_SCROLL_SPEED`  | Lines per PageUp / PageDown scroll step. Integer,  |
@@ -29,8 +28,9 @@ pub struct TerminalEnvConfig {
     /// here so users on broken terminals can turn them off.
     pub sync_updates: bool,
     /// Whether to skip crossterm mouse capture so native terminal text
-    /// selection/copy keeps working. This defaults to true; users can opt into
-    /// TUI mouse wheel / drag handling with `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE=1`.
+    /// selection/copy keeps working. This defaults to false so the TUI can
+    /// route wheel events by pane; users can opt out with
+    /// `CLAUDE_CODE_DISABLE_MOUSE=1` or `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE=0`.
     pub disable_mouse: bool,
     /// Lines per scroll step for PageUp / PageDown and related keys.
     pub scroll_speed: u16,
@@ -40,7 +40,7 @@ impl Default for TerminalEnvConfig {
     fn default() -> Self {
         Self {
             sync_updates: true,
-            disable_mouse: true,
+            disable_mouse: false,
             scroll_speed: Self::DEFAULT_SCROLL_SPEED,
         }
     }
@@ -199,7 +199,7 @@ mod tests {
     fn defaults_are_sensible() {
         let cfg = TerminalEnvConfig::default();
         assert!(cfg.sync_updates);
-        assert!(cfg.disable_mouse);
+        assert!(!cfg.disable_mouse);
         assert_eq!(cfg.scroll_speed, TerminalEnvConfig::DEFAULT_SCROLL_SPEED);
         assert!(TerminalEnvConfig::DISABLE_MOUSE_RUNTIME_SUPPORTED);
     }
@@ -236,6 +236,19 @@ mod tests {
             assert!(
                 !cfg.disable_mouse,
                 "value {:?} should enable mouse capture",
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn enable_mouse_capture_false_disables_mouse_events() {
+        for value in ["0", "false", "NO", "off"] {
+            let cfg =
+                TerminalEnvConfig::from_iter(vec![("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", value)]);
+            assert!(
+                cfg.disable_mouse,
+                "value {:?} should disable mouse capture",
                 value
             );
         }

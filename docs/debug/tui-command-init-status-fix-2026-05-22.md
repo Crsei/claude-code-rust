@@ -125,9 +125,18 @@ API error provider=anthropic status=403 type=new_api_error: 用户额度不足
 - 消息选择模式现在会从 assistant 文本、tool result 文本和 connector 文本中提取代码路径引用，支持 `path=...`、普通相对路径和可选 `:line` 行号。
 - 选中包含代码路径的消息后按 `o` 会通过 `$VISUAL` 或 `$EDITOR` 打开对应文件；`code`/`code-insiders`/`codium` 使用 `-g path:line`，常见终端编辑器使用 `+line path`。
 - 选中消息的 header 显示 `o open`，和已有复制动作一起作为消息动作入口。
-- TUI 默认不再启用 mouse capture，终端原生选择和复制对话内容可直接使用；需要恢复 TUI 鼠标捕获时设置 `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE=1`，旧的 `CLAUDE_CODE_DISABLE_MOUSE=0` 仍可显式启用。
+- TUI 默认启用 mouse capture 以支持滚轮和滚动条；需要终端原生拖选时设置 `CLAUDE_CODE_DISABLE_MOUSE=1` 或 `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE=0`，部分终端仍可用 Shift+拖选临时绕过应用鼠标捕获。
 - 工具/任务展示统一以缩进后的 `●` 开始，避免和正文混在同一视觉层级。
 - 工具 compact line、后台任务行、任务 header 和回合结束消息都会显示 `worked for ...`，便于确认本轮或单个任务的运行耗时。
+
+### 鼠标区域焦点与 subagent Task 兼容
+
+- App 在每次 render 时记录当前聊天历史区域和 prompt 输入框区域。
+- 鼠标点击输入框后，或者滚轮事件直接落在输入框区域时，滚轮上/下会调用 prompt history previous/next，展示历史输入内容。
+- 鼠标点击聊天历史区域后，或者滚轮事件直接落在聊天历史区域时，滚轮上/下会滚动 session 历史消息。
+- 保留 transcript/focus 模式原有滚动路径；prompt 历史滚轮只在 prompt view 且输入框 active 时生效。
+- Agent 工具新增上游兼容别名 `Task`，注册到默认工具池和 coordinator 工具池。模型在聊天框中按 Claude Code 上游习惯调用 `Task` 时，会复用 cc-rust 现有 `AgentTool` subagent runtime，不再因 `tool not found: Task` 显示调用失败。
+- `Task` 别名复用 `Agent` 的 schema、校验、权限检查和执行逻辑；worker/teammate policy 仍不暴露 `Agent`/`Task` 生成子 agent，避免递归 spawn 面扩大。
 
 ## 主要代码落点
 
@@ -148,7 +157,9 @@ API error provider=anthropic status=403 type=new_api_error: 用户额度不足
 - 消息动作与默认快捷键：`crates/claude-code-rs/src/ui/app/input.rs`、`crates/cc-keybindings/src/defaults.rs`
 - 路径打开实现：`crates/claude-code-rs/src/ui/tui/export.rs`、`crates/claude-code-rs/src/ui/tui.rs`
 - 终端选择/复制默认策略：`crates/claude-code-rs/src/ui/platform/terminal_env.rs`
+- 鼠标区域焦点与滚轮路由：`crates/claude-code-rs/src/ui/app.rs`、`crates/claude-code-rs/src/ui/app/input.rs`、`crates/claude-code-rs/src/ui/app/render.rs`
 - 任务 bullet 与耗时：`crates/claude-code-rs/src/ui/messages/assistant_tool_use_message.rs`、`crates/claude-code-rs/src/ui/messages/grouped_tool_use_content.rs`、`crates/claude-code-rs/src/ui/rendering/tool_activity.rs`、`crates/claude-code-rs/src/ui/tasks/background_task.rs`、`crates/claude-code-rs/src/ui/tasks/task_status_utils.rs`、`crates/claude-code-rs/src/ui/tui/engine_events.rs`
+- subagent `Task` 兼容别名：`crates/cc-engine/src/agent/mod.rs`、`crates/cc-engine/src/agent/tool_impl.rs`、`crates/start-up/src/tool_registry.rs`、`crates/cc-tools/src/registry.rs`
 
 ## 验证计划
 
@@ -199,6 +210,18 @@ cargo test -p claude-code-rs messages_action_opens_code_path_from_assistant_text
 cargo test -p claude-code-rs enable_mouse_capture_opts_into_mouse_events -- --nocapture
 cargo build --workspace --release
 git diff --check
+```
+
+本轮鼠标区域焦点和 subagent `Task` 兼容修复已执行并通过：
+
+```bash
+cargo fmt --all --check
+cargo test -p claude-code-rs mouse_wheel -- --nocapture
+cargo test -p claude-code-rs enable_mouse_capture -- --nocapture
+cargo test -p cc-engine test_task_tool_alias_name_and_schema -- --nocapture
+cargo test -p cc-startup test_find_tool_by_name -- --nocapture
+cargo test -p cc-startup coordinator_policy_exposes_only_lead_orchestration_tools -- --nocapture
+cargo test -p cc-tools coordinator_policy_is_lead_only -- --nocapture
 ```
 
 修复完成后需要检查新增 warning，并处理所有由本次改动引入的未使用项或 dead code。

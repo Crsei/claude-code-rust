@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::types::message::AssistantMessage;
 use crate::types::tool::*;
 
-use super::{resolve_model_alias, AgentInput, AgentTool, MAX_AGENT_DEPTH};
+use super::{resolve_model_alias, AgentInput, AgentTool, TaskAgentTool, MAX_AGENT_DEPTH};
 
 #[async_trait]
 impl Tool for AgentTool {
@@ -310,6 +310,66 @@ and return exactly the information you need.\n\
 
     fn max_result_size_chars(&self) -> usize {
         200_000
+    }
+}
+
+#[async_trait]
+impl Tool for TaskAgentTool {
+    fn name(&self) -> &str {
+        "Task"
+    }
+
+    async fn description(&self, input: &Value) -> String {
+        AgentTool.description(input).await
+    }
+
+    fn input_json_schema(&self) -> Value {
+        AgentTool.input_json_schema()
+    }
+
+    fn is_concurrency_safe(&self, input: &Value) -> bool {
+        AgentTool.is_concurrency_safe(input)
+    }
+
+    async fn validate_input(&self, input: &Value, ctx: &ToolUseContext) -> ValidationResult {
+        AgentTool.validate_input(input, ctx).await
+    }
+
+    async fn check_permissions(&self, input: &Value, ctx: &ToolUseContext) -> PermissionResult {
+        AgentTool.check_permissions(input, ctx).await
+    }
+
+    fn backfill_observable_input(&self, input: &mut serde_json::Map<String, Value>) {
+        AgentTool.backfill_observable_input(input);
+    }
+
+    async fn call(
+        &self,
+        input: Value,
+        ctx: &ToolUseContext,
+        parent: &AssistantMessage,
+        on_progress: Option<Box<dyn Fn(ToolProgress) + Send + Sync>>,
+    ) -> Result<ToolResult> {
+        AgentTool.call(input, ctx, parent, on_progress).await
+    }
+
+    async fn prompt(&self) -> String {
+        AgentTool.prompt().await
+    }
+
+    fn user_facing_name(&self, input: Option<&Value>) -> String {
+        if let Some(desc) = input
+            .and_then(|v| v.get("description"))
+            .and_then(|v| v.as_str())
+        {
+            format!("Task({desc})")
+        } else {
+            "Task".to_string()
+        }
+    }
+
+    fn max_result_size_chars(&self) -> usize {
+        AgentTool.max_result_size_chars()
     }
 }
 

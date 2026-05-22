@@ -31,6 +31,8 @@ impl App {
             return;
         }
         self.session_scrollbar = None;
+        self.message_area = None;
+        self.prompt_area = None;
 
         if self.workspace_trust_pending {
             render_workspace_trust_prompt(
@@ -140,6 +142,7 @@ impl App {
 
         let message_area = chunks[0];
         let bottom_area = chunks[1];
+        self.message_area = Some(message_area);
 
         if self.show_welcome {
             // Welcome screen
@@ -215,6 +218,7 @@ impl App {
         // Bottom area: spinner + suggestions + paste_notice + input + completion_popup + palette + arg_help + notification + agent_footer + status
         let has_suggestions = suggestion_height > 0;
         let bottom_chunks = bottom_pane.split(bottom_area);
+        self.prompt_area = Some(bottom_chunks.input);
 
         if self.is_streaming && bottom_chunks.spinner.height > 0 {
             self.spinner_state
@@ -474,6 +478,8 @@ impl App {
         .split(size);
 
         let body_area = rows[1];
+        self.message_area = Some(body_area);
+        self.prompt_area = None;
 
         // Ensure the virtual-scroll cache matches the body width. Sharing
         // `vscroll` with prompt mode is fine because both invalidate on

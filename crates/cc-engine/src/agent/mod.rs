@@ -35,6 +35,13 @@ use cc_ipc_protocol::subsystem_types::{
 /// AgentTool — spawns subagent instances to handle complex tasks.
 pub struct AgentTool;
 
+/// Upstream-compatible alias for [`AgentTool`].
+///
+/// Claude Code's TypeScript surface exposes this capability as `Task`; cc-rust
+/// historically exposed it as `Agent`. Keeping both names lets providers that
+/// emit the upstream name still execute the same subagent runtime.
+pub struct TaskAgentTool;
+
 #[derive(Deserialize)]
 struct AgentInput {
     /// The task/prompt for the subagent to execute.

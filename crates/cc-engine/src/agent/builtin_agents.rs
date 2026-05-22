@@ -268,6 +268,7 @@ mod tests {
         assert!(worker.tools.contains(&"SendMessage".to_string()));
         assert!(worker.tools.contains(&"TaskUpdate".to_string()));
         assert!(!worker.tools.contains(&"Agent".to_string()));
+        assert!(!worker.tools.contains(&"Task".to_string()));
         assert!(!worker.tools.contains(&"TeamSpawn".to_string()));
     }
 }

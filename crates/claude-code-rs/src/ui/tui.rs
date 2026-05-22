@@ -45,7 +45,7 @@ use commands::{query_prompt_text, try_execute_command, CmdAction};
 use engine_events::{
     create_user_message, handle_sdk_message, handle_tool_progress, install_tui_ask_user_callback,
     install_tui_permission_callback, install_tui_permission_event_callback,
-    install_tui_tool_progress_callback, now_ts, permission_choice_to_response, spawn_engine_query,
+    install_tui_tool_progress_callback, permission_choice_to_response, spawn_engine_query,
     EngineEvent, StreamingState,
 };
 use export::{export_to_editor, open_reference_in_editor};
@@ -54,12 +54,12 @@ use subsystem_events::{
 };
 use terminal_guard::TerminalGuard;
 
+use crate::ui::messages::user_text_message::CONVERSATION_INTERRUPTED_MESSAGE;
 use cc_engine::lifecycle::QueryEngine;
 use cc_ipc::subsystem_events::SubsystemEventBus;
 use cc_ipc_protocol::BackendMessage;
 use cc_types::agent_channel::AgentIpcEvent;
 use cc_types::agent_events::AgentCommand;
-use cc_types::message::{InfoLevel, Message, SystemMessage, SystemSubtype};
 
 use super::app::{app_event::AppEvent, app_event_sender, App, AppAction};
 use super::notifications::in_app::{InAppNotification, NotificationPriority, NotificationTone};
@@ -448,14 +448,7 @@ pub async fn run_tui(
                             AppAction::Abort => {
                                 engine.abort();
                                 app.set_streaming(false);
-                                app.add_message(Message::System(SystemMessage {
-                                    uuid: uuid::Uuid::new_v4(),
-                                    timestamp: now_ts(),
-                                    subtype: SystemSubtype::Informational {
-                                        level: InfoLevel::Warning,
-                                    },
-                                    content: "Aborted by user".to_string(),
-                                }));
+                                app.add_message(create_user_message(CONVERSATION_INTERRUPTED_MESSAGE));
                             }
                             AppAction::Quit => {
                                 debug!("TUI: quit requested");

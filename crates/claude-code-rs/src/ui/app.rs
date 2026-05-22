@@ -81,6 +81,12 @@ struct SessionScrollbarState {
     total_lines: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MouseFocus {
+    Messages,
+    Prompt,
+}
+
 fn notification_from_app_event(
     key: String,
     message: String,
@@ -205,6 +211,12 @@ pub struct App {
     /// Last rendered session scrollbar, used for mouse click/drag control.
     session_scrollbar: Option<SessionScrollbarState>,
     session_scrollbar_dragging: bool,
+    /// Last rendered chat history area, used to route mouse wheel events.
+    message_area: Option<Rect>,
+    /// Last rendered prompt input area, used to route mouse wheel events.
+    prompt_area: Option<Rect>,
+    /// Area the user last clicked, so wheel events keep affecting that pane.
+    mouse_focus: MouseFocus,
     /// Dirty flag; when false, the TUI skips `terminal.draw()`.
     dirty: bool,
     /// Tick counter for throttling spinner frame advances.
@@ -303,6 +315,9 @@ impl App {
             vscroll: VirtualScroll::new(),
             session_scrollbar: None,
             session_scrollbar_dragging: false,
+            message_area: None,
+            prompt_area: None,
+            mouse_focus: MouseFocus::Messages,
             dirty: true,
             tick_counter: 0,
             keybindings: KeybindingRegistry::with_defaults(),

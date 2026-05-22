@@ -96,6 +96,75 @@ fn render_waiting_for_permission(tool_name: &str) -> String {
     format!("  ● {tool_name} (waiting for permission...)")
 }
 
+fn render_shell_tool_use_message(
+    tool_name: &str,
+    input: &str,
+    state: ToolUseState,
+    has_hook_progress: bool,
+) -> Option<String> {
+    if !matches!(tool_name, "Bash" | "PowerShell") {
+        return None;
+    }
+
+    let call = shell_tool_call_summary(tool_name, input)?;
+    let title = match state {
+        ToolUseState::Queued => "Queued",
+        ToolUseState::InProgress => "Running",
+        ToolUseState::Resolved => "Ran",
+        ToolUseState::Error => "Failed [error]",
+        ToolUseState::WaitingForPermission => "Needs permission",
+        ToolUseState::ClassifierChecking => "Checking",
+    };
+    let hook_suffix = if has_hook_progress {
+        " [hook running]"
+    } else {
+        ""
+    };
+    Some(format!("  ● {title}{hook_suffix}\n   ⎿  {call}"))
+}
+
+fn shell_tool_call_summary(tool_name: &str, input: &str) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(input.trim()).ok()?;
+    let object = value.as_object()?;
+    let mut parts = Vec::new();
+
+    if let Some(description) = object
+        .get("description")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        parts.push(format_shell_tool_arg(description));
+    }
+
+    if let Some(command) = object
+        .get("command")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        parts.push(format_shell_tool_arg(command));
+    }
+
+    (!parts.is_empty()).then(|| format!("{tool_name}({})", parts.join(", ")))
+}
+
+fn format_shell_tool_arg(value: &str) -> String {
+    const MAX_CHARS: usize = 96;
+    let single_line = value.replace('\n', "\\n");
+    if single_line.chars().count() <= MAX_CHARS {
+        single_line
+    } else {
+        format!(
+            "{}...",
+            single_line
+                .chars()
+                .take(MAX_CHARS.saturating_sub(3))
+                .collect::<String>()
+        )
+    }
+}
+
 /// Render the main tool-use message for a given state.
 ///
 /// `tool_name`: the name of the tool (e.g. "Bash", "Read", "Edit")
@@ -103,7 +172,7 @@ fn render_waiting_for_permission(tool_name: &str) -> String {
 /// `state`: current lifecycle state of the tool use
 /// `has_hook_progress`: whether a hook is currently running for this tool
 ///
-/// Returns a single-line string representation.
+/// Returns a string representation, possibly with continuation lines.
 pub fn render_assistant_tool_use_message(
     tool_name: &str,
     input: &str,
@@ -111,6 +180,12 @@ pub fn render_assistant_tool_use_message(
     has_hook_progress: bool,
     _theme: &Theme,
 ) -> String {
+    if let Some(rendered) =
+        render_shell_tool_use_message(tool_name, input, state, has_hook_progress)
+    {
+        return rendered;
+    }
+
     // Build summary from the tool input.
     let activity = ToolActivity::from_tool_use(tool_name, input, ToolState::Running);
     let input_summary = activity.display_call();
@@ -191,6 +266,18 @@ mod tests {
     }
 
     #[test]
+    fn bash_renders_ran_block_with_description_before_command() {
+        let result = render_assistant_tool_use_message(
+            "Bash",
+            r#"{"command":"cargo test","description":"Run Rust tests"}"#,
+            ToolUseState::Resolved,
+            false,
+            &Theme::default(),
+        );
+        assert_eq!(result, "  ● Ran\n   ⎿  Bash(Run Rust tests, cargo test)");
+    }
+
+    #[test]
     fn resolved_transparent_wrapper_keeps_completion_marker() {
         let result = render_assistant_tool_use_message(
             "Bash",
@@ -199,7 +286,7 @@ mod tests {
             false,
             &Theme::default(),
         );
-        assert_eq!(result, "  ● Bash");
+        assert_eq!(result, "  ● Ran\n   ⎿  Bash(ls)");
     }
 
     #[test]

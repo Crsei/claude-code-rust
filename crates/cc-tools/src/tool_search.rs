@@ -674,7 +674,7 @@ fn infer_tool_category(source: ToolSearchSource, name: &str, tool: &dyn Tool) ->
         "EnterPlanMode" | "ExitPlanMode" => "planning",
         "TodoWrite" | "TaskCreate" | "TaskGet" | "TaskUpdate" | "TaskList" | "TaskStop"
         | "TaskOutput" => "tasks",
-        "Agent" | "TeamSpawn" | "SendMessage" => "agent",
+        "Agent" | "Task" | "TeamSpawn" | "SendMessage" => "agent",
         "LSP" => "lsp",
         "SystemStatus" | "Config" | "StructuredOutput" | "AskUserQuestion" => "system",
         "Skill" => "skill",
@@ -714,7 +714,7 @@ fn aliases_for_tool(name: &str, display_name: &str, source: ToolSearchSource) ->
             "Grep" => vec!["search files", "regex", "content search"],
             "WebFetch" => vec!["fetch url", "open webpage", "download page", "browse url"],
             "WebSearch" => vec!["internet search", "search web", "latest information"],
-            "Agent" => vec!["subagent", "delegate", "background agent", "task agent"],
+            "Agent" | "Task" => vec!["subagent", "delegate", "background agent", "task agent"],
             "Skill" => vec!["workflow", "slash skill", "skill invocation"],
             "ToolSearch" => vec!["discover tools", "search tools", "tool retrieval"],
             "LSP" => vec!["language server", "diagnostics", "definition", "symbols"],

@@ -20,6 +20,8 @@ pub enum UserTextRendered {
 /// Special messages that indicate no content.
 const NO_CONTENT_MESSAGE: &str = "[NO_CONTENT]";
 const INTERRUPT_MESSAGE: &str = "[Request interrupted by user]";
+pub const CONVERSATION_INTERRUPTED_MESSAGE: &str =
+    "■ Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.";
 
 /// Route a user text message to the appropriate rendering path.
 ///
@@ -33,6 +35,9 @@ pub fn route_user_text(text: &str) -> UserTextRendered {
     }
 
     // 2. Interrupt message (check early since it's common)
+    if trimmed == CONVERSATION_INTERRUPTED_MESSAGE {
+        return UserTextRendered::Rendered(CONVERSATION_INTERRUPTED_MESSAGE.to_string());
+    }
     if trimmed.contains(INTERRUPT_MESSAGE) {
         return UserTextRendered::Rendered("[Request interrupted by user]".to_string());
     }
@@ -130,6 +135,14 @@ mod tests {
     fn interrupt_message_rendered() {
         match route_user_text("[Request interrupted by user]") {
             UserTextRendered::Rendered(s) => assert_eq!(s, "[Request interrupted by user]"),
+            _ => panic!("expected Rendered"),
+        }
+    }
+
+    #[test]
+    fn conversation_interrupted_message_rendered() {
+        match route_user_text(CONVERSATION_INTERRUPTED_MESSAGE) {
+            UserTextRendered::Rendered(s) => assert_eq!(s, CONVERSATION_INTERRUPTED_MESSAGE),
             _ => panic!("expected Rendered"),
         }
     }
@@ -247,5 +260,11 @@ mod tests {
     fn render_interrupt_returns_formatted() {
         let result = render_user_text_message("[Request interrupted by user]", &Theme::default());
         assert_eq!(result, "[Request interrupted by user]");
+    }
+
+    #[test]
+    fn render_conversation_interrupted_returns_formatted() {
+        let result = render_user_text_message(CONVERSATION_INTERRUPTED_MESSAGE, &Theme::default());
+        assert_eq!(result, CONVERSATION_INTERRUPTED_MESSAGE);
     }
 }

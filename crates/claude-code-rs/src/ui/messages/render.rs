@@ -25,7 +25,7 @@ use crate::ui::messages::user_bash_output_message::{
     render_user_bash_output_message_with_options, ShellOutputRenderOptions,
 };
 use crate::ui::messages::user_text_message::{
-    render_user_text_message, route_user_text, UserTextRendered,
+    render_user_text_message, route_user_text, UserTextRendered, CONVERSATION_INTERRUPTED_MESSAGE,
 };
 use crate::ui::messages::user_tool_result_message::user_tool_result_message::render_user_tool_result_message;
 use crate::ui::messages::user_tool_result_message::utils::{
@@ -1195,6 +1195,7 @@ fn user_message_uses_background(user: &cc_types::message::UserMessage) -> bool {
     };
     let trimmed = content_text.trim();
     if trimmed == "[Request interrupted by user]"
+        || trimmed == CONVERSATION_INTERRUPTED_MESSAGE
         || trimmed.starts_with("<bash-stdout")
         || trimmed.starts_with("<bash-stderr")
     {
@@ -1474,6 +1475,12 @@ fn render_user_message<'a>(
             theme.warning,
         ))];
     }
+    if content_text.trim() == CONVERSATION_INTERRUPTED_MESSAGE {
+        return vec![Line::from(Span::styled(
+            CONVERSATION_INTERRUPTED_MESSAGE,
+            theme.warning,
+        ))];
+    }
 
     let routed = render_user_text_message(&content_text, theme);
     if routed.is_empty() {
@@ -1722,6 +1729,7 @@ fn render_assistant_message<'a>(
     let mut lines = Vec::new();
 
     let mut first_block = true;
+    let mut previous_block_was_tool_use = false;
 
     for block in &msg.content {
         match block {
@@ -1729,10 +1737,14 @@ fn render_assistant_message<'a>(
                 // If this is an API error message, use error classification
                 // instead of standard markdown rendering.
                 if msg.is_api_error_message {
+                    if previous_block_was_tool_use {
+                        lines.push(Line::default());
+                    }
                     let error_text = api_error_display_text(text);
                     let style = theme.error;
                     lines.push(Line::from(Span::styled(error_text, style)));
                     first_block = false;
+                    previous_block_was_tool_use = false;
                     continue;
                 }
                 let md_lines = markdown_to_lines(text, theme);
@@ -1741,11 +1753,15 @@ fn render_assistant_message<'a>(
                         lines.push(Line::default());
                     }
                 } else {
+                    if previous_block_was_tool_use {
+                        lines.push(Line::default());
+                    }
                     for md_line in md_lines {
                         lines.push(md_line);
                     }
                 }
                 first_block = false;
+                previous_block_was_tool_use = false;
             }
 
             ContentBlock::ConnectorText { connector_text, .. } => {
@@ -1755,47 +1771,51 @@ fn render_assistant_message<'a>(
                         lines.push(Line::default());
                     }
                 } else {
+                    if previous_block_was_tool_use {
+                        lines.push(Line::default());
+                    }
                     for md_line in md_lines {
                         lines.push(md_line);
                     }
                 }
                 first_block = false;
+                previous_block_was_tool_use = false;
             }
 
             ContentBlock::ToolUse { id, name, input } => {
+                if !first_block {
+                    lines.push(Line::default());
+                }
                 let input_json = serde_json::to_string(input).unwrap_or_else(|_| input.to_string());
                 let state = tool_state_for_id(id, render_context);
                 let rendered =
                     render_assistant_tool_use_message(name, &input_json, state, false, theme);
-                for (i, line) in rendered.lines().enumerate() {
+                for line in rendered.lines() {
                     lines.push(Line::from(vec![
-                        Span::raw(if first_block && i == 0 {
-                            ""
-                        } else {
-                            "        "
-                        }),
+                        Span::raw(if first_block { "" } else { "        " }),
                         Span::styled(line.to_string(), theme.tool_name),
                     ]));
                 }
                 first_block = false;
+                previous_block_was_tool_use = true;
             }
 
             ContentBlock::ServerToolUse { id, name, input } => {
+                if !first_block {
+                    lines.push(Line::default());
+                }
                 let input_json = serde_json::to_string(input).unwrap_or_else(|_| input.to_string());
                 let state = tool_state_for_id(id, render_context);
                 let rendered =
                     render_assistant_tool_use_message(name, &input_json, state, false, theme);
-                for (i, line) in rendered.lines().enumerate() {
+                for line in rendered.lines() {
                     lines.push(Line::from(vec![
-                        Span::raw(if first_block && i == 0 {
-                            ""
-                        } else {
-                            "        "
-                        }),
+                        Span::raw(if first_block { "" } else { "        " }),
                         Span::styled(format!("server: {line}"), theme.tool_name),
                     ]));
                 }
                 first_block = false;
+                previous_block_was_tool_use = true;
             }
 
             ContentBlock::ToolResult {
@@ -1803,6 +1823,9 @@ fn render_assistant_message<'a>(
                 content,
                 is_error,
             } => {
+                if previous_block_was_tool_use {
+                    lines.push(Line::default());
+                }
                 let style = if *is_error {
                     theme.error
                 } else {
@@ -1848,6 +1871,7 @@ fn render_assistant_message<'a>(
                     ]));
                 }
                 first_block = false;
+                previous_block_was_tool_use = false;
             }
 
             ContentBlock::Thinking {
@@ -1862,6 +1886,9 @@ fn render_assistant_message<'a>(
                     },
                     theme,
                 );
+                if previous_block_was_tool_use && !thinking_lines.is_empty() {
+                    lines.push(Line::default());
+                }
                 for (i, line) in thinking_lines.into_iter().enumerate() {
                     if first_block && i == 0 {
                         lines.push(line);
@@ -1875,11 +1902,15 @@ fn render_assistant_message<'a>(
                     && (render_context.options.verbose || render_context.options.is_transcript_mode)
                 {
                     first_block = false;
+                    previous_block_was_tool_use = false;
                 }
             }
 
             ContentBlock::RedactedThinking { .. } => {
                 if render_context.options.verbose || render_context.options.is_transcript_mode {
+                    if previous_block_was_tool_use {
+                        lines.push(Line::default());
+                    }
                     for (i, line) in crate::ui::messages::assistant_redacted_thinking_message::render_assistant_redacted_thinking_lines(theme).into_iter().enumerate() {
                         if first_block && i == 0 {
                             lines.push(line);
@@ -1890,15 +1921,20 @@ fn render_assistant_message<'a>(
                         }
                     }
                     first_block = false;
+                    previous_block_was_tool_use = false;
                 }
             }
 
             ContentBlock::Image { source } => {
+                if previous_block_was_tool_use {
+                    lines.push(Line::default());
+                }
                 lines.push(Line::from(vec![
                     Span::raw(if first_block { "" } else { "        " }),
                     Span::styled(image_reference(source), theme.dim),
                 ]));
                 first_block = false;
+                previous_block_was_tool_use = false;
             }
         }
     }
@@ -2315,7 +2351,10 @@ fn compact_boundary_summary(subtype: &SystemSubtype, prefix: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{message_copy_text, message_primary_reference, render_single_message};
+    use super::{
+        message_copy_text, message_primary_reference, render_single_message,
+        CONVERSATION_INTERRUPTED_MESSAGE,
+    };
     use crate::ui::diff::file_edit_diff::unified_hunk_lines_from_edit;
     use crate::ui::theme::Theme;
     use crate::ui::virtual_scroll::VirtualScroll;
@@ -2441,6 +2480,150 @@ mod tests {
             lines_to_text(render_single_message(&interrupted, &theme)),
             "Interrupted by user"
         );
+
+        let interrupted = Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 0,
+            role: "user".to_string(),
+            content: MessageContent::Text(CONVERSATION_INTERRUPTED_MESSAGE.to_string()),
+            is_meta: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+        });
+        assert_eq!(
+            lines_to_text(render_single_message(&interrupted, &theme)),
+            CONVERSATION_INTERRUPTED_MESSAGE
+        );
+    }
+
+    #[test]
+    fn assistant_bash_tool_use_renders_ran_block_with_description_and_command() {
+        let tool_use_id = "toolu_bash".to_string();
+        let assistant = Message::Assistant(AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 1_700_000_000,
+            role: "assistant".to_string(),
+            content: vec![ContentBlock::ToolUse {
+                id: tool_use_id.clone(),
+                name: "Bash".to_string(),
+                input: json!({
+                    "description": "Run Rust tests",
+                    "command": "cargo test",
+                }),
+            }],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        });
+        let result = Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 1_700_000_001,
+            role: "user".to_string(),
+            content: MessageContent::Blocks(vec![ContentBlock::ToolResult {
+                tool_use_id,
+                content: ToolResultContent::Text("ok".to_string()),
+                is_error: false,
+            }]),
+            is_meta: true,
+            tool_use_result: Some("ok".to_string()),
+            source_tool_assistant_uuid: None,
+        });
+        let context =
+            super::build_message_render_context(&[assistant.clone(), result], None, false);
+
+        let rendered = lines_to_text(super::render_single_message_with_context(
+            &assistant,
+            0,
+            &Theme::default(),
+            80,
+            &context,
+        ));
+
+        assert_eq!(rendered, "  ● Ran\n   ⎿  Bash(Run Rust tests, cargo test)");
+    }
+
+    #[test]
+    fn assistant_tool_tasks_are_spaced_from_each_other_and_dialogue() {
+        let first_tool_id = "toolu_bash".to_string();
+        let second_tool_id = "toolu_read".to_string();
+        let assistant = Message::Assistant(AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 1_700_000_000,
+            role: "assistant".to_string(),
+            content: vec![
+                ContentBlock::Text {
+                    text: "before".to_string(),
+                },
+                ContentBlock::ToolUse {
+                    id: first_tool_id.clone(),
+                    name: "Bash".to_string(),
+                    input: json!({"command": "cargo test"}),
+                },
+                ContentBlock::ToolUse {
+                    id: second_tool_id.clone(),
+                    name: "Read".to_string(),
+                    input: json!({"file_path": "src/main.rs"}),
+                },
+                ContentBlock::Text {
+                    text: "after".to_string(),
+                },
+            ],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        });
+        let result = Message::User(UserMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 1_700_000_001,
+            role: "user".to_string(),
+            content: MessageContent::Blocks(vec![
+                ContentBlock::ToolResult {
+                    tool_use_id: first_tool_id,
+                    content: ToolResultContent::Text("ok".to_string()),
+                    is_error: false,
+                },
+                ContentBlock::ToolResult {
+                    tool_use_id: second_tool_id,
+                    content: ToolResultContent::Text("ok".to_string()),
+                    is_error: false,
+                },
+            ]),
+            is_meta: true,
+            tool_use_result: Some("ok".to_string()),
+            source_tool_assistant_uuid: None,
+        });
+        let context =
+            super::build_message_render_context(&[assistant.clone(), result], None, false);
+
+        let rendered = super::render_single_message_with_context(
+            &assistant,
+            0,
+            &Theme::default(),
+            80,
+            &context,
+        );
+        let plain = rendered
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(plain[0], "before");
+        assert!(plain[1].is_empty(), "dialogue and first task need a gap");
+        assert!(plain[2].contains("● Ran"));
+        assert!(plain[3].contains("⎿  Bash(cargo test)"));
+        assert!(plain[4].is_empty(), "two task bullets need a gap");
+        assert!(plain[5].contains("● Read"));
+        assert!(plain[6].is_empty(), "last task and dialogue need a gap");
+        assert_eq!(plain[7], "after");
     }
 
     #[test]

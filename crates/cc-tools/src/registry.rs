@@ -71,6 +71,7 @@ pub fn allowed_tool_names(policy: ToolPolicy) -> Option<&'static [&'static str]>
         ToolPolicy::DefaultAgent => None,
         ToolPolicy::Coordinator => Some(&[
             "Agent",
+            "Task",
             "SendMessage",
             "TaskList",
             "TaskStop",
@@ -204,11 +205,13 @@ mod tests {
     fn default_policy_allows_all_tools() {
         assert!(tool_allowed(ToolPolicy::DefaultAgent, "Bash"));
         assert!(tool_allowed(ToolPolicy::DefaultAgent, "Agent"));
+        assert!(tool_allowed(ToolPolicy::DefaultAgent, "Task"));
     }
 
     #[test]
     fn coordinator_policy_is_lead_only() {
         assert!(tool_allowed(ToolPolicy::Coordinator, "Agent"));
+        assert!(tool_allowed(ToolPolicy::Coordinator, "Task"));
         assert!(tool_allowed(ToolPolicy::Coordinator, "TaskStop"));
         assert!(!tool_allowed(ToolPolicy::Coordinator, "Bash"));
     }

@@ -1,4 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
+use ratatui::layout::Rect;
 
 use crate::ui::clipboard_paste::{normalize_pasted_path, pasted_image_format, EncodedImageFormat};
 use crate::ui::command_palette::CommandAction;
@@ -14,7 +15,7 @@ use crate::ui::slack_channel_completion::SlackChannelCompletionProvider;
 use crate::ui::transcript::ViewMode;
 use crate::ui::vim::VimAction;
 
-use super::{current_unix_secs, App, AppAction};
+use super::{current_unix_secs, App, AppAction, MouseFocus};
 
 /// Tracks the state of an active completion session.
 #[derive(Debug)]
@@ -27,6 +28,13 @@ pub struct CompletionState {
     pub active: bool,
     /// The combined completer used to compute items.
     pub completer: CombinedCompleter,
+}
+
+fn rect_contains(area: Rect, column: u16, row: u16) -> bool {
+    column >= area.x
+        && column < area.x.saturating_add(area.width)
+        && row >= area.y
+        && row < area.y.saturating_add(area.height)
 }
 
 impl CompletionState {
@@ -578,26 +586,37 @@ impl App {
     pub fn handle_mouse_event(&mut self, mouse: MouseEvent) -> AppAction {
         match mouse.kind {
             MouseEventKind::ScrollUp => {
-                if self.view_mode.is_transcript_like() {
+                if self.mouse_targets_prompt(mouse) {
+                    self.history_up();
+                    self.sync_command_palette();
+                    AppAction::None
+                } else if self.view_mode.is_transcript_like() {
                     self.scroll_transcript_up(1);
+                    AppAction::ScrollUp
                 } else {
                     self.scroll_up(1);
+                    AppAction::ScrollUp
                 }
-                AppAction::ScrollUp
             }
             MouseEventKind::ScrollDown => {
-                if self.view_mode.is_transcript_like() {
+                if self.mouse_targets_prompt(mouse) {
+                    self.history_down();
+                    self.sync_command_palette();
+                    AppAction::None
+                } else if self.view_mode.is_transcript_like() {
                     self.scroll_transcript_down(1);
+                    AppAction::ScrollDown
                 } else {
                     self.scroll_down(1);
+                    AppAction::ScrollDown
                 }
-                AppAction::ScrollDown
             }
             MouseEventKind::Down(_) => {
                 if self.mouse_on_session_scrollbar(mouse) {
                     self.session_scrollbar_dragging = true;
                     self.seek_session_scrollbar(mouse.row)
                 } else {
+                    self.update_mouse_focus(mouse);
                     AppAction::None
                 }
             }
@@ -613,6 +632,29 @@ impl App {
                 AppAction::None
             }
             _ => AppAction::None,
+        }
+    }
+
+    fn mouse_targets_prompt(&mut self, mouse: MouseEvent) -> bool {
+        self.update_mouse_focus(mouse);
+        self.view_mode == ViewMode::Prompt
+            && self.prompt.is_active
+            && self.mouse_focus == MouseFocus::Prompt
+    }
+
+    fn update_mouse_focus(&mut self, mouse: MouseEvent) {
+        if self
+            .prompt_area
+            .is_some_and(|area| rect_contains(area, mouse.column, mouse.row))
+        {
+            self.mouse_focus = MouseFocus::Prompt;
+            return;
+        }
+        if self
+            .message_area
+            .is_some_and(|area| rect_contains(area, mouse.column, mouse.row))
+        {
+            self.mouse_focus = MouseFocus::Messages;
         }
     }
 
