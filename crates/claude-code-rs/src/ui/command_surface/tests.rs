@@ -38,6 +38,34 @@ fn section(label: &str, body: String) -> String {
     format!("-- {label} --\n{body}")
 }
 
+struct EnvGuard {
+    key: &'static str,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+
+    fn unset(key: &'static str) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::remove_var(key);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => std::env::set_var(self.key, value),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
 #[test]
 fn agents_surface_switches_between_list_and_detail() {
     let mut surface = CommandSurface::Agents(AgentsSurface::new(Path::new(".")));
@@ -477,6 +505,78 @@ fn config_surface_exposes_model_theme_and_effort_pickers() {
     rendered.push(section("safety", surface.render()));
 
     insta::assert_snapshot!("config_surface_model_theme_effort", rendered.join("\n\n"));
+}
+
+#[test]
+#[serial_test::serial]
+fn config_surface_model_picker_uses_anthropic_alias_env_mapping() {
+    let _sota = EnvGuard::set("ANTHROPIC_DEFAULT_SOTA_MODEL", "deepseek-v4-pro");
+    let _mota = EnvGuard::set("ANTHROPIC_DEFAULT_MOTA_MODEL", "deepseek-v4-pro");
+    let _fota = EnvGuard::set("ANTHROPIC_DEFAULT_FOTA_MODEL", "deepseek-v4-flash");
+    let mut state = AppState {
+        main_loop_model: "deepseek-v4-pro".into(),
+        ..Default::default()
+    };
+    state.settings.api_provider = Some("anthropic".into());
+    state.settings.available_models = vec![
+        "SOTA".into(),
+        "MOTA".into(),
+        "FOTA".into(),
+        "deepseek-v4-pro".into(),
+    ];
+
+    let mut surface = CommandSurface::Config(ConfigSurface::new(&state));
+    surface.handle_key(key(KeyCode::Right));
+    let rendered = surface.render();
+
+    assert!(rendered.contains("SOTA (deepseek-v4-pro)"));
+    assert!(rendered.contains("MOTA (deepseek-v4-pro)"));
+    assert!(rendered.contains("FOTA (deepseek-v4-flash)"));
+    assert!(!rendered.contains("SOTA (gpt-5.5)"));
+}
+
+#[test]
+#[serial_test::serial]
+fn model_surface_uses_anthropic_env_mapping_without_settings_snapshot() {
+    let _sota = EnvGuard::set("ANTHROPIC_DEFAULT_SOTA_MODEL", "deepseek-v4-pro");
+    let _mota = EnvGuard::set("ANTHROPIC_DEFAULT_MOTA_MODEL", "deepseek-v4-pro");
+    let _fota = EnvGuard::set("ANTHROPIC_DEFAULT_FOTA_MODEL", "deepseek-v4-flash");
+    let state = AppState {
+        main_loop_model: "deepseek-v4-pro".into(),
+        ..Default::default()
+    };
+
+    let surface = CommandSurface::Model(ModelSurface::new(&state));
+    let rendered = surface.render();
+
+    assert!(rendered.contains("SOTA (deepseek-v4-pro)"));
+    assert!(rendered.contains("MOTA (deepseek-v4-pro)"));
+    assert!(rendered.contains("FOTA (deepseek-v4-flash)"));
+    assert!(!rendered.contains("SOTA (gpt-5.5)"));
+    assert!(rendered.contains("built-in alias"));
+}
+
+#[test]
+#[serial_test::serial]
+fn model_surface_uses_legacy_anthropic_alias_env_mapping() {
+    let _sota = EnvGuard::unset("ANTHROPIC_DEFAULT_SOTA_MODEL");
+    let _mota = EnvGuard::unset("ANTHROPIC_DEFAULT_MOTA_MODEL");
+    let _fota = EnvGuard::unset("ANTHROPIC_DEFAULT_FOTA_MODEL");
+    let _opus = EnvGuard::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "deepseek-v4-pro");
+    let _sonnet = EnvGuard::set("ANTHROPIC_DEFAULT_SONNET_MODEL", "deepseek-v4-pro");
+    let _haiku = EnvGuard::set("ANTHROPIC_DEFAULT_HAIKU_MODEL", "deepseek-v4-pro");
+    let state = AppState {
+        main_loop_model: "deepseek-v4-pro".into(),
+        ..Default::default()
+    };
+
+    let surface = CommandSurface::Model(ModelSurface::new(&state));
+    let rendered = surface.render();
+
+    assert!(rendered.contains("SOTA (deepseek-v4-pro)"));
+    assert!(rendered.contains("MOTA (deepseek-v4-pro)"));
+    assert!(rendered.contains("FOTA (deepseek-v4-pro)"));
+    assert!(!rendered.contains("SOTA (gpt-5.5)"));
 }
 
 #[test]

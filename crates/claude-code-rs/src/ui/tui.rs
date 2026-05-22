@@ -549,6 +549,9 @@ pub async fn run_tui(
                                     ),
                                 }
                             }
+                            AppAction::DebugSnapshot => {
+                                export_debug_snapshot(&mut app);
+                            }
                             // Scroll actions are handled internally by App
                             _ => {}
                         }
@@ -701,6 +704,16 @@ pub async fn run_tui(
     terminal.show_cursor()?;
 
     Ok(())
+}
+
+fn export_debug_snapshot(app: &mut App) {
+    match app.export_debug_snapshot() {
+        Ok(path) => add_system_info(
+            app,
+            &format!("TUI debug snapshot exported to {}", path.display()),
+        ),
+        Err(error) => add_system_error(app, &format!("TUI debug snapshot failed: {error}")),
+    }
 }
 
 async fn submit_prompt_to_engine(

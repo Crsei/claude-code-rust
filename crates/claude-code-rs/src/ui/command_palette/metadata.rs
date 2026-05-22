@@ -49,6 +49,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "copy" => simple_meta("/copy", &["/copy"]),
         "cost" => simple_meta("/cost", &["/cost"]),
         "daemon" => simple_meta("/daemon [status|stop]", &["/daemon status"]),
+        "debug" => simple_meta("/debug snapshot", &["/debug snapshot"]),
         "diff" => simple_meta("/diff", &["/diff"]),
         "doctor" => simple_meta("/doctor [summary|raw]", &["/doctor summary"]),
         "dream" => simple_meta("/dream [--days N]", &["/dream --days 7", "/logs"]),

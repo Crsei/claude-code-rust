@@ -20,6 +20,7 @@ pub mod coordinator;
 pub mod copy;
 pub mod cost;
 pub mod daemon_cmd;
+pub mod debug_cmd;
 pub mod diff;
 pub mod doctor;
 pub mod dream;
@@ -632,6 +633,12 @@ pub fn get_all_commands() -> Vec<Command> {
             &[],
             "Show git diff of current changes",
             diff::DiffHandler,
+        ),
+        command(
+            "debug",
+            &[],
+            "Export or inspect debug information",
+            debug_cmd::DebugHandler,
         ),
         command(
             "exit",

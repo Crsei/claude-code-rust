@@ -47,6 +47,17 @@ pub(super) async fn try_execute_command(
         return None;
     }
 
+    if is_debug_snapshot_command(trimmed) {
+        match app.export_debug_snapshot() {
+            Ok(path) => add_system_info(
+                app,
+                &format!("TUI debug snapshot exported to {}", path.display()),
+            ),
+            Err(error) => add_system_error(app, &format!("TUI debug snapshot failed: {error}")),
+        }
+        return Some(CmdAction::Handled);
+    }
+
     let dispatcher = slash_commands::DefaultCommandDispatcher::for_full_registry();
     let parsed = dispatcher.parse_command_input(trimmed)?;
     let args = parsed.args.clone();
@@ -129,6 +140,13 @@ pub(super) async fn try_execute_command(
     }
 }
 
+fn is_debug_snapshot_command(input: &str) -> bool {
+    let mut parts = input.split_whitespace();
+    matches!(parts.next(), Some("/debug"))
+        && matches!(parts.next(), Some("snapshot"))
+        && parts.next().is_none()
+}
+
 fn sync_app_runtime_from_state(
     engine: &Arc<QueryEngine>,
     app: &mut App,
@@ -205,5 +223,19 @@ fn message_content_text(content: &MessageContent) -> String {
             })
             .collect::<Vec<_>>()
             .join("\n"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_debug_snapshot_command;
+
+    #[test]
+    fn debug_snapshot_command_matches_exact_subcommand() {
+        assert!(is_debug_snapshot_command("/debug snapshot"));
+        assert!(is_debug_snapshot_command("  /debug   snapshot  "));
+        assert!(!is_debug_snapshot_command("/debug"));
+        assert!(!is_debug_snapshot_command("/debug snapshot extra"));
+        assert!(!is_debug_snapshot_command("/debug-snapshot"));
     }
 }

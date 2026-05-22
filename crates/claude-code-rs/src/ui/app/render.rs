@@ -1,3 +1,4 @@
+use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::prelude::Widget;
 use ratatui::style::{Color, Modifier, Style};
@@ -43,6 +44,7 @@ impl App {
                 &self.cwd,
                 self.workspace_trust_selection,
             );
+            self.capture_render_snapshot(frame);
             return;
         }
 
@@ -50,6 +52,7 @@ impl App {
         // before we compute the prompt-mode layout.
         if self.view_mode.is_transcript_like() {
             self.render_transcript(frame, size);
+            self.capture_render_snapshot(frame);
             return;
         }
 
@@ -321,6 +324,12 @@ impl App {
         if let Some(ref dialog) = self.bypass_permissions_mode_dialog {
             dialog.render(size, frame.buffer_mut(), &self.theme);
         }
+
+        self.capture_render_snapshot(frame);
+    }
+
+    fn capture_render_snapshot(&mut self, frame: &mut Frame) {
+        self.last_render_snapshot = Some(buffer_to_plain_text(frame.buffer_mut()));
     }
 
     fn render_suggestions(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
@@ -660,6 +669,20 @@ impl App {
         let line = Line::from(vec![Span::styled(text, self.theme.dim)]);
         buf.set_line(area.x, area.y, &line, area.width);
     }
+}
+
+fn buffer_to_plain_text(buf: &Buffer) -> String {
+    let area = buf.area;
+    let mut out = String::new();
+    for y in area.y..area.y.saturating_add(area.height) {
+        let mut line = String::new();
+        for x in area.x..area.x.saturating_add(area.width) {
+            line.push_str(buf.cell((x, y)).map(|cell| cell.symbol()).unwrap_or(" "));
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    out
 }
 
 fn notification_style(tone: NotificationTone, theme: &Theme) -> Style {

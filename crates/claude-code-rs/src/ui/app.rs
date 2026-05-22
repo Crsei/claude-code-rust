@@ -73,6 +73,7 @@ pub enum AppAction {
     ExportTranscript(String),
     CopyMessage(String),
     OpenPath(String),
+    DebugSnapshot,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -219,6 +220,8 @@ pub struct App {
     mouse_focus: MouseFocus,
     /// Dirty flag; when false, the TUI skips `terminal.draw()`.
     dirty: bool,
+    /// Last rendered terminal frame captured as plain text for debug export.
+    last_render_snapshot: Option<String>,
     /// Tick counter for throttling spinner frame advances.
     tick_counter: u32,
     keybindings: KeybindingRegistry,
@@ -319,6 +322,7 @@ impl App {
             prompt_area: None,
             mouse_focus: MouseFocus::Messages,
             dirty: true,
+            last_render_snapshot: None,
             tick_counter: 0,
             keybindings: KeybindingRegistry::with_defaults(),
             pending_chord: Vec::new(),
@@ -349,6 +353,47 @@ impl App {
 
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
+    }
+
+    pub fn export_debug_snapshot(&self) -> std::io::Result<std::path::PathBuf> {
+        let cwd = if self.cwd.is_empty() {
+            std::env::current_dir()?
+        } else {
+            std::path::PathBuf::from(&self.cwd)
+        };
+        let dir = cwd.join("target").join("tui-snapshots");
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join("latest.txt");
+        let body = self.debug_snapshot_body();
+        std::fs::write(&path, body)?;
+        Ok(path)
+    }
+
+    fn debug_snapshot_body(&self) -> String {
+        let mut body = String::new();
+        body.push_str("# cc-rust TUI debug snapshot\n\n");
+        body.push_str(&format!("cwd: {}\n", self.cwd));
+        body.push_str(&format!("session_id: {}\n", self.session_id));
+        body.push_str(&format!("model: {}\n", self.model_name));
+        body.push_str(&format!("backend: {}\n", self.backend_name));
+        body.push_str(&format!(
+            "command_surface: {}\n",
+            self.command_surface
+                .as_ref()
+                .map(CommandSurface::title)
+                .unwrap_or("none")
+        ));
+        body.push_str("\n```text\n");
+        if let Some(snapshot) = &self.last_render_snapshot {
+            body.push_str(snapshot);
+            if !snapshot.ends_with('\n') {
+                body.push('\n');
+            }
+        } else {
+            body.push_str("<no rendered frame captured yet>\n");
+        }
+        body.push_str("```\n");
+        body
     }
 
     // Public API

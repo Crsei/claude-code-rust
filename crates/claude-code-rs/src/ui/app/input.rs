@@ -126,6 +126,10 @@ impl App {
         // Any key press is likely to cause a visual change.
         self.dirty = true;
 
+        if matches!(key.code, KeyCode::F(12)) {
+            return AppAction::DebugSnapshot;
+        }
+
         if self.workspace_trust_pending {
             return self.handle_workspace_trust_key(key);
         }

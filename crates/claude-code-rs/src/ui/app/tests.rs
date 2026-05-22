@@ -61,6 +61,31 @@ fn render_places_prompt_after_compact_welcome() {
 }
 
 #[test]
+fn render_captures_debug_snapshot_and_exports_file() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let mut app = App::new();
+    app.set_cwd(tempdir.path().display().to_string());
+    app.set_session_id("debug-session".to_string());
+    app.set_model_name("deepseek-v4-pro".to_string());
+    app.set_backend_name("anthropic".to_string());
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+
+    terminal.draw(|frame| app.render(frame)).expect("draw");
+    let path = app.export_debug_snapshot().expect("export snapshot");
+
+    assert_eq!(path, tempdir.path().join("target/tui-snapshots/latest.txt"));
+    let exported = std::fs::read_to_string(path).expect("read snapshot");
+    assert!(exported.contains("# cc-rust TUI debug snapshot"));
+    assert!(exported.contains("session_id: debug-session"));
+    assert!(exported.contains("model: deepseek-v4-pro"));
+    assert!(exported.contains("backend: anthropic"));
+    assert!(
+        !exported.contains("<no rendered frame captured yet>"),
+        "snapshot should include the rendered terminal frame"
+    );
+}
+
+#[test]
 fn render_places_prompt_after_short_chat_content() {
     let mut app = App::new();
     app.add_message(Message::User(UserMessage {
@@ -904,6 +929,13 @@ fn messages_action_opens_code_path_from_assistant_text() {
         send_key(&mut app, KeyCode::Char('o')),
         AppAction::OpenPath("path=crates/claude-code-rs/src/ui/app.rs:42".to_string())
     );
+}
+
+#[test]
+fn f12_emits_debug_snapshot_action() {
+    let mut app = App::new();
+
+    assert_eq!(send_key(&mut app, KeyCode::F(12)), AppAction::DebugSnapshot);
 }
 
 fn send_key(app: &mut App, code: KeyCode) -> AppAction {

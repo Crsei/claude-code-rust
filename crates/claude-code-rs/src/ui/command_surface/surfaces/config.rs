@@ -8,6 +8,63 @@ use cc_engine::effort::effort_to_budget_tokens;
 use cc_engine::types::app_state::AppState;
 use cc_models::aliases as model_registry;
 
+fn neutral_model_alias(name: &str) -> Option<&'static str> {
+    let trimmed = name.trim();
+    if trimmed.eq_ignore_ascii_case("SOTA") {
+        Some("SOTA")
+    } else if trimmed.eq_ignore_ascii_case("MOTA") {
+        Some("MOTA")
+    } else if trimmed.eq_ignore_ascii_case("FOTA") {
+        Some("FOTA")
+    } else {
+        None
+    }
+}
+
+fn anthropic_provider_selected(state: &AppState) -> bool {
+    state
+        .settings
+        .api_provider
+        .as_deref()
+        .and_then(cc_config::settings::normalize_api_provider)
+        == Some(cc_config::settings::API_PROVIDER_ANTHROPIC)
+        || std::env::var_os("ANTHROPIC_BASE_URL").is_some()
+        || std::env::var_os("ANTHROPIC_DEFAULT_SOTA_MODEL").is_some()
+        || std::env::var_os("ANTHROPIC_DEFAULT_MOTA_MODEL").is_some()
+        || std::env::var_os("ANTHROPIC_DEFAULT_FOTA_MODEL").is_some()
+        || std::env::var_os("ANTHROPIC_DEFAULT_OPUS_MODEL").is_some()
+        || std::env::var_os("ANTHROPIC_DEFAULT_SONNET_MODEL").is_some()
+        || std::env::var_os("ANTHROPIC_DEFAULT_HAIKU_MODEL").is_some()
+}
+
+fn anthropic_alias_model(alias: &str) -> Option<String> {
+    let (env_name, legacy_env_name) = match neutral_model_alias(alias)? {
+        "SOTA" => (
+            "ANTHROPIC_DEFAULT_SOTA_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        ),
+        "MOTA" => (
+            "ANTHROPIC_DEFAULT_MOTA_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        ),
+        "FOTA" => (
+            "ANTHROPIC_DEFAULT_FOTA_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        ),
+        _ => return None,
+    };
+    std::env::var(env_name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            std::env::var(legacy_env_name)
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigSurface {
     pub(crate) state: TabbedFormState,
@@ -342,9 +399,15 @@ pub(super) fn build_model_picker(state: &AppState) -> SelectionSurface {
 
     if state.settings.available_models.is_empty() {
         for entry in model_registry::MODEL_ALIASES {
+            let model = if anthropic_provider_selected(state) {
+                anthropic_alias_model(entry.alias).unwrap_or_else(|| entry.target.to_string())
+            } else {
+                entry.target.to_string()
+            };
             push_model_item(
                 &mut items,
-                entry.target,
+                entry.alias,
+                &model,
                 &current,
                 Some(entry.alias),
                 "built-in alias",
@@ -353,12 +416,20 @@ pub(super) fn build_model_picker(state: &AppState) -> SelectionSurface {
         }
     } else {
         for configured in &state.settings.available_models {
-            let resolved = model_registry::resolve_model_alias(configured);
+            let alias = neutral_model_alias(configured);
+            let resolved = if anthropic_provider_selected(state) {
+                alias
+                    .and_then(anthropic_alias_model)
+                    .unwrap_or_else(|| model_registry::resolve_model_alias(configured))
+            } else {
+                model_registry::resolve_model_alias(configured)
+            };
             push_model_item(
                 &mut items,
+                alias.unwrap_or(&resolved),
                 &resolved,
                 &current,
-                model_registry::alias_for_model(&resolved),
+                alias.or_else(|| model_registry::alias_for_model(&resolved)),
                 "configured",
                 effort,
             );
@@ -368,6 +439,7 @@ pub(super) fn build_model_picker(state: &AppState) -> SelectionSurface {
     if !items.iter().any(|item| item.id == current) {
         push_model_item(
             &mut items,
+            &current,
             &current,
             &current,
             model_registry::alias_for_model(&current),
@@ -387,13 +459,14 @@ pub(super) fn build_model_picker(state: &AppState) -> SelectionSurface {
 
 fn push_model_item(
     items: &mut Vec<SelectionItem>,
+    id: &str,
     model: &str,
     current: &str,
     alias: Option<&str>,
     source: &str,
     effort: Option<&str>,
 ) {
-    if items.iter().any(|item| item.id == model) {
+    if items.iter().any(|item| item.id == id) {
         return;
     }
 
@@ -409,7 +482,7 @@ fn push_model_item(
     }
 
     items.push(SelectionItem {
-        id: model.to_string(),
+        id: id.to_string(),
         label,
         description: description.join("; "),
         enabled: true,
