@@ -132,11 +132,22 @@ API error provider=anthropic status=403 type=new_api_error: 用户额度不足
 ### 鼠标区域焦点与 subagent Task 兼容
 
 - App 在每次 render 时记录当前聊天历史区域和 prompt 输入框区域。
-- 鼠标点击输入框后，或者滚轮事件直接落在输入框区域时，滚轮上/下会调用 prompt history previous/next，展示历史输入内容。
-- 鼠标点击聊天历史区域后，或者滚轮事件直接落在聊天历史区域时，滚轮上/下会滚动 session 历史消息。
-- 保留 transcript/focus 模式原有滚动路径；prompt 历史滚轮只在 prompt view 且输入框 active 时生效。
+- 鼠标滚轮统一滚动聊天记录或 transcript 内容；即使滚轮事件落在 prompt 输入框区域，也不会触发 prompt history previous/next。
+- prompt 输入框历史只通过键盘上/下键切换，避免鼠标滚轮误改正在编辑的输入草稿。
+- 鼠标点击输入框仍可更新焦点，鼠标点击/拖动 session 滚动条仍可控制聊天记录位置。
+- 保留 transcript/focus 模式原有滚动路径；prompt history 不再由鼠标滚轮触发。
 - Agent 工具新增上游兼容别名 `Task`，注册到默认工具池和 coordinator 工具池。模型在聊天框中按 Claude Code 上游习惯调用 `Task` 时，会复用 cc-rust 现有 `AgentTool` subagent runtime，不再因 `tool not found: Task` 显示调用失败。
 - `Task` 别名复用 `Agent` 的 schema、校验、权限检查和执行逻辑；worker/teammate policy 仍不暴露 `Agent`/`Task` 生成子 agent，避免递归 spawn 面扩大。
+
+### 2026-05-22 回归修复：滚轮与输入历史分离
+
+- 用户反馈对话内容无法选中/复制后，确认 mouse capture 会影响终端原生拖选；同时用户要求保留鼠标滚轮滚动聊天记录。
+- 最终策略保持 mouse capture 默认开启，保证鼠标滚轮可直接滚动聊天记录；需要终端原生拖选时继续使用 `CLAUDE_CODE_DISABLE_MOUSE=1` 或终端的 Shift+拖选能力。
+- 修复输入框区域滚轮误触 prompt history 的问题：滚轮事件不再根据 prompt/message 区域分流到输入历史，而是统一进入 session/transcript scroll。
+- 输入历史的唯一交互入口为键盘上/下键；这避免滚轮查看聊天记录时覆盖输入框草稿。
+- 同次修复还保留对话内容与输入框之间的空行，以及工具/任务展示之间的空行。
+- 验证命令：`cargo fmt --check`、`git diff --check`、`cargo test -p claude-code-rs mouse_wheel`、`cargo test -p claude-code-rs terminal_env`、`cargo test -p cc-commands terminal_env`、`cargo test -p cc-commands terminal_setup`、`cargo test -p claude-code-rs render_places_prompt`、`cargo test -p claude-code-rs assistant_tool_tasks_are_spaced_from_each_other_and_dialogue`、`cargo build --workspace --release`。
+- 实现提交：`c17a1ba Fix TUI mouse scrolling and prompt spacing`。
 
 ## 主要代码落点
 
