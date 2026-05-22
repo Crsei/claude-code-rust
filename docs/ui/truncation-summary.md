@@ -209,7 +209,200 @@
 
 ---
 
-## 四、观察
+## 四、专门面板尺寸定义
+
+> 记录时间：2026-05-22  
+> 来源：`overlays/mod.rs`, `app/render.rs`, `permissions/`, `command_palette/`
+
+### 4.1 共享基础设施：`CenteredOverlayFrame`
+
+**文件**：`crates/claude-code-rs/src/ui/overlays/mod.rs`
+
+用于渲染居中对话框的通用结构体：
+
+```rust
+pub struct CenteredOverlayFrame<'a> {
+    pub title: &'a str,
+    pub color: Option<&'a str>,
+    pub min_width: u16,
+    pub max_width: u16,
+    pub min_height: u16,
+    pub max_height: u16,
+}
+```
+
+**默认参数**：
+- `min_width`: 24
+- `max_width`: 96
+- `min_height`: 5
+- `max_height`: 24
+
+渲染逻辑（`render_centered_dialog_lines()`）：
+- 宽度：`min(area.width - 4, max_width).max(min_width)`
+- 高度：`content_line_count.max(min_height).min(max_height)`
+- 终端过小时（`area.width < 8` 或 `area.height < 4`）不渲染
+
+### 4.2 共享基础设施：`BetterViewPanel`
+
+**文件**：`crates/claude-code-rs/src/ui/components/better_view_panel.rs`
+
+纯文本面板渲染器，内部尺寸常量：
+- `PANEL_WIDTH`: **88** 字符
+- `NAV_WIDTH`: **22** 字符（左侧导航列）
+- `DETAIL_WIDTH`: **61** 字符
+
+始终输出 88 字符宽的面板行，外部容器（如 `CenteredOverlayFrame`）负责缩放/截断。
+
+### 4.3 各面板尺寸
+
+#### Command Surface（命令表面）
+
+**文件**：`crates/claude-code-rs/src/ui/app/render.rs:817-839`
+
+```rust
+CenteredOverlayFrame::new(surface.title())
+    .color("accent")
+    .width(32, 96)
+    .height(5, 28)
+```
+
+| 约束 | 值 |
+|------|-----|
+| 最小宽度 | 32 |
+| 最大宽度 | 96 |
+| 最小高度 | 5 |
+| 最大高度 | 28 |
+| 自适应 | 高度基于内容行数 |
+
+#### Permission Dialog（权限对话框）
+
+**文件**：`crates/claude-code-rs/src/ui/permissions/dialog_overlay.rs:169-183`
+
+未使用 `CenteredOverlayFrame`，自行计算居中 Rect：
+
+```rust
+let dialog_width = area.width.saturating_sub(2).clamp(48, 120).min(area.width);
+let preferred_height = footer_height.saturating_add(if self.is_typing_feedback() { 14 } else { 12 });
+let dialog_height = preferred_height.min(area.height).max(8);
+```
+
+| 约束 | 值 |
+|------|-----|
+| 最小宽度 | 48 |
+| 最大宽度 | 120 |
+| 最小高度 | 8 |
+| 最大高度 | area.height（屏幕高度） |
+| 首选高度 | 12（正常）或 14（反馈模式）+ footer_height |
+
+#### Question Dialog（询问对话框）
+
+**文件**：`crates/claude-code-rs/src/ui/permissions/question_dialog.rs:73-78`
+
+未使用 `CenteredOverlayFrame`：
+
+```rust
+let dialog_width = (area.width * 68 / 100).max(48).min(area.width);
+let dialog_height = 13u16.min(area.height).max(8);
+```
+
+| 约束 | 值 |
+|------|-----|
+| 最小宽度 | 48 |
+| 最大宽度 | area.width（屏幕宽度） |
+| 首选宽度 | 68% 屏幕宽度 |
+| 最小高度 | 8 |
+| 最大高度 | 13 |
+
+#### History Search（历史搜索）
+
+**文件**：`crates/claude-code-rs/src/ui/app/render.rs:841-873`
+
+```rust
+CenteredOverlayFrame::new("History Search")
+    .color("accent")
+    .width(20, 120)
+    .height(8, 18)
+```
+
+| 约束 | 值 |
+|------|-----|
+| 最小宽度 | 20 |
+| 最大宽度 | 120 |
+| 最小高度 | 8 |
+| 最大高度 | 18 |
+
+#### Agent Tree（代理线程树）
+
+**文件**：`crates/claude-code-rs/src/ui/app/render.rs:875-910`
+
+```rust
+CenteredOverlayFrame::new("Agent Threads")
+    .color("accent")
+    .width(24, 100)
+    .height(8, 20)
+```
+
+| 约束 | 值 |
+|------|-----|
+| 最小宽度 | 24 |
+| 最大宽度 | 100 |
+| 最小高度 | 8 |
+| 最大高度 | 20 |
+
+#### Diff 面板
+
+继承 Command Surface 的约束（作为 DiffSurface 变体）：
+
+| 约束 | 值 |
+|------|-----|
+| 最小宽度 | 32 |
+| 最大宽度 | 96 |
+| 最小高度 | 5 |
+| 最大高度 | 28 |
+
+#### Command Palette（命令面板）
+
+**文件**：`crates/claude-code-rs/src/ui/command_palette/mod.rs:19-25`, `render.rs:24`
+
+不使用 `CenteredOverlayFrame`，渲染在底部面板区域，全屏宽度。
+
+| 约束 | 值 |
+|------|-----|
+| 宽度 | 全屏宽度 |
+| 最大高度 | ~29 行（MAX_ROWS 20 + RESERVED 7 + BORDER 2） |
+| 终端限制 | `area.height - 4` |
+| 列宽 | `COMMAND_COLUMN_WIDTH = 34`（固定） |
+
+#### Bypass Permissions Mode（旁路权限模式）
+
+**文件**：`crates/claude-code-rs/src/ui/permissions/bypass_permissions_mode_dialog.rs:57-61`
+
+```rust
+let dialog_width = (area.width * 72 / 100).max(56).min(area.width);
+let dialog_height = 13u16.min(area.height).max(8);
+```
+
+| 约束 | 值 |
+|------|-----|
+| 最小宽度 | 56 |
+| 最大宽度 | area.width（屏幕宽度） |
+| 首选宽度 | 72% 屏幕宽度 |
+| 最小高度 | 8 |
+| 最大高度 | 13 |
+
+### 4.4 统一性分析
+
+**没有统一的配置机制。** 尺寸定义分散在各面板文件中：
+
+1. **使用 `CenteredOverlayFrame` 的面板**（3个）：Command Surface、History Search、Agent Tree — 有共享的居中和尺寸夹紧逻辑。
+2. **自行计算居中的面板**（3个）：Permission Dialog、Question Dialog、Bypass Permissions Mode — 使用相似的 `clamp(min, max)` 模式，但数值各自不同。
+3. **独立布局的面板**（1个）：Command Palette — 全屏宽度，底部面板区域。
+
+所有尺寸均为硬编码字面量，无中央配置文件。
+
+---
+
+## 五、观察
 
 - **对话记录**中最明显的省略是：工具调用结果仅显示前 5 行、Bash 输出按宽度 silent 截断。
 - **专门面板**中省略最突出的是：Diff 面板 400 行上限、权限对话框的 head...tail 摘要截断。
