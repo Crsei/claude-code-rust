@@ -1,140 +1,140 @@
 ---
 source: crates/claude-code-rs/src/ui/command_surface/tests.rs
-assertion_line: 377
+assertion_line: 479
 expression: "rendered.join(\"\\n\\n\")"
 ---
 -- status --
-+ Config ------------------------------------------------------------------------------+
-|--------------------------------------------------------------------------------------|
-| Sections               Status                                                        |
-| > Status               > Show effective config        model=custom-model; backend... |
-|   Model                  Show setting sources         which layer set each key       |
-|   Theme                                                                              |
-|   Usage                                                                              |
-|   Output                                                                             |
-|   Language                                                                           |
-|   Thinking                                                                           |
-|   Safety                                                                             |
-|   Config                                                                             |
-|--------------------------------------------------------------------------------------|
-| Left/Right section | Up/Down navigate | Enter select | Esc close                     |
-+--------------------------------------------------------------------------------------+
++ Config ----------------------------------------------------------------------------------------------------------------------------------+
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Sections                                 Status                                                                                          |
+| > Status                                 > Show effective config        model=custom-model; backend=native                               |
+|   Model                                    Show setting sources         which layer set each key                                         |
+|   Theme                                                                                                                                  |
+|   Usage                                                                                                                                  |
+|   Output                                                                                                                                 |
+|   Language                                                                                                                               |
+|   Thinking                                                                                                                               |
+|   Safety                                                                                                                                 |
+|   Config                                                                                                                                 |
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Left/Right section | Up/Down navigate | Enter select | Esc close                                                                         |
++------------------------------------------------------------------------------------------------------------------------------------------+
 
 -- model --
-+ Config ------------------------------------------------------------------------------+
-|--------------------------------------------------------------------------------------|
-| Sections               Model                                                         |
-|   Status               Current effort: medium (10240 tokens)                         |
-| > Model                Model / Filter...                                             |
-|   Theme                > custom-model - configured; current; effort=medium           |
-|   Usage                  SOTA (gpt-5.5) - configured; effort=medium                  |
-|   Output                                                                             |
-|   Language                                                                           |
-|   Thinking                                                                           |
-|   Safety                                                                             |
-|   Config                                                                             |
-|--------------------------------------------------------------------------------------|
-| Type filter | Up/Down navigate | Enter select | Left/Right section | Esc close       |
-+--------------------------------------------------------------------------------------+
++ Config ----------------------------------------------------------------------------------------------------------------------------------+
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Sections                                 Model                                                                                           |
+|   Status                                 Current effort: medium (10240 tokens)                                                           |
+| > Model                                  Model / Filter...                                                                               |
+|   Theme                                  > custom-model - configured; current; effort=medium                                             |
+|   Usage                                    SOTA (gpt-5.5) - configured; effort=medium                                                    |
+|   Output                                                                                                                                 |
+|   Language                                                                                                                               |
+|   Thinking                                                                                                                               |
+|   Safety                                                                                                                                 |
+|   Config                                                                                                                                 |
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Type filter | Up/Down navigate | Enter select | Left/Right section | Esc close                                                           |
++------------------------------------------------------------------------------------------------------------------------------------------+
 
 -- theme --
-+ Config ------------------------------------------------------------------------------+
-|--------------------------------------------------------------------------------------|
-| Sections               Theme                                                         |
-|   Status               Theme / Filter...                                             |
-|   Model                  Auto - match terminal when supported                        |
-| > Theme                  Dark mode - default ratatui palette                         |
-|   Usage                > Light mode - light terminal palette; current                |
-|   Output                 Solarized - low-contrast terminal palette                   |
-|   Language               Monokai - high-contrast editor palette                      |
-|   Thinking               Nord - cool low-saturation palette                          |
-|   Safety                                                                             |
-|   Config                                                                             |
-|--------------------------------------------------------------------------------------|
-| Type filter | Up/Down navigate | Enter select | Left/Right section | Esc close       |
-+--------------------------------------------------------------------------------------+
++ Config ----------------------------------------------------------------------------------------------------------------------------------+
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Sections                                 Theme                                                                                           |
+|   Status                                 Theme / Filter...                                                                               |
+|   Model                                    Auto - match terminal when supported                                                          |
+| > Theme                                    Dark mode - default ratatui palette                                                           |
+|   Usage                                  > Light mode - light terminal palette; current                                                  |
+|   Output                                   Solarized - low-contrast terminal palette                                                     |
+|   Language                                 Monokai - high-contrast editor palette                                                        |
+|   Thinking                                 Nord - cool low-saturation palette                                                            |
+|   Safety                                                                                                                                 |
+|   Config                                                                                                                                 |
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Type filter | Up/Down navigate | Enter select | Left/Right section | Esc close                                                           |
++------------------------------------------------------------------------------------------------------------------------------------------+
 
 -- usage --
-+ Config ------------------------------------------------------------------------------+
-|--------------------------------------------------------------------------------------|
-| Sections               Usage                                                         |
-|   Status               > Show session usage           token totals and estimated ... |
-|   Model                  Show extended usage          per-message token and cost ... |
-|   Theme                                                                              |
-| > Usage                                                                              |
-|   Output                                                                             |
-|   Language                                                                           |
-|   Thinking                                                                           |
-|   Safety                                                                             |
-|   Config                                                                             |
-|--------------------------------------------------------------------------------------|
-| Left/Right section | Up/Down navigate | Enter select | Esc close                     |
-+--------------------------------------------------------------------------------------+
++ Config ----------------------------------------------------------------------------------------------------------------------------------+
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Sections                                 Usage                                                                                           |
+|   Status                                 > Show session usage           token totals and estimated cost                                  |
+|   Model                                    Show extended usage          per-message token and cost breakdown                             |
+|   Theme                                                                                                                                  |
+| > Usage                                                                                                                                  |
+|   Output                                                                                                                                 |
+|   Language                                                                                                                               |
+|   Thinking                                                                                                                               |
+|   Safety                                                                                                                                 |
+|   Config                                                                                                                                 |
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Left/Right section | Up/Down navigate | Enter select | Esc close                                                                         |
++------------------------------------------------------------------------------------------------------------------------------------------+
 
 -- output --
-+ Config ------------------------------------------------------------------------------+
-|--------------------------------------------------------------------------------------|
-| Sections               Output                                                        |
-|   Status               > Use default output style     current outputStyle=explana... |
-|   Model                  Use explanatory output style current outputStyle=explana... |
-|   Theme                  Use learning output style    current outputStyle=explana... |
-|   Usage                  Set custom output style      fill prompt with /config se... |
-| > Output                 Enable vim editor mode       current editorMode=normal      |
-|   Language               Use normal editor mode       current editorMode=normal      |
-|   Thinking               Enable terminal progress bar current terminalProgressBar... |
-|   Safety                 Disable terminal progress bar current terminalProgressBa... |
-|   Config                                                                             |
-|--------------------------------------------------------------------------------------|
-| Left/Right section | Up/Down navigate | Enter select | Esc close                     |
-+--------------------------------------------------------------------------------------+
++ Config ----------------------------------------------------------------------------------------------------------------------------------+
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Sections                                 Output                                                                                          |
+|   Status                                 > Use default output style     current outputStyle=explanatory                                  |
+|   Model                                    Use explanatory output style current outputStyle=explanatory                                  |
+|   Theme                                    Use learning output style    current outputStyle=explanatory                                  |
+|   Usage                                    Set custom output style      fill prompt with /config set outputStyle                         |
+| > Output                                   Enable vim editor mode       current editorMode=normal                                        |
+|   Language                                 Use normal editor mode       current editorMode=normal                                        |
+|   Thinking                                 Enable terminal progress bar current terminalProgressBarEnabled=not set                       |
+|   Safety                                   Disable terminal progress bar current terminalProgressBarEnabled=not set                      |
+|   Config                                                                                                                                 |
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Left/Right section | Up/Down navigate | Enter select | Esc close                                                                         |
++------------------------------------------------------------------------------------------------------------------------------------------+
 
 -- language --
-+ Config ------------------------------------------------------------------------------+
-|--------------------------------------------------------------------------------------|
-| Sections               Language                                                      |
-|   Status               > Set response language        current language=English       |
-|   Model                  Use English                  current language=English       |
-|   Theme                  Use Chinese                  current language=English       |
-|   Usage                  Enable voice input           current voiceEnabled=not set   |
-|   Output                 Disable voice input          current voiceEnabled=not set   |
-| > Language                                                                           |
-|   Thinking                                                                           |
-|   Safety                                                                             |
-|   Config                                                                             |
-|--------------------------------------------------------------------------------------|
-| Left/Right section | Up/Down navigate | Enter select | Esc close                     |
-+--------------------------------------------------------------------------------------+
++ Config ----------------------------------------------------------------------------------------------------------------------------------+
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Sections                                 Language                                                                                        |
+|   Status                                 > Set response language        current language=English                                         |
+|   Model                                    Use English                  current language=English                                         |
+|   Theme                                    Use Chinese                  current language=English                                         |
+|   Usage                                    Enable voice input           current voiceEnabled=not set                                     |
+|   Output                                   Disable voice input          current voiceEnabled=not set                                     |
+| > Language                                                                                                                               |
+|   Thinking                                                                                                                               |
+|   Safety                                                                                                                                 |
+|   Config                                                                                                                                 |
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Left/Right section | Up/Down navigate | Enter select | Esc close                                                                         |
++------------------------------------------------------------------------------------------------------------------------------------------+
 
 -- thinking --
-+ Config ------------------------------------------------------------------------------+
-|--------------------------------------------------------------------------------------|
-| Sections               Effort                                                        |
-|   Status               Effort / Filter...                                            |
-|   Model                  Auto - model default; 10240 tokens                          |
-|   Theme                  Low - shorter thinking budget; 4096 tokens                  |
-|   Usage                > Medium - balanced thinking budget; 10240 tokens; current    |
-|   Output                 High - deeper thinking budget; 24576 tokens                 |
-|   Language               Max - largest fixed thinking budget; 32768 tokens           |
-| > Thinking                                                                           |
-|   Safety                                                                             |
-|   Config                                                                             |
-|--------------------------------------------------------------------------------------|
-| Type filter | Up/Down navigate | Enter select | Left/Right section | Esc close       |
-+--------------------------------------------------------------------------------------+
++ Config ----------------------------------------------------------------------------------------------------------------------------------+
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Sections                                 Effort                                                                                          |
+|   Status                                 Effort / Filter...                                                                              |
+|   Model                                    Auto - model default; 10240 tokens                                                            |
+|   Theme                                    Low - shorter thinking budget; 4096 tokens                                                    |
+|   Usage                                  > Medium - balanced thinking budget; 10240 tokens; current                                      |
+|   Output                                   High - deeper thinking budget; 24576 tokens                                                   |
+|   Language                                 Max - largest fixed thinking budget; 32768 tokens                                             |
+| > Thinking                                                                                                                               |
+|   Safety                                                                                                                                 |
+|   Config                                                                                                                                 |
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Type filter | Up/Down navigate | Enter select | Left/Right section | Esc close                                                           |
++------------------------------------------------------------------------------------------------------------------------------------------+
 
 -- safety --
-+ Config ------------------------------------------------------------------------------+
-|--------------------------------------------------------------------------------------|
-| Sections               Safety                                                        |
-|   Status               > Review setting sources       managed/user/project/local ... |
-|   Model                  Review raw layers            inspect managed/user/projec... |
-|   Theme                  Review settings schema       supported settings and vali... |
-|   Usage                                                                              |
-|   Output                                                                             |
-|   Language                                                                           |
-|   Thinking                                                                           |
-| > Safety                                                                             |
-|   Config                                                                             |
-|--------------------------------------------------------------------------------------|
-| Left/Right section | Up/Down navigate | Enter select | Esc close                     |
-+--------------------------------------------------------------------------------------+
++ Config ----------------------------------------------------------------------------------------------------------------------------------+
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Sections                                 Safety                                                                                          |
+|   Status                                 > Review setting sources       managed/user/project/local provenance                            |
+|   Model                                    Review raw layers            inspect managed/user/project/local JSON                          |
+|   Theme                                    Review settings schema       supported settings and validation shape                          |
+|   Usage                                                                                                                                  |
+|   Output                                                                                                                                 |
+|   Language                                                                                                                               |
+|   Thinking                                                                                                                               |
+| > Safety                                                                                                                                 |
+|   Config                                                                                                                                 |
+|------------------------------------------------------------------------------------------------------------------------------------------|
+| Left/Right section | Up/Down navigate | Enter select | Esc close                                                                         |
++------------------------------------------------------------------------------------------------------------------------------------------+

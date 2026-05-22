@@ -25,6 +25,78 @@ impl AgentThreadEntry {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentThreadStatus {
+    Running,
+    Thinking,
+    Streaming,
+    ToolRunning,
+    WaitingPermission,
+    Succeeded,
+    Failed,
+    Canceled,
+    Closed,
+}
+
+impl AgentThreadStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Running => "active",
+            Self::Thinking => "thinking",
+            Self::Streaming => "streaming",
+            Self::ToolRunning => "tool",
+            Self::WaitingPermission => "permission",
+            Self::Succeeded => "done",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+            Self::Closed => "closed",
+        }
+    }
+
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            Self::Succeeded | Self::Failed | Self::Canceled | Self::Closed
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentToolActivitySummary {
+    pub tool_use_id: String,
+    pub tool_name: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentThreadRuntimeInfo {
+    pub status: AgentThreadStatus,
+    pub status_summary: Option<String>,
+    pub duration_ms: Option<u64>,
+    tool_uses: BTreeMap<String, AgentToolActivitySummary>,
+}
+
+impl Default for AgentThreadRuntimeInfo {
+    fn default() -> Self {
+        Self {
+            status: AgentThreadStatus::Running,
+            status_summary: None,
+            duration_ms: None,
+            tool_uses: BTreeMap::new(),
+        }
+    }
+}
+
+impl AgentThreadRuntimeInfo {
+    pub fn tool_use_count(&self) -> usize {
+        self.tool_uses.len()
+    }
+
+    pub fn recent_tool_uses(&self) -> impl DoubleEndedIterator<Item = &AgentToolActivitySummary> {
+        self.tool_uses.values()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentNavigationDirection {
     Previous,
     Next,
@@ -34,6 +106,7 @@ pub enum AgentNavigationDirection {
 pub struct AgentNavigationState {
     entries: BTreeMap<String, AgentThreadEntry>,
     order: Vec<String>,
+    runtime: BTreeMap<String, AgentThreadRuntimeInfo>,
 }
 
 impl AgentNavigationState {
@@ -41,6 +114,7 @@ impl AgentNavigationState {
         if !self.entries.contains_key(&entry.thread_id) {
             self.order.push(entry.thread_id.clone());
         }
+        self.runtime.entry(entry.thread_id.clone()).or_default();
         self.entries.insert(entry.thread_id.clone(), entry);
     }
 
@@ -48,16 +122,68 @@ impl AgentNavigationState {
         if let Some(entry) = self.entries.get_mut(thread_id) {
             entry.is_closed = true;
         }
+        let runtime = self.runtime.entry(thread_id.to_string()).or_default();
+        if !runtime.status.is_terminal() {
+            runtime.status = AgentThreadStatus::Closed;
+        }
+    }
+
+    pub fn mark_status(
+        &mut self,
+        thread_id: &str,
+        status: AgentThreadStatus,
+        summary: Option<String>,
+    ) {
+        let runtime = self.runtime.entry(thread_id.to_string()).or_default();
+        runtime.status = status;
+        runtime.status_summary = summary;
+        if status.is_terminal() {
+            if let Some(entry) = self.entries.get_mut(thread_id) {
+                entry.is_closed = true;
+            }
+        }
+    }
+
+    pub fn set_duration_ms(&mut self, thread_id: &str, duration_ms: Option<u64>) {
+        self.runtime
+            .entry(thread_id.to_string())
+            .or_default()
+            .duration_ms = duration_ms;
+    }
+
+    pub fn mark_tool_use(
+        &mut self,
+        thread_id: &str,
+        tool_use_id: &str,
+        tool_name: &str,
+        summary: impl Into<String>,
+    ) {
+        let runtime = self.runtime.entry(thread_id.to_string()).or_default();
+        runtime.status = AgentThreadStatus::ToolRunning;
+        runtime.tool_uses.insert(
+            tool_use_id.to_string(),
+            AgentToolActivitySummary {
+                tool_use_id: tool_use_id.to_string(),
+                tool_name: tool_name.to_string(),
+                summary: summary.into(),
+            },
+        );
+    }
+
+    pub fn runtime_info(&self, thread_id: &str) -> Option<&AgentThreadRuntimeInfo> {
+        self.runtime.get(thread_id)
     }
 
     pub fn remove(&mut self, thread_id: &str) {
         self.entries.remove(thread_id);
+        self.runtime.remove(thread_id);
         self.order.retain(|candidate| candidate != thread_id);
     }
 
     pub fn clear(&mut self) {
         self.entries.clear();
         self.order.clear();
+        self.runtime.clear();
     }
 
     pub fn ordered_threads(&self) -> Vec<&AgentThreadEntry> {
@@ -120,15 +246,6 @@ impl AgentNavigationState {
         Some(ordered[next].thread_id.clone())
     }
 
-    pub fn active_agent_label(&self, current_thread_id: &str) -> Option<String> {
-        if self.entries.len() <= 1 {
-            return None;
-        }
-        self.entries
-            .get(current_thread_id)
-            .map(AgentThreadEntry::label)
-    }
-
     #[cfg(test)]
     pub fn render_agent_tree(&self, current_thread_id: &str) -> String {
         let ordered = self.ordered_threads();
@@ -143,7 +260,10 @@ impl AgentNavigationState {
             } else {
                 " "
             };
-            let state = if entry.is_closed { "closed" } else { "active" };
+            let state = self
+                .runtime_info(&entry.thread_id)
+                .map(|runtime| runtime.status.label())
+                .unwrap_or(if entry.is_closed { "closed" } else { "active" });
             let role = entry.agent_role.as_deref().unwrap_or("default");
             lines.push(format!(
                 "{current} {:<18} {:<7} role={} thread={}",

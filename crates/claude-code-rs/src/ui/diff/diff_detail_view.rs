@@ -132,4 +132,28 @@ mod tests {
 
         assert_snapshot!(output.join("\n"));
     }
+
+    #[test]
+    fn snapshot_diff_detail_view_truncates_long_plain_lines_at_narrow_width() {
+        let file = DiffFile::new(
+            "src/very_long_file_name.rs",
+            1,
+            1,
+            false,
+            false,
+            false,
+            false,
+        );
+        let hunks = vec![
+            "+let value = \"this added line is intentionally much longer than the available diff detail width\";".to_string(),
+            "-let previous = \"this removed line is also intentionally too long for the narrow panel\";".to_string(),
+        ];
+
+        let output = render_diff_detail_view_lines(&file, &hunks, 32);
+
+        assert_snapshot!(
+            "diff_detail_view_truncates_long_plain_lines_32w",
+            output.join("\n")
+        );
+    }
 }

@@ -263,6 +263,7 @@ mod tests {
     use super::*;
     use cc_bootstrap::SessionId;
     use cc_engine::types::app_state::AppState;
+    use cc_types::commands::CommandDispatcher;
     use serial_test::serial;
     use std::env;
     use tempfile::tempdir;
@@ -305,6 +306,20 @@ mod tests {
             app_state,
             session_id: SessionId::new(),
         }
+    }
+
+    #[test]
+    fn dispatcher_parses_bare_plan_without_swallowing_it() {
+        let dispatcher = crate::DefaultCommandDispatcher::for_full_registry();
+        let parsed = dispatcher
+            .parse_command_input("/plan")
+            .expect("bare /plan should parse as a command");
+
+        assert_eq!(
+            dispatcher.command_name(parsed.index).as_deref(),
+            Some("plan")
+        );
+        assert_eq!(parsed.args, "");
     }
 
     #[tokio::test]

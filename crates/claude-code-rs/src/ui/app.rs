@@ -11,7 +11,7 @@ mod tests;
 mod transcript_mode;
 mod voice;
 mod workspace_trust;
-use agent_navigation::{AgentNavigationState, AgentThreadEntry};
+use agent_navigation::{AgentNavigationState, AgentThreadEntry, AgentThreadStatus};
 use agent_tree_dialog::AgentTreeDialog;
 use cc_config::settings::StatusLineSettings;
 use cc_ipc_protocol::BackendMessage;
@@ -657,8 +657,41 @@ impl App {
                 self.dirty = true;
             }
             AppEvent::Backend { message } => {
-                self.update_agent_navigation_from_backend(&message);
-                if let Some(notification) = notification_from_backend_message(&message) {
+                let message = message.as_ref();
+                if let Some(CommandSurface::Tasks(surface)) = self.command_surface.as_mut() {
+                    if backend_message_updates_tasks(message) {
+                        surface.handle_event(message);
+                        self.dirty = true;
+                    }
+                }
+                self.update_agent_navigation_from_backend(message);
+                match message {
+                    BackendMessage::BackgroundAgentComplete {
+                        agent_id,
+                        description,
+                        result_preview,
+                        had_error,
+                        duration_ms,
+                    } => {
+                        self.apply_background_agent_complete(
+                            agent_id,
+                            description,
+                            result_preview,
+                            *had_error,
+                            *duration_ms,
+                        );
+                    }
+                    BackendMessage::ToolProgress {
+                        tool_use_id,
+                        tool,
+                        output,
+                        ..
+                    } => {
+                        self.apply_primary_tool_progress(tool_use_id, tool, output);
+                    }
+                    _ => {}
+                }
+                if let Some(notification) = notification_from_backend_message(message) {
                     self.add_notification(notification);
                 }
             }
@@ -666,12 +699,76 @@ impl App {
     }
 
     pub(super) fn agent_footer_visible(&self) -> bool {
-        self.show_agent_footer
-            && self.agent_nav.active_non_primary_count() > 0
-            && self
-                .agent_nav
-                .entry(self.current_agent_thread_id())
-                .is_some_and(|entry| !entry.is_primary && !entry.is_closed)
+        self.show_agent_footer && self.agent_nav.active_non_primary_count() > 0
+    }
+
+    pub(super) fn agent_footer_height(&self) -> u16 {
+        if !self.agent_footer_visible() {
+            return 0;
+        }
+        let visible_agents = self.agent_nav.active_non_primary_count().min(3);
+        let overflow_row = usize::from(self.agent_nav.active_non_primary_count() > visible_agents);
+        (1 + visible_agents + overflow_row) as u16
+    }
+
+    pub(super) fn agent_footer_lines(&self) -> Vec<String> {
+        let active_agent_ids = self.active_agent_thread_ids();
+        if active_agent_ids.is_empty() {
+            return Vec::new();
+        }
+
+        let mut lines = Vec::with_capacity(1 + active_agent_ids.len().min(3));
+        let agent_label = if active_agent_ids.len() == 1 {
+            "agent"
+        } else {
+            "agents"
+        };
+        lines.push(format!(
+            "Running {} {agent_label}... Ctrl+X Ctrl+A open tree",
+            active_agent_ids.len()
+        ));
+
+        let visible_count = active_agent_ids.len().min(3);
+        for (index, agent_id) in active_agent_ids.iter().take(visible_count).enumerate() {
+            let Some(entry) = self.agent_nav.entry(agent_id) else {
+                continue;
+            };
+            let branch = if index + 1 == visible_count {
+                "`-"
+            } else {
+                "|-"
+            };
+            let runtime = self.agent_nav.runtime_info(agent_id);
+            let status = runtime
+                .map(|info| info.status.label())
+                .unwrap_or(if entry.is_closed { "closed" } else { "active" });
+            let tool_count = runtime.map_or(0, |info| info.tool_use_count());
+            let mut parts = vec![
+                compact_inline(&entry.label(), 32),
+                status.to_string(),
+                format!("{tool_count} tool uses"),
+            ];
+            if let Some(duration) = runtime.and_then(|info| info.duration_ms) {
+                parts.push(format_duration_ms(duration));
+            }
+            if let Some(summary) = runtime.and_then(|info| info.status_summary.as_deref()) {
+                if !summary.is_empty() {
+                    parts.push(compact_inline(summary, 48));
+                }
+            } else if let Some(tool) = runtime.and_then(|info| info.recent_tool_uses().next_back())
+            {
+                parts.push(compact_inline(&tool.summary, 48));
+            }
+            lines.push(format!("   {branch} {}", parts.join(" | ")));
+        }
+
+        if active_agent_ids.len() > visible_count {
+            lines.push(format!(
+                "   ... {} more",
+                active_agent_ids.len() - visible_count
+            ));
+        }
+        lines
     }
 
     pub(super) fn active_agent_thread_ids(&self) -> Vec<String> {
@@ -690,12 +787,6 @@ impl App {
                     .map(|entry| entry.thread_id.as_str())
             })
             .unwrap_or("")
-    }
-
-    pub(super) fn current_agent_label(&self) -> Option<String> {
-        self.agent_nav
-            .active_agent_label(self.current_agent_thread_id())
-            .or_else(|| self.agent_footer_visible().then_some("Primary".to_string()))
     }
 
     pub(super) fn toggle_agent_tree_dialog(&mut self) {
@@ -755,11 +846,53 @@ impl App {
                     is_primary: false,
                     is_closed: false,
                 });
+                self.agent_nav.mark_status(
+                    agent_id,
+                    AgentThreadStatus::Running,
+                    Some(compact_inline(description, 80)),
+                );
                 self.current_agent_thread_id = Some(agent_id.clone());
             }
-            AgentEvent::Completed { agent_id, .. }
-            | AgentEvent::Error { agent_id, .. }
-            | AgentEvent::Aborted { agent_id } => {
+            AgentEvent::Completed {
+                agent_id,
+                result_preview,
+                had_error,
+                duration_ms,
+                ..
+            } => {
+                self.agent_nav.mark_status(
+                    agent_id,
+                    if *had_error {
+                        AgentThreadStatus::Failed
+                    } else {
+                        AgentThreadStatus::Succeeded
+                    },
+                    Some(compact_inline(result_preview, 80)),
+                );
+                self.agent_nav.set_duration_ms(agent_id, Some(*duration_ms));
+                self.agent_nav.mark_closed(agent_id);
+                self.normalize_current_agent_thread();
+            }
+            AgentEvent::Error {
+                agent_id,
+                error,
+                duration_ms,
+            } => {
+                self.agent_nav.mark_status(
+                    agent_id,
+                    AgentThreadStatus::Failed,
+                    Some(compact_inline(error, 80)),
+                );
+                self.agent_nav.set_duration_ms(agent_id, Some(*duration_ms));
+                self.agent_nav.mark_closed(agent_id);
+                self.normalize_current_agent_thread();
+            }
+            AgentEvent::Aborted { agent_id } => {
+                self.agent_nav.mark_status(
+                    agent_id,
+                    AgentThreadStatus::Canceled,
+                    Some("agent aborted".to_string()),
+                );
                 self.agent_nav.mark_closed(agent_id);
                 self.normalize_current_agent_thread();
             }
@@ -767,12 +900,24 @@ impl App {
                 agent_id,
                 tool_name,
                 summary,
+                tool_use_id,
                 queue_position,
                 ..
             } => {
                 if self.agent_nav.contains_thread(agent_id) {
                     self.current_agent_thread_id = Some(agent_id.clone());
                 }
+                self.agent_nav.mark_tool_use(
+                    agent_id,
+                    tool_use_id,
+                    tool_name,
+                    compact_inline(summary, 80),
+                );
+                self.agent_nav.mark_status(
+                    agent_id,
+                    AgentThreadStatus::WaitingPermission,
+                    Some(compact_inline(summary, 80)),
+                );
                 self.add_notification(
                     InAppNotification::new(
                         "worker-permission",
@@ -792,10 +937,20 @@ impl App {
                     .with_timeout_ms(5000),
                 );
             }
-            AgentEvent::PermissionResolved { agent_id, .. } => {
+            AgentEvent::PermissionResolved {
+                agent_id,
+                tool_name,
+                decision,
+                ..
+            } => {
                 if self.agent_nav.contains_thread(agent_id) {
                     self.current_agent_thread_id = Some(agent_id.clone());
                 }
+                self.agent_nav.mark_status(
+                    agent_id,
+                    AgentThreadStatus::Running,
+                    Some(compact_inline(&format!("{tool_name}: {decision}"), 80)),
+                );
             }
             AgentEvent::TreeSnapshot { roots } => {
                 let current = self.current_agent_thread_id().to_string();
@@ -808,13 +963,58 @@ impl App {
                     self.current_agent_thread_id = Some(current);
                 }
             }
-            AgentEvent::StreamDelta { agent_id, .. }
-            | AgentEvent::ThinkingDelta { agent_id, .. }
-            | AgentEvent::ToolUse { agent_id, .. }
-            | AgentEvent::ToolResult { agent_id, .. } => {
+            AgentEvent::StreamDelta { agent_id, text } => {
                 if self.agent_nav.contains_thread(agent_id) {
                     self.current_agent_thread_id = Some(agent_id.clone());
                 }
+                self.agent_nav.mark_status(
+                    agent_id,
+                    AgentThreadStatus::Streaming,
+                    Some(compact_inline(text, 80)),
+                );
+            }
+            AgentEvent::ThinkingDelta { agent_id, thinking } => {
+                if self.agent_nav.contains_thread(agent_id) {
+                    self.current_agent_thread_id = Some(agent_id.clone());
+                }
+                self.agent_nav.mark_status(
+                    agent_id,
+                    AgentThreadStatus::Thinking,
+                    Some(compact_inline(thinking, 80)),
+                );
+            }
+            AgentEvent::ToolUse {
+                agent_id,
+                tool_use_id,
+                tool_name,
+                input,
+            } => {
+                if self.agent_nav.contains_thread(agent_id) {
+                    self.current_agent_thread_id = Some(agent_id.clone());
+                }
+                self.agent_nav.mark_tool_use(
+                    agent_id,
+                    tool_use_id,
+                    tool_name,
+                    compact_inline(&format!("{tool_name} {input}"), 80),
+                );
+            }
+            AgentEvent::ToolResult {
+                agent_id,
+                output,
+                is_error,
+                ..
+            } => {
+                if self.agent_nav.contains_thread(agent_id) {
+                    self.current_agent_thread_id = Some(agent_id.clone());
+                }
+                let summary = if *is_error {
+                    format!("tool error: {}", compact_inline(output, 72))
+                } else {
+                    compact_inline(output, 80)
+                };
+                self.agent_nav
+                    .mark_status(agent_id, AgentThreadStatus::Running, Some(summary));
             }
         }
         self.dirty = true;
@@ -824,6 +1024,7 @@ impl App {
         self.sync_primary_agent_thread();
         match event {
             TeamEvent::MemberJoined {
+                team_name,
                 agent_id,
                 agent_name,
                 role,
@@ -836,8 +1037,18 @@ impl App {
                     is_primary: false,
                     is_closed: false,
                 });
+                self.agent_nav.mark_status(
+                    agent_id,
+                    AgentThreadStatus::Running,
+                    Some(format!("{agent_name} joined {team_name}")),
+                );
             }
             TeamEvent::MemberLeft { agent_id, .. } => {
+                self.agent_nav.mark_status(
+                    agent_id,
+                    AgentThreadStatus::Closed,
+                    Some("teammate left".to_string()),
+                );
                 self.agent_nav.mark_closed(agent_id);
                 self.normalize_current_agent_thread();
             }
@@ -850,6 +1061,15 @@ impl App {
                         is_primary: false,
                         is_closed: !member.is_active,
                     });
+                    self.agent_nav.mark_status(
+                        &member.agent_id,
+                        if member.is_active {
+                            AgentThreadStatus::Running
+                        } else {
+                            AgentThreadStatus::Closed
+                        },
+                        Some(format!("{} unread message(s)", member.unread_messages)),
+                    );
                 }
             }
             TeamEvent::MessageRouted { from, to, .. } => {
@@ -892,9 +1112,78 @@ impl App {
             is_primary: false,
             is_closed: !agent_state_is_active(&node.state),
         });
+        self.agent_nav.mark_status(
+            &node.agent_id,
+            agent_status_from_tree_state(&node.state, node.had_error),
+            Some(compact_inline(
+                node.result_preview.as_deref().unwrap_or(&node.state),
+                80,
+            )),
+        );
+        self.agent_nav
+            .set_duration_ms(&node.agent_id, node.duration_ms);
         for child in &node.children {
             self.collect_agent_tree_node(child);
         }
+    }
+
+    fn apply_background_agent_complete(
+        &mut self,
+        agent_id: &str,
+        description: &str,
+        result_preview: &str,
+        had_error: bool,
+        duration_ms: u64,
+    ) {
+        self.sync_primary_agent_thread();
+        if !self.agent_nav.contains_thread(agent_id) {
+            self.agent_nav.upsert(AgentThreadEntry {
+                thread_id: agent_id.to_string(),
+                agent_nickname: short_agent_label(description, agent_id),
+                agent_role: Some("agent".to_string()),
+                is_primary: false,
+                is_closed: false,
+            });
+        }
+        self.agent_nav.mark_status(
+            agent_id,
+            if had_error {
+                AgentThreadStatus::Failed
+            } else {
+                AgentThreadStatus::Succeeded
+            },
+            Some(compact_inline(result_preview, 80)),
+        );
+        self.agent_nav.set_duration_ms(agent_id, Some(duration_ms));
+        self.agent_nav.mark_closed(agent_id);
+        self.normalize_current_agent_thread();
+        self.dirty = true;
+    }
+
+    fn apply_primary_tool_progress(&mut self, tool_use_id: &str, tool: &str, output: &str) {
+        self.sync_primary_agent_thread();
+        let primary_thread = self.current_primary_thread_id().map(ToString::to_string);
+        let Some(primary_thread) = primary_thread else {
+            return;
+        };
+        self.agent_nav.mark_tool_use(
+            &primary_thread,
+            tool_use_id,
+            tool,
+            format!("{tool} {}", compact_inline(output, 64)),
+        );
+        self.dirty = true;
+    }
+
+    fn current_primary_thread_id(&self) -> Option<&str> {
+        if !self.session_id.is_empty() && self.agent_nav.contains_thread(&self.session_id) {
+            return Some(self.session_id.as_str());
+        }
+        self.agent_nav
+            .ordered_threads()
+            .into_iter()
+            .find(|entry| entry.is_primary)
+            .map(|entry| entry.thread_id.as_str())
     }
 
     pub fn remove_notification(&mut self, key: &str) {
@@ -986,9 +1275,63 @@ fn short_agent_label(description: &str, fallback: &str) -> Option<String> {
     Some(label)
 }
 
+fn backend_message_updates_tasks(message: &BackendMessage) -> bool {
+    matches!(
+        message,
+        BackendMessage::ToolProgress { .. }
+            | BackendMessage::BackgroundAgentComplete { .. }
+            | BackendMessage::AgentEvent { .. }
+            | BackendMessage::TeamEvent { .. }
+    )
+}
+
+fn compact_inline(value: &str, max_chars: usize) -> String {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = normalized.chars();
+    let preview = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{preview}...")
+    } else {
+        preview
+    }
+}
+
+fn format_duration_ms(duration_ms: u64) -> String {
+    if duration_ms < 1_000 {
+        format!("{duration_ms}ms")
+    } else {
+        format!("{}s", duration_ms / 1_000)
+    }
+}
+
+fn agent_status_from_tree_state(state: &str, had_error: bool) -> AgentThreadStatus {
+    if had_error {
+        return AgentThreadStatus::Failed;
+    }
+    match state.to_ascii_lowercase().as_str() {
+        "completed" | "complete" | "succeeded" | "success" => AgentThreadStatus::Succeeded,
+        "error" | "failed" => AgentThreadStatus::Failed,
+        "cancelled" | "canceled" | "aborted" | "stopped" => AgentThreadStatus::Canceled,
+        "thinking" => AgentThreadStatus::Thinking,
+        "streaming" => AgentThreadStatus::Streaming,
+        "tool" | "tool_running" => AgentThreadStatus::ToolRunning,
+        "permission" | "waiting_permission" => AgentThreadStatus::WaitingPermission,
+        "closed" => AgentThreadStatus::Closed,
+        _ => AgentThreadStatus::Running,
+    }
+}
+
 fn agent_state_is_active(state: &str) -> bool {
     matches!(
         state.to_ascii_lowercase().as_str(),
-        "running" | "active" | "spawned"
+        "running"
+            | "active"
+            | "spawned"
+            | "thinking"
+            | "streaming"
+            | "tool"
+            | "tool_running"
+            | "permission"
+            | "waiting_permission"
     )
 }

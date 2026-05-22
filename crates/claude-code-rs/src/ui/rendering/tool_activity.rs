@@ -285,15 +285,18 @@ fn tool_label_and_args(tool_name: &str, input: &str) -> (String, Option<String>)
     (name, args)
 }
 
-fn user_facing_tool_name(tool_name: &str) -> String {
+pub fn user_facing_tool_name(tool_name: &str) -> String {
     match tool_name {
         "read_file" | "Read" => "Read".to_string(),
-        "edit_file" | "Edit" | "Write" => "Edit".to_string(),
+        "edit_file" | "file_edit" | "FileEdit" | "Edit" | "MultiEdit" | "NotebookEdit"
+        | "file_write" | "FileWrite" | "Write" => "Edit".to_string(),
         "bash" | "Bash" => "Bash".to_string(),
+        "powershell" | "PowerShell" => "PowerShell".to_string(),
         "grep" | "Grep" => "Search".to_string(),
         "glob" | "Glob" => "Glob".to_string(),
         "web_fetch" | "WebFetch" => "Fetch".to_string(),
         "todo_write" | "TodoWrite" => "Todo".to_string(),
+        "Task" | "Agent" => "Agent".to_string(),
         _ => tool_name.to_string(),
     }
 }

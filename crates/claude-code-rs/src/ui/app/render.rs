@@ -14,6 +14,7 @@ use crate::ui::history_search_dialog::HistorySearchDialog;
 use crate::ui::messages::render_messages;
 use crate::ui::notifications::in_app::{NotificationPriority, NotificationTone};
 use crate::ui::overlays::{render_centered_dialog_lines, CenteredOverlayFrame};
+use crate::ui::panel_layout::PanelSizePreset;
 use crate::ui::prompt_input::PromptInputRenderContext;
 use crate::ui::theme::{Theme, ThemeColors};
 use crate::ui::transcript::{self, TranscriptInputMode, ViewMode};
@@ -88,7 +89,11 @@ impl App {
         let paste_notice_height =
             u16::from(self.prompt.large_paste_notice().is_some() && !immediate_notification);
         let notification_height = u16::from(current_notification.is_some());
-        let agent_footer_height = u16::from(self.agent_footer_visible() && !immediate_notification);
+        let agent_footer_height = if self.agent_footer_visible() && !immediate_notification {
+            self.agent_footer_height()
+        } else {
+            0
+        };
         let input_height = 3u16;
         let status_height = if custom_lines.is_empty() {
             1u16
@@ -377,15 +382,22 @@ impl App {
             return;
         }
 
-        let active_label = self
-            .current_agent_label()
-            .unwrap_or_else(|| "Primary".to_string());
-        let line = Line::from(vec![
-            Span::styled(" agents ", self.theme.info),
-            Span::styled(format!("{active_label} | "), self.theme.dim),
-            Span::styled("Ctrl+X Ctrl+A open tree", self.theme.dim),
-        ]);
-        buf.set_line(area.x, area.y, &line, area.width);
+        for (idx, text) in self
+            .agent_footer_lines()
+            .into_iter()
+            .take(area.height as usize)
+            .enumerate()
+        {
+            let line = if idx == 0 {
+                Line::from(vec![
+                    Span::styled(" agents ", self.theme.info),
+                    Span::styled(text, self.theme.dim),
+                ])
+            } else {
+                Line::from(Span::styled(text, self.theme.dim))
+            };
+            buf.set_line(area.x, area.y + idx as u16, &line, area.width);
+        }
     }
 
     fn prompt_placeholder(&self) -> &'static str {
@@ -826,10 +838,8 @@ fn render_command_surface_overlay(
         .map(|line| Line::from(line.to_string()))
         .collect::<Vec<_>>();
     render_centered_dialog_lines(
-        CenteredOverlayFrame::new(surface.title())
-            .color("accent")
-            .width(32, 96)
-            .height(5, 28),
+        CenteredOverlayFrame::with_preset(surface.title(), PanelSizePreset::CommandSurface)
+            .color("accent"),
         body,
         area,
         buf,
@@ -845,25 +855,25 @@ fn render_history_search_overlay(
     theme: &Theme,
     colors: &ThemeColors,
 ) {
-    if area.width < 20 || area.height < 8 {
+    let spec = PanelSizePreset::HistorySearch.spec();
+    if area.width < spec.min_width || area.height < spec.min_height {
         return;
     }
 
-    let width = area.width.saturating_sub(4).clamp(20, 120);
-    let height = area.height.saturating_sub(4).clamp(8, 18);
+    let overlay = spec
+        .resolve_rect(area, spec.max_height)
+        .unwrap_or(Rect::new(area.x, area.y, area.width, area.height));
     let text = dialog.render(
-        width.saturating_sub(4) as usize,
-        height.saturating_sub(3) as usize,
+        overlay.width.saturating_sub(4) as usize,
+        overlay.height.saturating_sub(3) as usize,
     );
     let body = text
         .lines()
         .map(|line| Line::from(line.to_string()))
         .collect::<Vec<_>>();
     render_centered_dialog_lines(
-        CenteredOverlayFrame::new("History Search")
-            .color("accent")
-            .width(20, 120)
-            .height(8, 18),
+        CenteredOverlayFrame::with_preset("History Search", PanelSizePreset::HistorySearch)
+            .color("accent"),
         body,
         area,
         buf,
@@ -881,7 +891,8 @@ fn render_agent_tree_overlay(
     theme: &Theme,
     colors: &ThemeColors,
 ) {
-    if area.width < 24 || area.height < 8 {
+    let spec = PanelSizePreset::AgentTree.spec();
+    if area.width < spec.min_width || area.height < spec.min_height {
         return;
     }
 
@@ -897,10 +908,8 @@ fn render_agent_tree_overlay(
         );
     }
     render_centered_dialog_lines(
-        CenteredOverlayFrame::new("Agent Threads")
-            .color("accent")
-            .width(24, 100)
-            .height(8, 20),
+        CenteredOverlayFrame::with_preset("Agent Threads", PanelSizePreset::AgentTree)
+            .color("accent"),
         lines,
         area,
         buf,

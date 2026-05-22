@@ -159,8 +159,12 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             &["/permissions", "/permissions mode plan"],
         ),
         "plan" => CommandMeta {
-            usage: "/plan <enter|show|status|approve|reject|link|classify> ...".to_string(),
-            examples: vec!["/plan enter refactor command palette".to_string()],
+            usage: "/plan [enter|show|status|approve|reject|link|classify] ...".to_string(),
+            examples: vec![
+                "/plan".to_string(),
+                "/plan status".to_string(),
+                "/plan enter refactor command palette".to_string(),
+            ],
             edit_targets: vec![EditTarget::new(
                 "current",
                 cfg_paths::current_plan_file_path(cwd),

@@ -70,7 +70,10 @@ impl AgentTreeDialog {
             let is_selected = self.selected_thread_id.as_deref() == Some(entry.thread_id.as_str());
             let is_current = entry.thread_id == current_thread_id;
             let marker = if is_selected { ">" } else { " " };
-            let status = if entry.is_closed { "closed" } else { "active" };
+            let status = state
+                .runtime_info(&entry.thread_id)
+                .map(|runtime| runtime.status.label())
+                .unwrap_or(if entry.is_closed { "closed" } else { "active" });
             let role = entry.agent_role.as_deref().unwrap_or("agent");
 
             let mut label_style = if entry.is_closed {

@@ -457,6 +457,19 @@ mod tests {
         ]
     }
 
+    fn long_entries() -> Vec<HistorySearchEntry> {
+        vec![
+            HistorySearchEntry::new(
+                "run a very long prompt that asks the model to inspect every permission overlay, every command surface, and every snapshot truncation case",
+                NOW - 45,
+            ),
+            HistorySearchEntry::new(
+                "summarize /tmp/very/long/project/path/with/many/nested/directories/and/a/file-name-that-should-not-fit.rs",
+                NOW - 240,
+            ),
+        ]
+    }
+
     #[test]
     fn filtering_keeps_contains_before_subsequence() {
         let mut dialog = HistorySearchDialog::from_entries(entries(), "mcp", NOW);
@@ -504,12 +517,14 @@ mod tests {
     fn snapshot_history_search_states() {
         let wide = HistorySearchDialog::from_entries(entries(), "", NOW).render(120, 12);
         let narrow = HistorySearchDialog::from_entries(entries(), "write", NOW).render(64, 14);
+        let truncated =
+            HistorySearchDialog::from_entries(long_entries(), "permission", NOW).render(42, 8);
         let loading = HistorySearchDialog::loading("", NOW).render(64, 6);
         let no_history = HistorySearchDialog::from_entries(Vec::new(), "", NOW).render(64, 6);
         let no_matches = HistorySearchDialog::from_entries(entries(), "zzz", NOW).render(64, 6);
 
         assert_snapshot!(format!(
-            "## wide\n{wide}\n\n## narrow\n{narrow}\n\n## loading\n{loading}\n\n## no history\n{no_history}\n\n## no matches\n{no_matches}"
+            "## wide\n{wide}\n\n## narrow\n{narrow}\n\n## truncated\n{truncated}\n\n## loading\n{loading}\n\n## no history\n{no_history}\n\n## no matches\n{no_matches}"
         ));
     }
 }

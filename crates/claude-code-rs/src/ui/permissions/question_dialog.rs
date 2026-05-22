@@ -13,6 +13,7 @@ use crate::ui::permissions::ask_user_question_permission_request::preview_box::r
 use crate::ui::permissions::ask_user_question_permission_request::preview_question_view::render_preview_question_view;
 use crate::ui::permissions::ask_user_question_permission_request::submit_questions_view::render_submit_questions_view;
 use crate::ui::permissions::ask_user_question_permission_request::use_multiple_choice_state::MultipleChoiceState;
+use crate::ui::panel_layout::PanelSizePreset;
 use crate::ui::theme::Theme;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,10 +40,18 @@ impl QuestionDialog {
         match (key.modifiers, key.code) {
             (_, KeyCode::Enter) => return Some(self.submit_answer()),
             (_, KeyCode::Esc) => return Some(String::new()),
-            (_, KeyCode::Up) | (_, KeyCode::Char('k')) => {
+            (_, KeyCode::Up) => {
                 self.choices.selected = self.choices.selected.saturating_sub(1);
             }
-            (_, KeyCode::Down) | (_, KeyCode::Char('j')) => {
+            (_, KeyCode::Char('k')) if !self.request.allow_free_text => {
+                self.choices.selected = self.choices.selected.saturating_sub(1);
+            }
+            (_, KeyCode::Down) => {
+                if !self.choices.options.is_empty() {
+                    self.choices.select_next();
+                }
+            }
+            (_, KeyCode::Char('j')) if !self.request.allow_free_text => {
                 if !self.choices.options.is_empty() {
                     self.choices.select_next();
                 }
@@ -62,7 +71,9 @@ impl QuestionDialog {
             }
             (_, KeyCode::Home) => self.cursor = 0,
             (_, KeyCode::End) => self.cursor = self.answer.chars().count(),
-            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(ch)) => {
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(ch))
+                if self.request.allow_free_text =>
+            {
                 self.insert(ch);
             }
             _ => {}
@@ -71,11 +82,10 @@ impl QuestionDialog {
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
-        let dialog_width = (area.width * 68 / 100).max(48).min(area.width);
-        let dialog_height = 13u16.min(area.height).max(8);
-        let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
-        let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
-        let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
+        let spec = PanelSizePreset::QuestionDialog.spec();
+        let dialog_area = spec
+            .resolve_rect(area, spec.max_height)
+            .unwrap_or(Rect::new(area.x, area.y, area.width, area.height));
 
         Widget::render(Clear, dialog_area, buf);
 
@@ -123,13 +133,16 @@ impl QuestionDialog {
         );
 
         let footer_width = chunks[2].width.saturating_sub(2) as usize;
-        let hint = Line::from(Span::styled(
-            truncate(
-                "Type an answer. Enter submits. Esc sends an empty answer.",
-                footer_width,
-            ),
-            theme.dim,
-        ));
+        let hint_text = if self.request.allow_free_text && !self.choices.options.is_empty() {
+            "Type an answer or use arrows for choices. Enter submits. Esc sends an empty answer."
+        } else if self.request.allow_free_text {
+            "Type an answer. Enter submits. Esc sends an empty answer."
+        } else if !self.choices.options.is_empty() {
+            "Use arrows for choices. Space toggles. Enter submits. Esc sends an empty answer."
+        } else {
+            "Enter submits an empty answer. Esc sends an empty answer."
+        };
+        let hint = Line::from(Span::styled(truncate(hint_text, footer_width), theme.dim));
         buf.set_line(chunks[2].x + 1, chunks[2].y, &hint, footer_width as u16);
     }
 
@@ -286,6 +299,56 @@ mod tests {
         assert_eq!(
             dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
             Some("yes".to_string())
+        );
+    }
+
+    #[test]
+    fn question_dialog_returns_selected_choice_when_free_text_is_disabled() {
+        let mut dialog = QuestionDialog::new(
+            "q-1",
+            AskUserRequestPayload {
+                question: "Choose a path".to_string(),
+                choices: vec!["safe".to_string(), "fast".to_string()],
+                allow_free_text: false,
+            },
+        );
+
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some("fast".to_string())
+        );
+    }
+
+    #[test]
+    fn question_dialog_keeps_j_and_k_as_free_text_when_allowed() {
+        let mut dialog = QuestionDialog::new(
+            "q-1",
+            AskUserRequestPayload {
+                question: "Any notes?".to_string(),
+                choices: vec!["No".to_string(), "Yes".to_string()],
+                allow_free_text: true,
+            },
+        );
+
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            dialog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some("jk".to_string())
         );
     }
 }

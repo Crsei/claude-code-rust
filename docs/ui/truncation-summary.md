@@ -117,7 +117,7 @@
 | 文件 | `crates/claude-code-rs/src/ui/permissions/dialog_overlay.rs:253-326, 794, 924-935` |
 | 截断方式 | 反馈文本、提示文本、正文行、警告 spans、按钮文字均用 `truncate_str()` 截断 |
 | 文件 | `crates/claude-code-rs/src/ui/permissions/utils.rs:176, 185, 269-286, 305, 331` |
-| 截断方式 | 请求摘要截断至 100 字符（`truncate_middle` head...tail）；路径截断至 100 字符；每行截断至 120 字符 |
+| 截断方式 | 请求摘要截断至 140 字符（`truncate_middle` head...tail）；路径截断至 140 字符；每行截断至 180 字符 |
 | 文件 | `crates/claude-code-rs/src/ui/permissions/question_dialog.rs:104-167, 244-256` |
 | 截断方式 | 问题文本、答案预览、对话框行均按字符截断 |
 
@@ -214,7 +214,19 @@
 > 记录时间：2026-05-22  
 > 来源：`overlays/mod.rs`, `app/render.rs`, `permissions/`, `command_palette/`
 
-### 4.1 共享基础设施：`CenteredOverlayFrame`
+### 4.1 共享基础设施：`panel_layout` + `CenteredOverlayFrame`
+
+**文件**：`crates/claude-code-rs/src/ui/panel_layout.rs`
+
+Rust TUI 现在通过 `PanelSizePreset` / `PanelSizeSpec` 集中记录面板尺寸默认值，并提供 `resolve_rect()` 统一计算安全的居中区域：
+
+- `CommandSurface`: 32..148 宽，5..40 高
+- `HistorySearch`: 20..148 宽，8..28 高
+- `AgentTree`: 24..140 宽，8..32 高
+- `PermissionDialog`: 56..150 宽，最小 8 高，最大随终端高度
+- `QuestionDialog`: 90% 终端宽，最小 56 宽，8..18 高
+- `BypassPermissionsMode`: 90% 终端宽，最小 64 宽，8..18 高
+- `BetterViewPanel`: 固定 140 字符宽
 
 **文件**：`crates/claude-code-rs/src/ui/overlays/mod.rs`
 
@@ -237,6 +249,8 @@ pub struct CenteredOverlayFrame<'a> {
 - `min_height`: 5
 - `max_height`: 24
 
+`CenteredOverlayFrame::with_preset()` 可直接使用 `PanelSizePreset`，旧的 `.width()` / `.height()` builder 仍保留兼容。
+
 渲染逻辑（`render_centered_dialog_lines()`）：
 - 宽度：`min(area.width - 4, max_width).max(min_width)`
 - 高度：`content_line_count.max(min_height).min(max_height)`
@@ -247,11 +261,11 @@ pub struct CenteredOverlayFrame<'a> {
 **文件**：`crates/claude-code-rs/src/ui/components/better_view_panel.rs`
 
 纯文本面板渲染器，内部尺寸常量：
-- `PANEL_WIDTH`: **88** 字符
-- `NAV_WIDTH`: **22** 字符（左侧导航列）
-- `DETAIL_WIDTH`: **61** 字符
+- `PANEL_WIDTH`: **140** 字符
+- `NAV_WIDTH`: **40** 字符（左侧导航列）
+- `DETAIL_WIDTH`: **95** 字符
 
-始终输出 88 字符宽的面板行，外部容器（如 `CenteredOverlayFrame`）负责缩放/截断。
+始终输出 140 字符宽的面板行，外部容器（如 `CenteredOverlayFrame`）负责缩放/截断。
 
 ### 4.3 各面板尺寸
 
@@ -262,16 +276,16 @@ pub struct CenteredOverlayFrame<'a> {
 ```rust
 CenteredOverlayFrame::new(surface.title())
     .color("accent")
-    .width(32, 96)
-    .height(5, 28)
+    .width(32, 148)
+    .height(5, 40)
 ```
 
 | 约束 | 值 |
 |------|-----|
 | 最小宽度 | 32 |
-| 最大宽度 | 96 |
+| 最大宽度 | 148 |
 | 最小高度 | 5 |
-| 最大高度 | 28 |
+| 最大高度 | 40 |
 | 自适应 | 高度基于内容行数 |
 
 #### Permission Dialog（权限对话框）
@@ -281,15 +295,15 @@ CenteredOverlayFrame::new(surface.title())
 未使用 `CenteredOverlayFrame`，自行计算居中 Rect：
 
 ```rust
-let dialog_width = area.width.saturating_sub(2).clamp(48, 120).min(area.width);
+let dialog_width = area.width.saturating_sub(2).clamp(56, 150).min(area.width);
 let preferred_height = footer_height.saturating_add(if self.is_typing_feedback() { 14 } else { 12 });
 let dialog_height = preferred_height.min(area.height).max(8);
 ```
 
 | 约束 | 值 |
 |------|-----|
-| 最小宽度 | 48 |
-| 最大宽度 | 120 |
+| 最小宽度 | 56 |
+| 最大宽度 | 150 |
 | 最小高度 | 8 |
 | 最大高度 | area.height（屏幕高度） |
 | 首选高度 | 12（正常）或 14（反馈模式）+ footer_height |
@@ -301,17 +315,17 @@ let dialog_height = preferred_height.min(area.height).max(8);
 未使用 `CenteredOverlayFrame`：
 
 ```rust
-let dialog_width = (area.width * 68 / 100).max(48).min(area.width);
-let dialog_height = 13u16.min(area.height).max(8);
+let dialog_width = (area.width * 90 / 100).max(56).min(area.width);
+let dialog_height = 18u16.min(area.height).max(8);
 ```
 
 | 约束 | 值 |
 |------|-----|
-| 最小宽度 | 48 |
+| 最小宽度 | 56 |
 | 最大宽度 | area.width（屏幕宽度） |
-| 首选宽度 | 68% 屏幕宽度 |
+| 首选宽度 | 90% 屏幕宽度 |
 | 最小高度 | 8 |
-| 最大高度 | 13 |
+| 最大高度 | 18 |
 
 #### History Search（历史搜索）
 
@@ -320,16 +334,16 @@ let dialog_height = 13u16.min(area.height).max(8);
 ```rust
 CenteredOverlayFrame::new("History Search")
     .color("accent")
-    .width(20, 120)
-    .height(8, 18)
+    .width(20, 148)
+    .height(8, 28)
 ```
 
 | 约束 | 值 |
 |------|-----|
 | 最小宽度 | 20 |
-| 最大宽度 | 120 |
+| 最大宽度 | 148 |
 | 最小高度 | 8 |
-| 最大高度 | 18 |
+| 最大高度 | 28 |
 
 #### Agent Tree（代理线程树）
 
@@ -338,16 +352,16 @@ CenteredOverlayFrame::new("History Search")
 ```rust
 CenteredOverlayFrame::new("Agent Threads")
     .color("accent")
-    .width(24, 100)
-    .height(8, 20)
+    .width(24, 140)
+    .height(8, 32)
 ```
 
 | 约束 | 值 |
 |------|-----|
 | 最小宽度 | 24 |
-| 最大宽度 | 100 |
+| 最大宽度 | 140 |
 | 最小高度 | 8 |
-| 最大高度 | 20 |
+| 最大高度 | 32 |
 
 #### Diff 面板
 
@@ -356,9 +370,9 @@ CenteredOverlayFrame::new("Agent Threads")
 | 约束 | 值 |
 |------|-----|
 | 最小宽度 | 32 |
-| 最大宽度 | 96 |
+| 最大宽度 | 148 |
 | 最小高度 | 5 |
-| 最大高度 | 28 |
+| 最大高度 | 40 |
 
 #### Command Palette（命令面板）
 
@@ -378,27 +392,28 @@ CenteredOverlayFrame::new("Agent Threads")
 **文件**：`crates/claude-code-rs/src/ui/permissions/bypass_permissions_mode_dialog.rs:57-61`
 
 ```rust
-let dialog_width = (area.width * 72 / 100).max(56).min(area.width);
-let dialog_height = 13u16.min(area.height).max(8);
+let dialog_width = (area.width * 90 / 100).max(64).min(area.width);
+let dialog_height = 18u16.min(area.height).max(8);
 ```
 
 | 约束 | 值 |
 |------|-----|
-| 最小宽度 | 56 |
+| 最小宽度 | 64 |
 | 最大宽度 | area.width（屏幕宽度） |
-| 首选宽度 | 72% 屏幕宽度 |
+| 首选宽度 | 90% 屏幕宽度 |
 | 最小高度 | 8 |
-| 最大高度 | 13 |
+| 最大高度 | 18 |
 
 ### 4.4 统一性分析
 
-**没有统一的配置机制。** 尺寸定义分散在各面板文件中：
+已有统一的内部尺寸配置机制。`panel_layout.rs` 集中保存 overlay/dialog/panel 的默认尺寸，`CenteredOverlayFrame` 和权限相关弹窗均从 preset 获取尺寸约束。
 
-1. **使用 `CenteredOverlayFrame` 的面板**（3个）：Command Surface、History Search、Agent Tree — 有共享的居中和尺寸夹紧逻辑。
-2. **自行计算居中的面板**（3个）：Permission Dialog、Question Dialog、Bypass Permissions Mode — 使用相似的 `clamp(min, max)` 模式，但数值各自不同。
-3. **独立布局的面板**（1个）：Command Palette — 全屏宽度，底部面板区域。
+仍保留独立布局的面板：
 
-所有尺寸均为硬编码字面量，无中央配置文件。
+1. **Command Palette**：底部全宽面板，尺寸由命令行数、帮助区和底部输入区域共同决定，不使用居中 overlay。
+2. **消息区域内联内容**：随主消息流宽度渲染，不属于专门面板尺寸配置。
+
+该机制目前是 Rust 内部 preset，不接入用户 settings。
 
 ---
 

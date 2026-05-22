@@ -15,6 +15,15 @@ use ratatui::widgets::{Clear, Paragraph, Widget, Wrap};
 use crate::ui::theme::ThemeColors;
 
 use self::dialog::{Dialog, ExitGuard};
+use super::panel_layout::{centered_rect, PanelSizePreset, PanelSizeSpec};
+
+const _: fn() = production_symbol_anchors;
+
+fn production_symbol_anchors() {
+    let _ = CenteredOverlayFrame::new("Overlay")
+        .width(24, 96)
+        .height(5, 24);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CenteredOverlayFrame<'a> {
@@ -35,6 +44,21 @@ impl<'a> CenteredOverlayFrame<'a> {
             max_width: 96,
             min_height: 5,
             max_height: 24,
+        }
+    }
+
+    pub fn with_preset(title: &'a str, preset: PanelSizePreset) -> Self {
+        Self::with_spec(title, preset.spec())
+    }
+
+    pub fn with_spec(title: &'a str, spec: PanelSizeSpec) -> Self {
+        Self {
+            title,
+            color: None,
+            min_width: spec.min_width,
+            max_width: spec.max_width,
+            min_height: spec.min_height,
+            max_height: spec.max_height,
         }
     }
 
@@ -95,15 +119,6 @@ pub fn render_centered_dialog_lines(
         .style(style)
         .wrap(Wrap { trim: false })
         .render(overlay, buf);
-}
-
-pub fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width: width.min(area.width),
-        height: height.min(area.height),
-    }
 }
 
 #[cfg(test)]

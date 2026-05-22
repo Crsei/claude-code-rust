@@ -148,7 +148,9 @@ impl CommandPalette {
     ) -> Option<CommandAction> {
         let cmd = self.filtered.get(self.selected)?;
 
-        if should_execute && cmd.accepts_no_arguments() {
+        if should_execute
+            && (cmd.accepts_no_arguments() || cmd.executes_on_exact_palette_match(&self.query))
+        {
             Some(CommandAction::Execute(format!("/{}", cmd.name)))
         } else {
             Some(CommandAction::Insert(format!("/{} ", cmd.name)))
@@ -274,6 +276,10 @@ impl CommandPalette {
 impl CommandItem {
     pub fn accepts_no_arguments(&self) -> bool {
         self.usage.trim() == format!("/{}", self.name)
+    }
+
+    fn executes_on_exact_palette_match(&self, query: &str) -> bool {
+        self.name == "plan" && query.eq_ignore_ascii_case(&self.name)
     }
 }
 

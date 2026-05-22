@@ -939,10 +939,7 @@ fn grouping_tool_use_key(msg: &RenderableMessage) -> Option<(usize, &str)> {
 }
 
 fn is_groupable_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "Task" | "Agent" | "TodoWrite" | "Read" | "Grep" | "Glob"
-    )
+    matches!(name, "Task" | "Agent" | "Read" | "Grep" | "Glob")
 }
 
 fn source_index_of(msg: &RenderableMessage) -> Option<usize> {
@@ -2142,7 +2139,7 @@ fn tool_input_summary(name: &str, input: &serde_json::Value, max_chars: usize) -
 
 fn tool_primary_input(name: &str, input: &serde_json::Value) -> Option<String> {
     let key = match name {
-        "Read" | "Edit" | "Write" => "file_path",
+        "Read" | "Edit" | "Write" | "FileEdit" | "FileWrite" | "MultiEdit" => "file_path",
         "NotebookEdit" => "notebook_path",
         "Bash" => "command",
         "Grep" | "Glob" => "pattern",
@@ -2855,6 +2852,73 @@ mod tests {
         assert!(!rendered.contains("microcompact"));
         assert!(rendered.contains("Read 1 file"));
         assert!(rendered.contains("Searched for 1 pattern"));
+    }
+
+    #[test]
+    fn todo_write_tool_uses_are_not_grouped_away() {
+        let messages = vec![Message::Assistant(AssistantMessage {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: 1,
+            role: "assistant".to_string(),
+            content: vec![
+                ContentBlock::ToolUse {
+                    id: "toolu_todo_1".to_string(),
+                    name: "TodoWrite".to_string(),
+                    input: json!({
+                        "todos": [
+                            { "content": "Inspect app state", "status": "completed" },
+                            { "content": "Patch todo renderer", "status": "in_progress" }
+                        ]
+                    }),
+                },
+                ContentBlock::ToolUse {
+                    id: "toolu_todo_2".to_string(),
+                    name: "TodoWrite".to_string(),
+                    input: json!({
+                        "todos": [
+                            { "content": "Run focused tests", "status": "pending" }
+                        ]
+                    }),
+                },
+            ],
+            usage: None,
+            stop_reason: None,
+            is_api_error_message: false,
+            api_error: None,
+            cost_usd: 0.0,
+        })];
+
+        let context = super::build_message_render_context_with_options(
+            &messages,
+            None,
+            false,
+            super::MessageRenderOptions::default(),
+        );
+        let rendered = context
+            .renderable_messages()
+            .iter()
+            .flat_map(|message| {
+                super::render_renderable_message_with_context(
+                    message,
+                    0,
+                    &Theme::default(),
+                    80,
+                    &context,
+                )
+            })
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(!rendered.contains("TodoWrite calls"));
+        assert!(rendered.contains("[x] Inspect app state"));
+        assert!(rendered.contains("[*] Patch todo renderer"));
+        assert!(rendered.contains("[ ] Run focused tests"));
     }
 
     #[test]

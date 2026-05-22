@@ -6,6 +6,7 @@
 
 use crate::ui::theme::Theme;
 use crate::ui::tool_activity::{ToolActivity, ToolState};
+use serde_json::Value;
 
 /// Tool-use lifecycle states used by the renderer.
 ///
@@ -48,22 +49,22 @@ fn is_transparent_wrapper_tool(tool_name: &str) -> bool {
 /// Render a tool that is queued (waiting its turn).
 ///
 /// TS reference: `AssistantToolUseMessage.tsx:138-140` (queued dot)
-fn render_tool_use_queued_message(tool_name: &str) -> String {
-    format!("  ● {tool_name}")
+fn render_tool_use_queued_message(display_name: &str) -> String {
+    format!("  ● {display_name}")
 }
 
 /// Render a tool that is currently executing with progress.
 ///
 /// TS reference: `AssistantToolUseMessage.tsx:221-268`
 fn render_tool_use_progress_message(
-    tool_name: &str,
+    display_name: &str,
     input_summary: &str,
     has_hook_progress: bool,
 ) -> String {
     let summary = if input_summary.is_empty() {
-        tool_name.to_string()
+        display_name.to_string()
     } else {
-        format!("{tool_name}({input_summary})")
+        format!("{display_name}({input_summary})")
     };
     if has_hook_progress {
         format!("  ● {summary} [hook running]")
@@ -73,11 +74,11 @@ fn render_tool_use_progress_message(
 }
 
 /// Render a tool that encountered an error.
-fn render_tool_use_error_state(tool_name: &str, input_summary: &str) -> String {
+fn render_tool_use_error_state(display_name: &str, input_summary: &str) -> String {
     let summary = if input_summary.is_empty() {
-        tool_name.to_string()
+        display_name.to_string()
     } else {
-        format!("{tool_name}({input_summary})")
+        format!("{display_name}({input_summary})")
     };
     format!("  ● {summary} [error]")
 }
@@ -85,15 +86,15 @@ fn render_tool_use_error_state(tool_name: &str, input_summary: &str) -> String {
 /// Render a tool that is being checked by the content classifier.
 ///
 /// TS reference: `AssistantToolUseMessage.tsx:173-178`
-fn render_classifier_checking(tool_name: &str) -> String {
-    format!("  ● {tool_name} (classifier checking...)")
+fn render_classifier_checking(display_name: &str) -> String {
+    format!("  ● {display_name} (classifier checking...)")
 }
 
 /// Render a tool waiting for user permission.
 ///
 /// TS reference: `AssistantToolUseMessage.tsx:179-182`
-fn render_waiting_for_permission(tool_name: &str) -> String {
-    format!("  ● {tool_name} (waiting for permission...)")
+fn render_waiting_for_permission(display_name: &str) -> String {
+    format!("  ● {display_name} (waiting for permission...)")
 }
 
 fn render_shell_tool_use_message(
@@ -123,6 +124,99 @@ fn render_shell_tool_use_message(
     Some(format!("  ● {title}{hook_suffix}\n   ⎿  {call}"))
 }
 
+fn render_file_edit_tool_use_message(
+    tool_name: &str,
+    input: &str,
+    state: ToolUseState,
+    has_hook_progress: bool,
+) -> Option<String> {
+    if !matches!(
+        tool_name,
+        "Edit" | "Write" | "FileEdit" | "FileWrite" | "NotebookEdit" | "MultiEdit"
+    ) {
+        return None;
+    }
+
+    let value = serde_json::from_str::<Value>(input.trim()).ok()?;
+    let object = value.as_object()?;
+    let path = ["file_path", "path", "notebook_path"]
+        .iter()
+        .find_map(|key| object.get(*key).and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let path = format_tool_arg(path);
+    let title = match state {
+        ToolUseState::Queued => "Queued edit",
+        ToolUseState::InProgress => "Editing",
+        ToolUseState::Resolved => "Edited",
+        ToolUseState::Error => "Edit failed [error]",
+        ToolUseState::WaitingForPermission => "Edit needs permission",
+        ToolUseState::ClassifierChecking => "Checking edit",
+    };
+    let hook_suffix = if has_hook_progress {
+        " [hook running]"
+    } else {
+        ""
+    };
+    Some(format!("  ● {title}{hook_suffix}\n   ⎿  Edit(path={path})"))
+}
+
+fn render_todo_write_tool_use_message(
+    tool_name: &str,
+    input: &str,
+    state: ToolUseState,
+) -> Option<String> {
+    if !matches!(tool_name, "TodoWrite" | "todo_write") {
+        return None;
+    }
+
+    let value = serde_json::from_str::<Value>(input.trim()).ok()?;
+    let todos = value.get("todos").and_then(Value::as_array)?;
+    let title = match state {
+        ToolUseState::Queued => "Queued todo update",
+        ToolUseState::InProgress => "Updating todos",
+        ToolUseState::Resolved => "Updated todos",
+        ToolUseState::Error => "Todo update failed [error]",
+        ToolUseState::WaitingForPermission => "Todo update needs permission",
+        ToolUseState::ClassifierChecking => "Checking todo update",
+    };
+
+    let mut lines = vec![format!("  ● {title}")];
+    if todos.is_empty() {
+        lines.push("   ⎿  (empty todo list)".to_string());
+    } else {
+        for todo in todos.iter().take(12) {
+            let status = todo
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("pending");
+            let content = todo
+                .get("activeForm")
+                .and_then(Value::as_str)
+                .filter(|value| status == "in_progress" && !value.trim().is_empty())
+                .or_else(|| todo.get("content").and_then(Value::as_str))
+                .unwrap_or("(untitled todo)");
+            lines.push(format!(
+                "   ⎿  {} {}",
+                todo_status_marker(status),
+                format_tool_arg(content.trim())
+            ));
+        }
+        if todos.len() > 12 {
+            lines.push(format!("   ⎿  ... {} more", todos.len() - 12));
+        }
+    }
+    Some(lines.join("\n"))
+}
+
+fn todo_status_marker(status: &str) -> &'static str {
+    match status {
+        "completed" => "[x]",
+        "in_progress" => "[*]",
+        _ => "[ ]",
+    }
+}
+
 fn shell_tool_call_summary(tool_name: &str, input: &str) -> Option<String> {
     let value = serde_json::from_str::<serde_json::Value>(input.trim()).ok()?;
     let object = value.as_object()?;
@@ -134,7 +228,7 @@ fn shell_tool_call_summary(tool_name: &str, input: &str) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        parts.push(format_shell_tool_arg(description));
+        parts.push(format_tool_arg(description));
     }
 
     if let Some(command) = object
@@ -143,13 +237,13 @@ fn shell_tool_call_summary(tool_name: &str, input: &str) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        parts.push(format_shell_tool_arg(command));
+        parts.push(format_tool_arg(command));
     }
 
     (!parts.is_empty()).then(|| format!("{tool_name}({})", parts.join(", ")))
 }
 
-fn format_shell_tool_arg(value: &str) -> String {
+fn format_tool_arg(value: &str) -> String {
     const MAX_CHARS: usize = 96;
     let single_line = value.replace('\n', "\\n");
     if single_line.chars().count() <= MAX_CHARS {
@@ -180,14 +274,29 @@ pub fn render_assistant_tool_use_message(
     has_hook_progress: bool,
     _theme: &Theme,
 ) -> String {
+    if let Some(rendered) = render_todo_write_tool_use_message(tool_name, input, state) {
+        return rendered;
+    }
+
     if let Some(rendered) =
         render_shell_tool_use_message(tool_name, input, state, has_hook_progress)
     {
         return rendered;
     }
 
+    if let Some(rendered) =
+        render_file_edit_tool_use_message(tool_name, input, state, has_hook_progress)
+    {
+        return rendered;
+    }
+
     // Build summary from the tool input.
     let activity = ToolActivity::from_tool_use(tool_name, input, ToolState::Running);
+    let display_name = activity
+        .user_facing_name
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .unwrap_or(tool_name);
     let input_summary = activity.display_call();
     // The display_call includes the tool name, so strip it for summary-only.
     let summary_only = input_summary
@@ -199,27 +308,27 @@ pub fn render_assistant_tool_use_message(
         .unwrap_or("");
 
     match state {
-        ToolUseState::Queued => render_tool_use_queued_message(tool_name),
+        ToolUseState::Queued => render_tool_use_queued_message(display_name),
         ToolUseState::InProgress => {
-            render_tool_use_progress_message(tool_name, summary_only, has_hook_progress)
+            render_tool_use_progress_message(display_name, summary_only, has_hook_progress)
         }
         ToolUseState::Resolved => {
             if is_transparent_wrapper_tool(tool_name) {
                 // Keep an explicit completion marker unless the main render path
                 // replaces this helper with a richer tool-result row.
-                format!("  ● {tool_name}")
+                format!("  ● {display_name}")
             } else {
                 let summary = if summary_only.is_empty() {
-                    tool_name.to_string()
+                    display_name.to_string()
                 } else {
-                    format!("{tool_name}({summary_only})")
+                    format!("{display_name}({summary_only})")
                 };
                 format!("  ● {summary}")
             }
         }
-        ToolUseState::Error => render_tool_use_error_state(tool_name, summary_only),
-        ToolUseState::WaitingForPermission => render_waiting_for_permission(tool_name),
-        ToolUseState::ClassifierChecking => render_classifier_checking(tool_name),
+        ToolUseState::Error => render_tool_use_error_state(display_name, summary_only),
+        ToolUseState::WaitingForPermission => render_waiting_for_permission(display_name),
+        ToolUseState::ClassifierChecking => render_classifier_checking(display_name),
     }
 }
 
@@ -275,6 +384,35 @@ mod tests {
             &Theme::default(),
         );
         assert_eq!(result, "  ● Ran\n   ⎿  Bash(Run Rust tests, cargo test)");
+    }
+
+    #[test]
+    fn write_renders_as_edit_call_block() {
+        let result = render_assistant_tool_use_message(
+            "Write",
+            r#"{"file_path":"src/lib.rs","content":"fn main() {}"}"#,
+            ToolUseState::Resolved,
+            false,
+            &Theme::default(),
+        );
+
+        assert_eq!(result, "  ● Edited\n   ⎿  Edit(path=src/lib.rs)");
+    }
+
+    #[test]
+    fn todo_write_renders_checklist_content() {
+        let result = render_assistant_tool_use_message(
+            "TodoWrite",
+            r#"{"todos":[{"content":"Inspect UI","status":"completed"},{"content":"Patch rendering","status":"in_progress","activeForm":"Patching rendering"},{"content":"Run tests","status":"pending"}]}"#,
+            ToolUseState::Resolved,
+            false,
+            &Theme::default(),
+        );
+
+        assert!(result.contains("Updated todos"));
+        assert!(result.contains("[x] Inspect UI"));
+        assert!(result.contains("[*] Patching rendering"));
+        assert!(result.contains("[ ] Run tests"));
     }
 
     #[test]

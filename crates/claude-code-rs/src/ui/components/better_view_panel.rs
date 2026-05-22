@@ -1,7 +1,9 @@
 //! Shared text renderer for Better View command and approval panels.
 
-const PANEL_WIDTH: usize = 88;
-const NAV_WIDTH: usize = 22;
+use crate::ui::panel_layout::PanelSizePreset;
+
+pub(crate) const PANEL_WIDTH: usize = PanelSizePreset::BetterViewPanel.spec().min_width as usize;
+pub(crate) const NAV_WIDTH: usize = 40;
 const DETAIL_WIDTH: usize = PANEL_WIDTH - NAV_WIDTH - 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,6 +168,7 @@ fn fit(input: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use insta::assert_snapshot;
 
     #[test]
     fn renders_sectioned_panel_with_single_footer() {
@@ -191,5 +194,35 @@ mod tests {
             key_value_row("model", "sonnet"),
             "model                    sonnet"
         );
+    }
+
+    #[test]
+    fn snapshot_truncates_long_panel_fields() {
+        let rendered = BetterViewPanel::new("Configuration With A Very Long Title That Should Fit")
+            .summary("This summary is intentionally long so the panel has to abbreviate it before it reaches the fixed panel edge.")
+            .sections_title("Very Long Section Heading")
+            .detail_title("Very Long Detail Heading")
+            .sections(
+                vec![
+                    "status section with a very long label".into(),
+                    "model settings with a very long label".into(),
+                ],
+                0,
+            )
+            .detail_lines(vec![
+                plain_row(
+                    "active model",
+                    "claude-sonnet-with-a-very-long-provider-and-routing-name",
+                ),
+                selected_row(
+                    "Open effective configuration with a long action label",
+                    "/config show --include-sources --include-defaults",
+                    true,
+                ),
+            ])
+            .footer("Left/Right section | Up/Down navigate | Enter select | Esc close | This tail should be truncated")
+            .render();
+
+        assert_snapshot!("better_view_panel_truncates_long_fields", rendered);
     }
 }

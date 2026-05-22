@@ -6,6 +6,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 use crate::ui::approval_overlay::ApprovalKind;
+use crate::ui::better_view_panel::NAV_WIDTH;
+use crate::ui::panel_layout::PanelSizePreset;
 use crate::ui::permissions::permission_request_router::{
     PermissionDialogRequest, PermissionRequestRouter,
 };
@@ -167,7 +169,11 @@ impl PermissionDialog {
 
     /// Render the permission dialog as a centered overlay.
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
-        let dialog_width = area.width.saturating_sub(2).clamp(48, 120).min(area.width);
+        let spec = PanelSizePreset::PermissionDialog.spec();
+        let dialog_width = spec
+            .resolve_rect(area, spec.min_height)
+            .map(|rect| rect.width)
+            .unwrap_or(area.width);
         let labels = self.normalized_options();
         let estimated_footer_width = dialog_width.saturating_sub(4) as usize;
         let estimated_button_rows =
@@ -177,10 +183,9 @@ impl PermissionDialog {
             .max(if self.is_typing_feedback() { 4 } else { 3 });
         let preferred_height =
             footer_height.saturating_add(if self.is_typing_feedback() { 14 } else { 12 });
-        let dialog_height = preferred_height.min(area.height).max(8);
-        let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
-        let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
-        let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
+        let dialog_area = spec
+            .resolve_rect(area, preferred_height)
+            .unwrap_or(Rect::new(area.x, area.y, area.width, area.height));
 
         Clear.render_ref(dialog_area, buf);
 
@@ -264,13 +269,26 @@ impl PermissionDialog {
             );
         }
 
-        let full_hint = "Arrows/hotkeys. Enter confirms. Esc denies. Tab adds feedback.";
+        let (full_hint, compact_hint) = match self.feedback_target_for_selected() {
+            Some(PermissionDecisionChoice::Allow) => (
+                "Arrows/hotkeys. Enter confirms. Esc denies. Tab: tell model what to do differently.",
+                "Tab: tell model what to do differently.",
+            ),
+            Some(PermissionDecisionChoice::Deny) => (
+                "Arrows/hotkeys. Enter confirms. Esc denies. Tab: tell model what to do differently.",
+                "Tab: tell model what to do differently.",
+            ),
+            _ => (
+                "Arrows/hotkeys. Enter confirms. Esc denies. Tab adds feedback.",
+                "Arrows/hotkeys. Enter confirms. Esc denies.",
+            ),
+        };
         let hint_text = if self.is_typing_feedback() {
             "Enter submits with feedback. Esc cancels input. Tab closes input."
         } else if full_hint.chars().count() <= footer_width {
             full_hint
         } else {
-            "Arrows/hotkeys. Enter confirms. Esc denies."
+            compact_hint
         };
         let hint = Line::from(vec![Span::styled(
             truncate_str(hint_text, footer_width),
@@ -470,7 +488,7 @@ fn panel_line_to_text(line: &str) -> String {
         let inner = trimmed.trim_start_matches('|').trim_end_matches('|');
         let chars = inner.chars().collect::<Vec<_>>();
         let nav_start = 1;
-        let nav_end = nav_start + 22;
+        let nav_end = nav_start + NAV_WIDTH;
         let right_column_start = nav_end + 1;
         if chars.len() > right_column_start {
             let left = chars[nav_start..nav_end.min(chars.len())]
@@ -512,6 +530,7 @@ mod tests {
         routed_detail_lines, PermissionChoice, PermissionDecisionChoice, PermissionDialog,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use insta::assert_snapshot;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
 
@@ -691,8 +710,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn exit_plan_mode_denial_shows_feedback_path() {
+        let mut dialog = PermissionDialog::new(
+            "ExitPlanMode",
+            r#"{"plan":"1. edit files\n2. run tests","tests":["cargo test"]}"#,
+            "",
+        );
+        dialog.selected = 1;
+
+        let rendered = render_dialog_text(&dialog);
+
+        assert!(rendered.contains("tell model what to do differently"));
+    }
+
+    #[test]
+    fn snapshot_permission_dialog_expanded_area_shows_more_long_request_text() {
+        let dialog = PermissionDialog::new(
+            "Bash",
+            r#"{"command":"python scripts/run_extremely_long_validation_command.py --workspace /tmp/very/long/path/that/should/be/abbreviated --include snapshots --include truncation --include permissions --include overlays"}"#,
+            "This approval request includes a long explanatory message that should be abbreviated inside the request body instead of overflowing the dialog.",
+        );
+        let rendered = render_dialog_text_in_area(&dialog, Rect::new(0, 0, 152, 24));
+
+        assert_snapshot!("permission_dialog_expanded_long_request_152x24", rendered);
+    }
+
     fn render_dialog_text(dialog: &PermissionDialog) -> String {
-        let area = Rect::new(0, 0, 120, 24);
+        render_dialog_text_in_area(dialog, Rect::new(0, 0, 120, 24))
+    }
+
+    fn render_dialog_text_in_area(dialog: &PermissionDialog, area: Rect) -> String {
         let mut buffer = Buffer::empty(area);
         dialog.render(area, &mut buffer, &Theme::default());
         buffer_text(&buffer, area)
@@ -851,34 +899,38 @@ fn button_span(label: &str, selected: bool, theme: &Theme, padded: bool) -> Vec<
         theme.unselected
     };
     let label = button_bar_label(label);
-    let shortcut = shortcut_for_label(label);
+    let shortcut = shortcut_for_label(&label);
     let text = match (padded, shortcut) {
         (true, Some(shortcut)) => format!(" {label} ({shortcut}) "),
         (true, None) => format!(" {label} "),
         (false, Some(shortcut)) => format!("{label}({shortcut})"),
-        (false, None) => label.to_string(),
+        (false, None) => label,
     };
     vec![Span::styled(text, style)]
 }
 
-fn button_bar_label(label: &str) -> &'static str {
+fn button_bar_label(label: &str) -> String {
     let lower = label.to_ascii_lowercase();
-    if lower.contains("always") && lower.contains("exact") {
-        "Always exact"
+    if lower.contains("allow edit") {
+        "Allow edit".to_string()
+    } else if lower.contains("deny edit") {
+        "Deny edit".to_string()
     } else if lower.contains("always") && lower.contains("path") {
-        "Always path"
-    } else if lower.contains("always") {
-        "Always"
+        "Always allow path".to_string()
+    } else if lower.contains("always") && lower.contains("exact") {
+        "Always exact".to_string()
+    } else if lower == "always allow" {
+        "Always".to_string()
     } else if lower.contains("escalate") {
-        "Escalate"
+        "Escalate".to_string()
     } else if lower.contains("allow") {
-        "Allow"
+        "Allow".to_string()
     } else if lower.contains("deny") || lower.contains("reject") || lower == "no" {
-        "Deny"
+        "Deny".to_string()
     } else if lower == "yes" {
-        "Allow"
+        "Allow".to_string()
     } else {
-        "Select"
+        "Select".to_string()
     }
 }
 

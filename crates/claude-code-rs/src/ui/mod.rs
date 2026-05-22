@@ -62,6 +62,7 @@ pub mod loading_state;
 pub mod pager_overlay;
 #[path = "components/pane.rs"]
 pub mod pane;
+pub mod panel_layout;
 pub mod prompt_input;
 #[cfg(test)]
 #[path = "components/ratchet.rs"]

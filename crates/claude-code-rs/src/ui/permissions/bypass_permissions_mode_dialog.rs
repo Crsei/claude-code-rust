@@ -7,6 +7,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
+use crate::ui::panel_layout::PanelSizePreset;
 use crate::ui::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,11 +55,10 @@ impl BypassPermissionsModeDialog {
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
-        let dialog_width = (area.width * 72 / 100).max(56).min(area.width);
-        let dialog_height = 13u16.min(area.height).max(8);
-        let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
-        let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
-        let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
+        let spec = PanelSizePreset::BypassPermissionsMode.spec();
+        let dialog_area = spec
+            .resolve_rect(area, spec.max_height)
+            .unwrap_or(Rect::new(area.x, area.y, area.width, area.height));
 
         Clear.render(dialog_area, buf);
 

@@ -1,6 +1,7 @@
 //! Rust-side helper for grouped tool-use output.
 
 use crate::ui::theme::Theme;
+use crate::ui::tool_activity::user_facing_tool_name;
 use ratatui::text::{Line, Span};
 
 #[derive(Debug, Clone)]
@@ -18,7 +19,8 @@ pub fn render_grouped_tool_use_lines(
     if view.count == 0 {
         return Vec::new();
     }
-    let mut status = format!("  ● {} {} calls", view.count, view.tool_name);
+    let display_name = user_facing_tool_name(&view.tool_name);
+    let mut status = format!("  ● {} {} calls", view.count, display_name);
     if view.error_count > 0 {
         status.push_str(&format!(" · {} failed", view.error_count));
     } else if view.resolved_count >= view.count {

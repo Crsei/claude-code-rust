@@ -243,3 +243,109 @@ cargo test -p cc-tools coordinator_policy_is_lead_only -- --nocapture
 - 已有 `CLAUDE.md` 内容必须保留。
 - 状态栏里的“模型、工作区”按完整模型 ID 和完整工作区路径处理。
 - `CLAUDE.md` 是兼容既有项目指令约定的文件名，不属于需要替换成 cc-rust 的品牌文案。
+
+## 追加更新：TodoWrite、subagent 与 plan/permission 交互
+
+日期：2026-05-22
+
+### 背景
+
+本次继续修复 Rust TUI 中与命令/工具展示相关的交互问题：
+
+- `TodoWrite` 工具调用只显示空壳，不展示 todo 内容。
+- subagent 创建后仍不可用或缺少可见状态反馈。
+- 同类工具展示形式不一致，例如 file edit/write 没有按 Bash 类工具的块状形式展示。
+- 对话中创建的 agent 需要在底部区域展示运行状态。
+- `/plan` 裸命令回车应直接进入 plan mode。
+- AskUserQuestion 需要正确展示选项和自由输入，并提供 “tell model what to do differently” 反馈路径。
+
+### 修复范围
+
+#### Tool use 消息渲染
+
+- `TodoWrite` / `todo_write` 解析 `todos` 数组并渲染 checklist 内容。
+- `TodoWrite` 不再进入 grouped tool 折叠逻辑，避免内容被聚合掉。
+- `Write`、`Edit`、`FileWrite`、`FileEdit`、`NotebookEdit`、`MultiEdit` 统一显示为 `Edit(path=...)` 调用块。
+- `Bash` / `PowerShell`、file edit/write family 和 agent/task family 使用统一的 user-facing tool name 归一化。
+
+涉及文件：
+
+- `crates/claude-code-rs/src/ui/messages/assistant_tool_use_message.rs`
+- `crates/claude-code-rs/src/ui/messages/grouped_tool_use_content.rs`
+- `crates/claude-code-rs/src/ui/messages/render.rs`
+- `crates/claude-code-rs/src/ui/rendering/tool_activity.rs`
+
+#### Agent / subagent 底部状态
+
+- `AgentNavigationState` 增加运行态信息：status、summary、duration、tool use summary。
+- 后端 `AgentEvent`、`TeamEvent`、`ToolProgress`、`BackgroundAgentComplete` 会同步更新 agent navigation。
+- 底部 agent footer 在有活动非主 agent 时持续展示，不再要求当前线程正处于 agent 线程。
+- footer 展示活动 agent 数、状态、tool use 数、耗时和最近摘要，并提示 `Ctrl+X Ctrl+A open tree`。
+- `/tasks` surface 在打开时会接收相关 backend event，保持任务视图同步。
+- agent tree overlay 使用 runtime status，而不是只显示 active/closed。
+
+涉及文件：
+
+- `crates/claude-code-rs/src/ui/app.rs`
+- `crates/claude-code-rs/src/ui/app/agent_navigation.rs`
+- `crates/claude-code-rs/src/ui/app/agent_tree_dialog.rs`
+- `crates/claude-code-rs/src/ui/app/render.rs`
+
+#### `/plan` 命令面板行为
+
+- `/plan` 裸命令在 command palette 中直接执行，进入 plan mode 并显示 plan 文件内容。
+- command metadata 将 `/plan` usage 改为可选子命令形式。
+- 更新 command palette snapshot，反映 `/plan` example 和 usage 变化。
+
+涉及文件：
+
+- `crates/cc-commands/src/plan.rs`
+- `crates/claude-code-rs/src/ui/command_palette/metadata.rs`
+- `crates/claude-code-rs/src/ui/command_palette/mod.rs`
+- `crates/claude-code-rs/src/ui/command_palette/tests.rs`
+- `crates/claude-code-rs/src/ui/command_palette/snapshots/claude_code_rs__ui__command_palette__tests__command_argument_help_all_commands_110w.snap`
+
+#### AskUserQuestion 与 permission feedback
+
+- AskUserQuestion dialog 支持结构化选项、free text 输入、预览与提交状态。
+- 禁用 free text 时，方向键和 `j/k` 在选项中移动，`Space` 可切换选择。
+- 允许 free text 时，`j/k` 保持为普通输入字符。
+- Permission dialog 中 file edit 选项保留 `Allow edit`、`Deny edit`、`Always allow path` 这类具体标签。
+- `Tab` 反馈路径统一展示为 `tell model what to do differently`。
+
+涉及文件：
+
+- `crates/claude-code-rs/src/ui/permissions/question_dialog.rs`
+- `crates/claude-code-rs/src/ui/permissions/dialog_overlay.rs`
+- `crates/claude-code-rs/src/ui/permissions/utils.rs`
+- `crates/claude-code-rs/src/ui/permissions/bypass_permissions_mode_dialog.rs`
+- `crates/claude-code-rs/src/ui/permissions/snapshots/claude_code_rs__ui__permissions__dialog_overlay__tests__permission_dialog_expanded_long_request_152x24.snap`
+
+#### 共享 UI 面板与截断
+
+- 新增 `panel_layout` 共享尺寸 preset，供 permission/question/agent tree 等 overlay 使用。
+- 调整 better view、history search、diff detail、MCP surface 等长文本截断与 snapshot。
+- 更新 `docs/ui/truncation-summary.md` 记录相关 UI 截断约束。
+
+### 验证结果
+
+本轮已执行并通过：
+
+```bash
+cargo test -p cc-commands plan
+cargo test -p claude-code-rs command_palette
+cargo test -p claude-code-rs question_dialog
+cargo test -p claude-code-rs permissions
+cargo test -p claude-code-rs assistant_tool_use_message
+cargo test -p claude-code-rs todo_write_tool_uses_are_not_grouped_away
+cargo test -p claude-code-rs agent_event_updates_navigation_and_footer_rendering
+cargo build --workspace --release
+```
+
+`cargo build --workspace --release` 通过，未发现本次改动引入的新 warning。
+
+### 后续注意
+
+- agent footer 目前最多直接展示 3 个活动 agent，超出后显示剩余数量。
+- `ToolResult` 的单个工具错误不会立即关闭 agent，只有 agent completion/error/abort 事件会进入终态。
+- `/plan` 裸命令行为已与 command palette snapshot 对齐，后续不要再把 exact `/plan` 处理为补参插入。

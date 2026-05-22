@@ -2,6 +2,11 @@
 
 use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
 
+const REQUEST_SUMMARY_MAX_CHARS: usize = 140;
+const REQUEST_DETAIL_MAX_CHARS: usize = 180;
+const COMMAND_PREVIEW_MAX_CHARS: usize = 180;
+const PATH_SUMMARY_MAX_CHARS: usize = 140;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionDecision {
     Allow,
@@ -173,7 +178,10 @@ pub fn default_permission_options() -> Vec<PermissionOption> {
 }
 
 pub fn render_permission_request(view: &PermissionRequestView) -> String {
-    let mut lines = vec![plain_row("Request", truncate_middle(&view.summary, 100))];
+    let mut lines = vec![plain_row(
+        "Request",
+        truncate_middle(&view.summary, REQUEST_SUMMARY_MAX_CHARS),
+    )];
     if let Some(worker) = &view.worker_name {
         lines.push(plain_row("Context", format!("worker={worker}")));
     }
@@ -182,7 +190,10 @@ pub fn render_permission_request(view: &PermissionRequestView) -> String {
         lines.push("Context".to_string());
         for detail in &view.details {
             for line in normalize_multiline(detail) {
-                lines.push(plain_row("", truncate_middle(&line, 120)));
+                lines.push(plain_row(
+                    "",
+                    truncate_middle(&line, REQUEST_DETAIL_MAX_CHARS),
+                ));
             }
         }
     }
@@ -302,7 +313,7 @@ pub fn normalize_multiline(input: &str) -> Vec<String> {
 pub fn command_preview(command: &str) -> String {
     normalize_multiline(command)
         .into_iter()
-        .map(|line| truncate_middle(&line, 120))
+        .map(|line| truncate_middle(&line, COMMAND_PREVIEW_MAX_CHARS))
         .collect::<Vec<_>>()
         .join(" && ")
 }
@@ -328,7 +339,11 @@ pub fn shell_risk_hint(command: &str) -> &'static str {
 }
 
 pub fn path_action_summary(action: &str, path: &str) -> String {
-    format!("{} {}", action.trim(), truncate_middle(path.trim(), 100))
+    format!(
+        "{} {}",
+        action.trim(),
+        truncate_middle(path.trim(), PATH_SUMMARY_MAX_CHARS)
+    )
 }
 
 #[cfg(test)]

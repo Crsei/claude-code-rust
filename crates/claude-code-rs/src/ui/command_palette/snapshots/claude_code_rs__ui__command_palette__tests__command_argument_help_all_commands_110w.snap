@@ -301,8 +301,8 @@ expression: normalize_snapshot_text(rendered)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /plan
 ┌ /plan arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /plan <enter|show|status|approve|reject|link|classify> ...                                           │
-│Example: /plan enter refactor command palette                                                               │
+│Usage: /plan [enter|show|status|approve|reject|link|classify] ...                                           │
+│Example: /plan                                                                                              │
 │About: Enter plan mode and show or edit the plan file                                                       │
 │Edit: current: ~/.cc-rust/plan.md                                                                           │
 │Hint: Ctrl+E pick target                                                                                    │
