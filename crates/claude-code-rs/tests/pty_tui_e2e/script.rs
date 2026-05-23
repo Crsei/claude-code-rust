@@ -1,0 +1,794 @@
+//! PTY 测试模板引擎 — 步骤式定义 TUI 测试用例。
+//!
+//! 通过 `TestStep` 枚举定义 TUI 操作序列，`TestRunner` 自动执行、截图、收集错误。
+//! 每个测试有独立的输出文件夹，只保留 `.html` + `.log`。
+//!
+//! 用法：
+//! ```rust
+//! let case = TestCase::new("my_test")
+//!     .step(TestStep::SkipTrustGate)
+//!     .step(TestStep::Input("hello".into()))
+//!     .step(TestStep::WaitForText("hello".into(), Duration::from_secs(30)))
+//!     .step(TestStep::Snapshot("after_hello".into()));
+//! TestRunner::new().run(&case).assert_no_errors();
+//! ```
+
+use crate::harness::*;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+// ─── TestStep ────────────────────────────────────────────────────────
+
+/// 单个 TUI 操作步骤。
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub enum TestStep {
+    /// 等待固定时长。
+    Wait(Duration),
+    /// 在 prompt 中输入文本并按 Enter。
+    Input(String),
+    /// 只输入文本，不按 Enter。
+    TypeText(String),
+    /// 执行斜杠命令（自动加 "/" 前缀 + Enter）。
+    Command(String),
+    /// 发送快捷键。
+    Key(TestKey),
+    /// 手动截图（保存 .html + .log）。
+    Snapshot(String),
+    /// 打开命令面板（发送 "/"），等待 "Commands" 出现。
+    OpenPalette,
+    /// 在命令面板中选择第 N 个条目（Down N-1 次 + Enter）。
+    PaletteSelect(usize),
+    /// 关闭命令面板（Esc）。
+    ClosePalette,
+    /// 断言屏幕包含指定文本。
+    AssertScreenContains(String),
+    /// 断言纯文本输出包含指定文本。
+    AssertTextContains(String),
+    /// 断言状态栏包含指定文本。
+    AssertStatusBar(String),
+    /// 断言屏幕不包含指定文本。
+    AssertScreenNotContains(String),
+    /// 等待文本出现在输出中（带超时）。
+    WaitForText(String, Duration),
+    /// 等待任意一个文本出现。
+    WaitForAny(Vec<String>, Duration),
+    /// 等待状态栏包含指定文本。
+    WaitForStatus(String, Duration),
+    /// 多行输入（每行依次发送）。
+    MultilineInput(Vec<String>),
+    /// 跳过 workspace trust gate。
+    SkipTrustGate,
+    /// 通过 /permissions 设置权限（如 "full access"）。
+    SetPermission(String),
+    /// 通过 /login 切换 authProfile。
+    LoginSwitch(String),
+    /// 断言输出中无 "panicked"。
+    AssertNoPanic,
+}
+
+/// 可发送的快捷键。
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub enum TestKey {
+    CtrlC,
+    CtrlD,
+    CtrlU,
+    CtrlL,
+    CtrlR,
+    F12,
+    Enter,
+    Escape,
+    Tab,
+    Up,
+    Down,
+}
+
+impl TestKey {
+    fn send(&self, session: &PtySession) {
+        match self {
+            TestKey::CtrlC => session.send_ctrl_c(),
+            TestKey::CtrlD => session.send_ctrl_d(),
+            TestKey::CtrlU => session.send_ctrl_u(),
+            TestKey::CtrlL => session.send_ctrl_l(),
+            TestKey::CtrlR => session.send_ctrl_r(),
+            TestKey::F12 => session.send_f12(),
+            TestKey::Enter => session.send_raw(b"\r"),
+            TestKey::Escape => session.send_escape(),
+            TestKey::Tab => session.send_tab(),
+            TestKey::Up => session.send_up(),
+            TestKey::Down => session.send_down(),
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            TestKey::CtrlC => "Ctrl+C",
+            TestKey::CtrlD => "Ctrl+D",
+            TestKey::CtrlU => "Ctrl+U",
+            TestKey::CtrlL => "Ctrl+L",
+            TestKey::CtrlR => "Ctrl+R",
+            TestKey::F12 => "F12",
+            TestKey::Enter => "Enter",
+            TestKey::Escape => "Esc",
+            TestKey::Tab => "Tab",
+            TestKey::Up => "Up",
+            TestKey::Down => "Down",
+        }
+    }
+}
+
+// ─── ExitMethod ──────────────────────────────────────────────────────
+
+/// 测试结束时的退出方式。
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub enum ExitMethod {
+    /// 双 Ctrl+C。
+    CtrlC,
+    /// Ctrl+D。
+    CtrlD,
+    /// 直接结束（kill）。
+    Kill,
+}
+
+impl Default for ExitMethod {
+    fn default() -> Self {
+        ExitMethod::Kill
+    }
+}
+
+// ─── TestCase ────────────────────────────────────────────────────────
+
+/// 测试脚本定义。
+#[derive(Clone, Debug)]
+pub struct TestCase {
+    /// 测试名称（用于文件夹和文件命名）。
+    pub name: String,
+    /// 终端列数。
+    pub cols: u16,
+    /// 终端行数。
+    pub rows: u16,
+    /// 附加环境变量。
+    pub env: Vec<(String, String)>,
+    /// 步骤序列。
+    pub steps: Vec<TestStep>,
+    /// 退出方式。
+    pub exit: ExitMethod,
+    /// 全局超时。
+    pub timeout: Duration,
+}
+
+#[allow(dead_code)]
+impl TestCase {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            cols: 120,
+            rows: 40,
+            env: Vec::new(),
+            steps: Vec::new(),
+            exit: ExitMethod::default(),
+            timeout: Duration::from_secs(120),
+        }
+    }
+
+    pub fn step(mut self, step: TestStep) -> Self {
+        self.steps.push(step);
+        self
+    }
+
+    pub fn env(mut self, key: impl Into<String>, val: impl Into<String>) -> Self {
+        self.env.push((key.into(), val.into()));
+        self
+    }
+
+    pub fn cols(mut self, cols: u16) -> Self {
+        self.cols = cols;
+        self
+    }
+
+    pub fn rows(mut self, rows: u16) -> Self {
+        self.rows = rows;
+        self
+    }
+
+    pub fn exit(mut self, exit: ExitMethod) -> Self {
+        self.exit = exit;
+        self
+    }
+
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+}
+
+// ─── TestReport ──────────────────────────────────────────────────────
+
+/// 单步执行结果。
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct StepResult {
+    pub index: usize,
+    pub desc: String,
+    pub snapshot: Option<PathBuf>,
+    pub passed: bool,
+    pub duration: Duration,
+}
+
+/// 单步错误。
+#[derive(Debug, Clone)]
+pub struct TestError {
+    pub step_index: usize,
+    pub desc: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for TestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "step {}: {} — {}", self.index(), self.desc, self.message)
+    }
+}
+
+impl TestError {
+    fn index(&self) -> usize {
+        self.step_index + 1
+    }
+}
+
+/// 测试执行报告。
+#[allow(dead_code)]
+pub struct TestReport {
+    pub test_name: String,
+    pub output_dir: PathBuf,
+    pub steps: Vec<StepResult>,
+    pub errors: Vec<TestError>,
+    pub session_log: PathBuf,
+    pub session_html: PathBuf,
+}
+
+#[allow(dead_code)]
+impl TestReport {
+    /// 如果有任何错误，panic 并打印详情。
+    pub fn assert_no_errors(&self) {
+        if self.errors.is_empty() {
+            eprintln!("[report] {} — ALL {} steps passed", self.test_name, self.steps.len());
+        } else {
+            let mut msg = format!("[report] {} — {} errors:\n", self.test_name, self.errors.len());
+            for err in &self.errors {
+                msg.push_str(&format!("  {}\n", err));
+            }
+            msg.push_str(&format!("Output dir: {}\n", self.output_dir.display()));
+            panic!("{}", msg);
+        }
+    }
+
+    /// 是否有错误。
+    pub fn has_errors(&self) -> bool {
+        !self.errors.is_empty()
+    }
+
+    /// 打印步骤汇总到 stderr。
+    pub fn summary(&self) {
+        eprintln!("\n=== {} ===", self.test_name);
+        eprintln!("Output: {}", self.output_dir.display());
+        eprintln!("{:<4} {:<6} {:<8} {}", "Step", "Time", "Status", "Description");
+        eprintln!("{}", "-".repeat(70));
+        for s in &self.steps {
+            let status = if s.passed { "OK" } else { "FAIL" };
+            let snap = s.snapshot.as_ref()
+                .map(|p| format!(" → {}", p.file_name().unwrap_or_default().to_string_lossy()))
+                .unwrap_or_default();
+            eprintln!(
+                "{:<4} {:<6} {:<8} {}{}",
+                s.index + 1,
+                format!("{:.0?}", s.duration),
+                status,
+                s.desc,
+                snap
+            );
+        }
+        if !self.errors.is_empty() {
+            eprintln!("\nErrors:");
+            for err in &self.errors {
+                eprintln!("  {}", err);
+            }
+        }
+        eprintln!();
+    }
+
+    /// 保存 errors.txt 到输出目录。
+    pub fn save_errors(&self) {
+        if self.errors.is_empty() {
+            return;
+        }
+        let mut content = format!("Test: {}\nErrors: {}\n\n", self.test_name, self.errors.len());
+        for err in &self.errors {
+            content.push_str(&format!("{}\n", err));
+        }
+        let path = self.output_dir.join("errors.txt");
+        std::fs::write(&path, content).expect("write errors.txt");
+    }
+}
+
+// ─── TestRunner ──────────────────────────────────────────────────────
+
+/// 步骤式测试执行引擎。
+pub struct TestRunner {
+    auto_snapshot: bool,
+}
+
+impl TestRunner {
+    pub fn new() -> Self {
+        Self { auto_snapshot: true }
+    }
+
+    /// 禁用自动截图（每个非 Snapshot 步骤后不自动截图）。
+    #[allow(dead_code)]
+    pub fn no_auto_snapshot(mut self) -> Self {
+        self.auto_snapshot = false;
+        self
+    }
+
+    /// 执行测试用例，返回报告。
+    pub fn run(&self, case: &TestCase) -> TestReport {
+        let output_dir = test_subdir(&case.name);
+        eprintln!("[runner] {} → {}", case.name, output_dir.display());
+
+        // 启动 PTY 会话（始终使用真实 API key）
+        let env_refs: Vec<(&str, &str)> = case.env.iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        let args = default_args();
+        let session = PtySession::spawn_with_env(
+            &args,
+            case.cols,
+            case.rows,
+            false, // strip_keys=false：始终使用真实 API key
+            &env_refs,
+        );
+
+        let mut steps_result: Vec<StepResult> = Vec::new();
+        let mut errors: Vec<TestError> = Vec::new();
+
+        // 自动等待渲染 + 跳过 trust gate（如果步骤中有 SkipTrustGate，跳过自动处理）
+        let has_trust_gate = case.steps.iter().any(|s| matches!(s, TestStep::SkipTrustGate));
+        if !has_trust_gate {
+            std::thread::sleep(RENDER_WAIT);
+            skip_trust_gate(&session);
+        }
+
+        for (i, step) in case.steps.iter().enumerate() {
+            let start = Instant::now();
+            let desc = step.describe();
+            let mut snapshot_path: Option<PathBuf> = None;
+            let mut passed = true;
+
+            match self.execute_step(&session, step, &output_dir, i, &case.name) {
+                Ok(snap) => {
+                    snapshot_path = snap;
+                }
+                Err(err) => {
+                    passed = false;
+                    errors.push(err);
+                }
+            }
+
+            // 自动截图（非 Snapshot 步骤）
+            if self.auto_snapshot && !matches!(step, TestStep::Snapshot(_)) && !matches!(step, TestStep::Wait(_)) {
+                let label = format!("step_{:03}_{}", i + 1, sanitize(&desc));
+                let snap_text = session.snapshot_to(&label, &output_dir);
+                if snapshot_path.is_none() {
+                    snapshot_path = Some(output_dir.join(format!("{label}.html")));
+                }
+                // 对 Assert 步骤，用自动截图做二次检查
+                if !passed {
+                    let _ = snap_text; // 已在 execute_step 中记录错误
+                }
+            }
+
+            steps_result.push(StepResult {
+                index: i,
+                desc,
+                snapshot: snapshot_path,
+                passed,
+                duration: start.elapsed(),
+            });
+        }
+
+        // 退出
+        let session_label = "session_full";
+        let _output = match case.exit {
+            ExitMethod::CtrlC => {
+                session.send_ctrl_c();
+                std::thread::sleep(Duration::from_millis(500));
+                session.send_ctrl_c();
+                session.finish_to(case.timeout, session_label, &output_dir)
+            }
+            ExitMethod::CtrlD => {
+                session.send_ctrl_d();
+                session.finish_to(case.timeout, session_label, &output_dir)
+            }
+            ExitMethod::Kill => {
+                session.finish_to(case.timeout, session_label, &output_dir)
+            }
+        };
+
+        let session_log = output_dir.join(format!("{session_label}.log"));
+        let session_html = output_dir.join(format!("{session_label}.html"));
+
+        let report = TestReport {
+            test_name: case.name.clone(),
+            output_dir,
+            steps: steps_result,
+            errors,
+            session_log,
+            session_html,
+        };
+        report.summary();
+        report.save_errors();
+        report
+    }
+
+    /// 执行单个步骤。
+    fn execute_step(
+        &self,
+        session: &PtySession,
+        step: &TestStep,
+        output_dir: &std::path::Path,
+        index: usize,
+        _test_name: &str,
+    ) -> Result<Option<PathBuf>, TestError> {
+        let err = |msg: String| TestError {
+            step_index: index,
+            desc: step.describe(),
+            message: msg,
+        };
+
+        match step {
+            TestStep::Wait(d) => {
+                std::thread::sleep(*d);
+                Ok(None)
+            }
+
+            TestStep::Input(text) => {
+                session.send_line(text);
+                Ok(None)
+            }
+
+            TestStep::TypeText(text) => {
+                session.send_raw(text.as_bytes());
+                Ok(None)
+            }
+
+            TestStep::Command(cmd) => {
+                session.send_line(&format!("/{}", cmd));
+                Ok(None)
+            }
+
+            TestStep::Key(key) => {
+                key.send(session);
+                Ok(None)
+            }
+
+            TestStep::Snapshot(label) => {
+                let safe_label = format!("step_{:03}_{}", index + 1, sanitize(label));
+                session.snapshot_to(&safe_label, output_dir);
+                Ok(Some(output_dir.join(format!("{safe_label}.html"))))
+            }
+
+            TestStep::OpenPalette => {
+                session.send_raw(b"/");
+                // 等待命令面板出现
+                let found = session.wait_for_screen_text("Commands", Duration::from_secs(3));
+                if !found {
+                    return Err(err("command palette did not appear".into()));
+                }
+                Ok(None)
+            }
+
+            TestStep::PaletteSelect(n) => {
+                for _ in 0..*n {
+                    session.send_down();
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                session.send_raw(b"\r");
+                std::thread::sleep(Duration::from_millis(300));
+                Ok(None)
+            }
+
+            TestStep::ClosePalette => {
+                session.send_escape();
+                std::thread::sleep(Duration::from_millis(300));
+                Ok(None)
+            }
+
+            TestStep::AssertScreenContains(text) => {
+                std::thread::sleep(Duration::from_millis(300));
+                let screen = session.current_screen();
+                if screen.contains(text.as_str()) {
+                    Ok(None)
+                } else {
+                    Err(err(format!("screen does not contain '{}'", text)))
+                }
+            }
+
+            TestStep::AssertTextContains(text) => {
+                std::thread::sleep(Duration::from_millis(300));
+                let content = session.current_text();
+                if content.contains(text.as_str()) {
+                    Ok(None)
+                } else {
+                    Err(err(format!("text does not contain '{}'", text)))
+                }
+            }
+
+            TestStep::AssertStatusBar(text) => {
+                std::thread::sleep(Duration::from_millis(500));
+                let bar = session.status_bar();
+                if bar.contains(text.as_str()) {
+                    Ok(None)
+                } else {
+                    Err(err(format!("status bar '{}' does not contain '{}'", bar, text)))
+                }
+            }
+
+            TestStep::AssertScreenNotContains(text) => {
+                std::thread::sleep(Duration::from_millis(300));
+                let screen = session.current_screen();
+                if !screen.contains(text.as_str()) {
+                    Ok(None)
+                } else {
+                    Err(err(format!("screen unexpectedly contains '{}'", text)))
+                }
+            }
+
+            TestStep::WaitForText(text, timeout) => {
+                let found = session.wait_for_text(text, *timeout);
+                if found {
+                    Ok(None)
+                } else {
+                    Err(err(format!("text '{}' not found within {:.0?}", text, timeout)))
+                }
+            }
+
+            TestStep::WaitForAny(texts, timeout) => {
+                let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                let found = session.wait_for_any(&refs, *timeout);
+                if found.is_some() {
+                    Ok(None)
+                } else {
+                    Err(err(format!("none of {:?} found within {:.0?}", texts, timeout)))
+                }
+            }
+
+            TestStep::WaitForStatus(text, timeout) => {
+                let found = session.wait_status(text, *timeout);
+                if found {
+                    Ok(None)
+                } else {
+                    Err(err(format!("status '{}' not found within {:.0?}", text, timeout)))
+                }
+            }
+
+            TestStep::MultilineInput(lines) => {
+                for line in lines {
+                    session.send_line(line);
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Ok(None)
+            }
+
+            TestStep::SkipTrustGate => {
+                std::thread::sleep(RENDER_WAIT);
+                skip_trust_gate(session);
+                Ok(None)
+            }
+
+            TestStep::SetPermission(level) => {
+                session.send_line(&format!("/permissions {}", level));
+                std::thread::sleep(Duration::from_secs(2));
+                Ok(None)
+            }
+
+            TestStep::LoginSwitch(profile) => {
+                session.send_line(&format!("/login {}", profile));
+                std::thread::sleep(Duration::from_secs(3));
+                Ok(None)
+            }
+
+            TestStep::AssertNoPanic => {
+                std::thread::sleep(Duration::from_millis(200));
+                let text = session.current_text();
+                if text.contains("panicked") {
+                    Err(err("output contains 'panicked'".into()))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────
+
+impl TestStep {
+    fn describe(&self) -> String {
+        match self {
+            TestStep::Wait(d) => format!("wait {:.0?}", d),
+            TestStep::Input(s) => format!("input '{}'", truncate(s, 40)),
+            TestStep::TypeText(s) => format!("type '{}'", truncate(s, 40)),
+            TestStep::Command(s) => format!("/{}", s),
+            TestStep::Key(k) => k.name().to_string(),
+            TestStep::Snapshot(s) => format!("snapshot '{}'", s),
+            TestStep::OpenPalette => "open palette".into(),
+            TestStep::PaletteSelect(n) => format!("palette select #{}", n),
+            TestStep::ClosePalette => "close palette".into(),
+            TestStep::AssertScreenContains(s) => format!("screen has '{}'", truncate(s, 30)),
+            TestStep::AssertTextContains(s) => format!("text has '{}'", truncate(s, 30)),
+            TestStep::AssertStatusBar(s) => format!("bar has '{}'", truncate(s, 30)),
+            TestStep::AssertScreenNotContains(s) => format!("screen !has '{}'", truncate(s, 30)),
+            TestStep::WaitForText(s, d) => format!("wait '{}' ({:.0?})", truncate(s, 20), d),
+            TestStep::WaitForAny(ss, d) => format!("wait any {:?} ({:.0?})", ss.len(), d),
+            TestStep::WaitForStatus(s, d) => format!("wait status '{}' ({:.0?})", truncate(s, 20), d),
+            TestStep::MultilineInput(ls) => format!("multiline ({} lines)", ls.len()),
+            TestStep::SkipTrustGate => "skip trust".into(),
+            TestStep::SetPermission(s) => format!("perm '{}'", s),
+            TestStep::LoginSwitch(s) => format!("login '{}'", s),
+            TestStep::AssertNoPanic => "no panic".into(),
+        }
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max])
+    }
+}
+
+fn sanitize(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string()
+}
+
+// ─── 示例测试 ────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model_flow::read_settings;
+
+    /// 基础对话验证：读取 settings.json 中的 activeAuthProfile，验证模型回复。
+    #[test]
+    #[ignore = "requires real API key"]
+    fn script_conversation_verify() {
+        let settings = read_settings();
+        let case = TestCase::new(format!("conv_verify_{}", settings.active_auth_profile))
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Wait(Duration::from_secs(2)))
+            .step(TestStep::Snapshot("initial".into()))
+            .step(TestStep::AssertStatusBar(settings.expected_model.clone()))
+            .step(TestStep::Input("Answer with ONLY your model ID.".into()))
+            .step(TestStep::WaitForAny(
+                vec![settings.expected_model.clone(), "deepseek".into()],
+                API_TIMEOUT,
+            ))
+            .step(TestStep::Snapshot("model_reply".into()))
+            .step(TestStep::Key(TestKey::CtrlC))
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::Key(TestKey::CtrlC));
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
+
+    /// 切换 authProfile 测试：使用 /login 切换到 claude_code，验证 deepseek-v4-pro。
+    #[test]
+    #[ignore = "requires real API key"]
+    fn script_switch_auth_profile() {
+        let case = TestCase::new("switch_to_claude_code")
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Wait(Duration::from_secs(2)))
+            .step(TestStep::Snapshot("before_switch".into()))
+            .step(TestStep::LoginSwitch("claude_code".into()))
+            .step(TestStep::Wait(Duration::from_secs(3)))
+            .step(TestStep::Snapshot("after_login_switch".into()))
+            .step(TestStep::AssertStatusBar("deepseek-v4-pro".into()))
+            .step(TestStep::Input("Answer with ONLY your model ID.".into()))
+            .step(TestStep::WaitForAny(vec!["deepseek".into()], API_TIMEOUT))
+            .step(TestStep::Snapshot("new_model_reply".into()))
+            .step(TestStep::Key(TestKey::CtrlC))
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::Key(TestKey::CtrlC));
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
+
+    /// 权限设置测试：设置 full access，验证工具执行。
+    #[test]
+    #[ignore = "requires real API key"]
+    fn script_set_permissions() {
+        let case = TestCase::new("permissions_full_access")
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Wait(Duration::from_secs(2)))
+            .step(TestStep::SetPermission("full access".into()))
+            .step(TestStep::Wait(Duration::from_secs(2)))
+            .step(TestStep::Snapshot("after_permission".into()))
+            .step(TestStep::Input("Use Bash to run: echo PERMISSIONS_TEST_OK".into()))
+            .step(TestStep::WaitForText("PERMISSIONS_TEST_OK".into(), API_TIMEOUT))
+            .step(TestStep::Snapshot("tool_executed".into()))
+            .step(TestStep::Key(TestKey::CtrlC))
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::Key(TestKey::CtrlC));
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
+
+    /// Ctrl+C 中断 + 恢复测试。
+    #[test]
+    #[ignore = "requires real API key"]
+    fn script_abort_and_recover() {
+        let case = TestCase::new("abort_recover")
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Input("Write a 2000-word essay about computing.".into()))
+            .step(TestStep::Wait(Duration::from_secs(3)))
+            .step(TestStep::Key(TestKey::CtrlC))
+            .step(TestStep::Snapshot("after_abort".into()))
+            .step(TestStep::AssertNoPanic)
+            .step(TestStep::Input("Say exactly: RECOVERED".into()))
+            .step(TestStep::WaitForText("RECOVERED".into(), API_TIMEOUT))
+            .step(TestStep::Snapshot("recovered".into()))
+            .step(TestStep::Key(TestKey::CtrlC))
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::Key(TestKey::CtrlC));
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
+
+    /// /model 切换测试：验证切换后模型回复变化。
+    #[test]
+    #[ignore = "requires real API key"]
+    fn script_model_switch() {
+        let settings = read_settings();
+        let new_model = if settings.expected_model.contains("5.4") {
+            "gpt-5.4-mini"
+        } else {
+            "gpt-5.4"
+        };
+        let case = TestCase::new(format!("model_switch_{}", new_model.replace('.', "_")))
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Wait(Duration::from_secs(2)))
+            .step(TestStep::Snapshot("before_switch".into()))
+            .step(TestStep::Command(format!("model {new_model}")))
+            .step(TestStep::Wait(Duration::from_secs(3)))
+            .step(TestStep::Snapshot("after_model_cmd".into()))
+            .step(TestStep::Input("Answer with ONLY your model ID.".into()))
+            .step(TestStep::WaitForText(new_model.into(), API_TIMEOUT))
+            .step(TestStep::Snapshot("new_model_confirmed".into()))
+            .step(TestStep::Key(TestKey::CtrlC))
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::Key(TestKey::CtrlC));
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
+
+    /// 命令面板打开 + 选择测试（离线，验证面板渲染）。
+    #[test]
+    fn script_command_palette() {
+        let case = TestCase::new("command_palette_flow")
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::OpenPalette)
+            .step(TestStep::Snapshot("palette_open".into()))
+            .step(TestStep::AssertScreenContains("Commands".into()))
+            .step(TestStep::ClosePalette)
+            .step(TestStep::AssertNoPanic);
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
+}

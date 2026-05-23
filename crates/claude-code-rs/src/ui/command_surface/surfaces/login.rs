@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::ui::better_view_panel::{BetterViewPanel, plain_row, selected_row};
-use crate::ui::command_surface::{CommandSurfaceOutcome, cycle_index};
+use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
+use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
 
 const LOGIN_ACTIONS: &[LoginAction] = &[
     LoginAction {

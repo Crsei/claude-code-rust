@@ -1,6 +1,6 @@
 # cc-rust 当前问题汇总
 
-> 更新日期: 2026-05-22
+> 更新日期: 2026-05-23
 
 本文是当前开放问题、代码审查发现和文档状态问题的唯一活跃入口。已修复、已失效或只具历史价值的问题已迁移到：
 
@@ -88,3 +88,10 @@
 | ID | Severity | Status | Scope | Summary | Detail |
 | --- | --- | --- | --- | --- | --- |
 | TEAMS-001 | Medium | Open | teammate session resume | TeamContext resume by session id is wired for team leads, but teammate self-session resume still depends on persisting `TeamMember.session_id`. | `restore_team_context_for_session()` matches `TeamFile.lead_session_id` and member `session_id`. Current in-process spawn records teammate members with `session_id: None`, so a teammate's own saved session cannot be restored by session id until runner/spawn records the child session id back into the team file. |
+
+## 11. PTY E2E 测试发现的问题 (2026-05-23)
+
+| ID | 严重度 | 状态 | 范围 | 摘要 | 详情 |
+| --- | --- | --- | --- | --- | --- |
+| PTY-001 | 低 | Fixed | PTY harness `status_bar()` | `status_bar()` 不再只读取最后一行；当 vt100 当前 screen buffer 最后一行为空时，会自底向上查找状态栏候选行，并从累积纯文本回退提取最近一次状态栏片段。 | 修复文件：`crates/claude-code-rs/tests/pty_tui_e2e/harness.rs`。验证：`cargo test -p claude-code-rs --test pty_tui_e2e status -- --nocapture`，状态栏相关离线用例通过。 |
+| PTY-002 | 中 | Fixed | PTY model_flow 测试 | `ask_model_identity`/完整 model flow 的模型身份询问现在会检测首轮 `Conversation interrupted` 或 `Error:`，并对真实后端 transient interruption 自动重试一次。 | 修复文件：`crates/claude-code-rs/tests/pty_tui_e2e/model_flow.rs`。在线用例仍保留 `#[ignore]`，需要真实 API key/network；修复目标是让已观察到的首轮 transient interruption 不再直接导致测试失败。 |

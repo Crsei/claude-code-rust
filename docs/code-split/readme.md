@@ -5,7 +5,7 @@
 
 ---
 
-## 已完成拆分计划（5 个文件）
+## 已完成拆分计划（11 个文件）
 
 | # | 文件 | 行数 | 拆分方案 | 计划文档 |
 |---|------|------|---------|---------|
@@ -14,21 +14,16 @@
 | 3 | `claude-code-rs/src/app_subsystem_handlers.rs` | 2370 | → 8 子模块 | [app_subsystem_handlers-refactor-plan.md](app_subsystem_handlers-refactor-plan.md) |
 | 4 | `cc-permissions/src/read_only_shell.rs` | 2320 | → 10 子模块 | [read_only_shell-refactor-plan.md](read_only_shell-refactor-plan.md) |
 | 5 | `cc-mcp/src/client.rs` | 2052 | → 7 子模块 | [mcp_client-refactor-plan.md](mcp_client-refactor-plan.md) |
+| 6 | `cc-permissions/src/dangerous.rs` | 1993 | → 5 子模块 | [dangerous-refactor-plan.md](dangerous-refactor-plan.md) |
+| 7 | `cc-api/src/api/client/mod.rs` | 1779 | → 7 子模块 | [client-mod-refactor-plan.md](client-mod-refactor-plan.md) |
+| 8 | `cc-engine/src/lifecycle/submit_message.rs` | 1668 | → 5 子模块 | [submit_message-refactor-plan.md](submit_message-refactor-plan.md) |
+| 9 | `cc-api/src/api/openai_compat.rs` | 1614 | → 4 子模块 | [openai_compat-refactor-plan.md](openai_compat-refactor-plan.md) |
+| 10 | `cc-session/src/memdir.rs` | 1612 | → 5 子模块 | [memdir-refactor-plan.md](memdir-refactor-plan.md) |
+| 11 | `cc-engine/src/system_prompt.rs` | 1542 | → 4 子模块 | [system_prompt-refactor-plan.md](system_prompt-refactor-plan.md) |
 
 ---
 
-## 待拆分文件清单（43 个）
-
-### 优先级 A — 核心业务逻辑（> 1500 行）
-
-| # | 文件 | 行数 | 模块 | 简述 |
-|---|------|------|------|------|
-| 1 | `cc-permissions/src/dangerous.rs` | 1993 | permissions | 危险命令判定规则（bash 命令安全审计） |
-| 2 | `cc-api/src/api/client/mod.rs` | 1779 | api | API 客户端主模块（Anthropic/OpenAI/Google 统一接口） |
-| 3 | `cc-engine/src/lifecycle/submit_message.rs` | 1668 | engine | 消息提交生命周期（用户输入 → API 调用 → 流式处理） |
-| 4 | `cc-api/src/api/openai_compat.rs` | 1614 | api | OpenAI 兼容 API 层（DeepSeek / OpenAI 后端） |
-| 5 | `cc-session/src/memdir.rs` | 1612 | session | 会话内存目录管理（对话历史索引与检索） |
-| 6 | `cc-engine/src/system_prompt.rs` | 1542 | engine | 系统提示词构建（上下文注入、工具描述、CLAUDE.md 等） |
+## 待拆分文件清单（37 个）
 
 ### 优先级 B — 中等复杂度（1200–1500 行）
 
@@ -88,8 +83,7 @@
 
 | 分类 | 文件数 | 总行数 |
 |------|--------|--------|
-| 已完成拆分计划 | 5 | 13,410 |
-| 待拆分 A（>1500 行，核心业务） | 6 | 10,208 |
+| 已完成拆分计划 | 11 | 23,618 |
 | 待拆分 B（1200–1500 行） | 22 | 27,787 |
 | 待拆分 C（1000–1100 行） | 10 | 10,534 |
 | 测试文件 | 5 | 9,774 |

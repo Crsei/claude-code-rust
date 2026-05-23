@@ -1102,18 +1102,16 @@ mod tests {
         assert!(msg.contains("model=gpt-5.5"));
         assert_eq!(ctx.app_state.main_loop_backend, "codex");
         assert_eq!(ctx.app_state.main_loop_model, "gpt-5.5");
-        assert!(
-            ctx.app_state
-                .settings
-                .available_models
-                .contains(&"gpt-5.5".to_string())
-        );
-        assert!(
-            ctx.app_state
-                .settings
-                .model_capabilities
-                .contains_key("gpt-5.5")
-        );
+        assert!(ctx
+            .app_state
+            .settings
+            .available_models
+            .contains(&"gpt-5.5".to_string()));
+        assert!(ctx
+            .app_state
+            .settings
+            .model_capabilities
+            .contains_key("gpt-5.5"));
 
         let raw: RawSettings = serde_json::from_str(
             &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
@@ -1131,20 +1129,16 @@ mod tests {
         );
         assert_eq!(codex.backend.as_deref(), Some("codex"));
         assert_eq!(codex.model.as_deref(), Some("gpt-5.5"));
-        assert!(
-            codex
-                .available_models
-                .as_ref()
-                .expect("availableModels persisted")
-                .contains(&"gpt-5.5".to_string())
-        );
-        assert!(
-            codex
-                .model_capabilities
-                .as_ref()
-                .expect("modelCapabilities persisted")
-                .contains_key("gpt-5.5")
-        );
+        assert!(codex
+            .available_models
+            .as_ref()
+            .expect("availableModels persisted")
+            .contains(&"gpt-5.5".to_string()));
+        assert!(codex
+            .model_capabilities
+            .as_ref()
+            .expect("modelCapabilities persisted")
+            .contains_key("gpt-5.5"));
     }
 
     #[test]
@@ -1181,24 +1175,21 @@ mod tests {
         assert!(msg.contains("model=gpt-5.4"));
         assert_eq!(ctx.app_state.main_loop_backend, "codex");
         assert_eq!(ctx.app_state.main_loop_model, "gpt-5.4");
-        assert!(
-            !ctx.app_state
-                .settings
-                .available_models
-                .contains(&"deepseek-v4-pro".to_string())
-        );
-        assert!(
-            ctx.app_state
-                .settings
-                .available_models
-                .contains(&"gpt-5.4-mini".to_string())
-        );
-        assert!(
-            ctx.app_state
-                .settings
-                .model_capabilities
-                .contains_key("gpt-5.4")
-        );
+        assert!(!ctx
+            .app_state
+            .settings
+            .available_models
+            .contains(&"deepseek-v4-pro".to_string()));
+        assert!(ctx
+            .app_state
+            .settings
+            .available_models
+            .contains(&"gpt-5.4-mini".to_string()));
+        assert!(ctx
+            .app_state
+            .settings
+            .model_capabilities
+            .contains_key("gpt-5.4"));
 
         let raw: RawSettings = serde_json::from_str(
             &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
@@ -1211,19 +1202,15 @@ mod tests {
             .and_then(|profiles| profiles.get("codex"))
             .expect("codex profile persisted");
         assert_eq!(codex.model.as_deref(), Some("gpt-5.4"));
-        assert!(
-            !codex
-                .available_models
-                .as_ref()
-                .expect("availableModels persisted")
-                .contains(&"deepseek-v4-pro".to_string())
-        );
-        assert!(
-            codex
-                .model_capabilities
-                .as_ref()
-                .expect("modelCapabilities persisted")
-                .contains_key("gpt-5.4")
-        );
+        assert!(!codex
+            .available_models
+            .as_ref()
+            .expect("availableModels persisted")
+            .contains(&"deepseek-v4-pro".to_string()));
+        assert!(codex
+            .model_capabilities
+            .as_ref()
+            .expect("modelCapabilities persisted")
+            .contains_key("gpt-5.4"));
     }
 }
