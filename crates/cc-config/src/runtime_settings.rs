@@ -16,6 +16,8 @@
 
 use std::collections::HashMap;
 
+use serde_json::Value;
+
 use crate::settings::{
     ModelCapabilitySettings, PermissionsSettings, ProviderProfileSettings, SandboxSettings,
     SourceMap, SpinnerTipsSettings, StatusLineSettings,
@@ -51,6 +53,8 @@ pub struct SettingsJson {
     pub terminal_progress_bar_enabled: Option<bool>,
 
     // -- Models / effort -----------------------------------------------
+    pub thinking: Option<Value>,
+    pub output_config: Option<Value>,
     pub default_model: Option<String>,
     pub fallback_model: Option<String>,
     pub fast_model: Option<String>,

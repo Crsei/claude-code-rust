@@ -455,6 +455,7 @@ fn auto_compact_exact_count_request_uses_final_request_boundary() {
         skip_cache_write: None,
         thinking_enabled: Some(true),
         effort_value: Some("low".to_string()),
+        output_config: None,
         model_reasoning_effort: None,
         advisor_model: Some("advisor-model".to_string()),
     };

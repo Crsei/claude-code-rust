@@ -133,6 +133,34 @@ fn resolve_model_alias_for_effective_settings(
     }
 }
 
+fn settings_thinking_enabled(settings: &settings::EffectiveSettings) -> Option<bool> {
+    let thinking = settings.thinking.as_ref()?;
+    if let Some(enabled) = thinking.as_bool() {
+        return Some(enabled);
+    }
+    let kind = thinking
+        .get("type")
+        .and_then(Value::as_str)
+        .or_else(|| thinking.as_str())?
+        .trim()
+        .to_ascii_lowercase();
+    match kind.as_str() {
+        "enabled" | "adaptive" => Some(true),
+        "disabled" => Some(false),
+        _ => None,
+    }
+}
+
+fn output_config_effort(output_config: Option<&Value>) -> Option<String> {
+    output_config?
+        .get("effort")
+        .and_then(cc_engine::effort::normalize_output_effort_json)
+}
+
+fn settings_effort_value(settings: &settings::EffectiveSettings) -> Option<String> {
+    output_config_effort(settings.output_config.as_ref()).or_else(|| settings.effort_level.clone())
+}
+
 fn check_startup_available(
     model: &str,
     available: &[String],
@@ -986,6 +1014,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             editor_mode: merged_config.editor_mode.clone(),
             view_mode: merged_config.view_mode.clone(),
             terminal_progress_bar_enabled: merged_config.terminal_progress_bar_enabled,
+            thinking: merged_config.thinking.clone(),
+            output_config: merged_config.output_config.clone(),
             default_model: merged_config.default_model.clone(),
             fallback_model: merged_config.fallback_model.clone(),
             fast_model: merged_config.fast_model.clone(),
@@ -1012,9 +1042,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             permission_mode.clone(),
             &loaded_settings,
         ),
-        thinking_enabled: None,
+        thinking_enabled: settings_thinking_enabled(&merged_config),
         fast_mode: merged_config.fast_mode.unwrap_or(false),
-        effort_value: merged_config.effort_level.clone(),
+        effort_value: settings_effort_value(&merged_config),
         team_context: None,
         hooks: merged_config.hooks.clone(),
         plan_workflow: persisted_plan_workflow,

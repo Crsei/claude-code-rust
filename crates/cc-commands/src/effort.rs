@@ -9,7 +9,8 @@ use cc_config::settings::{self, RawSettings};
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 use cc_engine::effort::{
-    effort_to_budget_tokens, normalize_effort_value, DEFAULT_THINKING_BUDGET, MAX_THINKING_BUDGET,
+    effort_to_budget_tokens, normalize_effort_value, normalize_output_effort_value,
+    DEFAULT_THINKING_BUDGET, MAX_THINKING_BUDGET,
 };
 
 pub struct EffortHandler;
@@ -105,6 +106,7 @@ impl CommandHandler for EffortHandler {
 
         ctx.app_state.effort_value = Some(stored.clone());
         ctx.app_state.settings.model_reasoning_effort = Some(stored.clone());
+        set_output_config_effort(&mut ctx.app_state.settings, &stored);
         if let Some(active) = ctx.app_state.settings.active_auth_profile.clone() {
             if let Some(profile) = ctx.app_state.settings.auth_profiles.get_mut(&active) {
                 profile.model_reasoning_effort = Some(stored.clone());
@@ -114,6 +116,10 @@ impl CommandHandler for EffortHandler {
             "model_reasoning_effort".to_string(),
             settings::SettingsSource::User,
         );
+        ctx.app_state
+            .settings
+            .sources
+            .insert("output_config".to_string(), settings::SettingsSource::User);
 
         let persist_msg = persist_user_profile_reasoning_effort(&ctx.app_state.settings, &stored);
         Ok(CommandResult::Output(format!(
@@ -122,6 +128,28 @@ impl CommandHandler for EffortHandler {
             persist_msg
         )))
     }
+}
+
+fn set_output_config_effort(
+    runtime_settings: &mut cc_config::runtime_settings::SettingsJson,
+    value: &str,
+) {
+    let Some(output_effort) = normalize_output_effort_value(value) else {
+        return;
+    };
+    let mut output_config = runtime_settings
+        .output_config
+        .take()
+        .and_then(|value| match value {
+            serde_json::Value::Object(map) => Some(map),
+            _ => None,
+        })
+        .unwrap_or_default();
+    output_config.insert(
+        "effort".to_string(),
+        serde_json::Value::String(output_effort),
+    );
+    runtime_settings.output_config = Some(serde_json::Value::Object(output_config));
 }
 
 fn current_model_capability(
@@ -191,10 +219,12 @@ fn persist_user_profile_reasoning_effort(
         profile.available_models = Some(runtime_settings.available_models.clone());
     }
     settings::upsert_auth_profile(&mut raw, active, profile, true);
+    let output_effort = set_raw_output_config_effort(&mut raw, value);
 
     match settings::write_user_settings(&raw) {
         Ok(path) => format!(
-            "-> persisted authProfiles.{active}.modelReasoningEffort={} to {}",
+            "-> persisted output_config.effort={} and authProfiles.{active}.modelReasoningEffort={} to {}",
+            output_effort.unwrap_or_else(|| "unset".to_string()),
             value,
             path.display()
         ),
@@ -203,6 +233,24 @@ fn persist_user_profile_reasoning_effort(
             error
         ),
     }
+}
+
+fn set_raw_output_config_effort(raw: &mut RawSettings, value: &str) -> Option<String> {
+    let output_effort = normalize_output_effort_value(value)?;
+    let mut output_config = raw
+        .output_config
+        .take()
+        .and_then(|value| match value {
+            serde_json::Value::Object(map) => Some(map),
+            _ => None,
+        })
+        .unwrap_or_default();
+    output_config.insert(
+        "effort".to_string(),
+        serde_json::Value::String(output_effort.clone()),
+    );
+    raw.output_config = Some(serde_json::Value::Object(output_config));
+    Some(output_effort)
 }
 
 #[cfg(test)]
@@ -332,6 +380,65 @@ mod tests {
             settings["authProfiles"]["codex"]["modelReasoningEffort"],
             "high"
         );
+        assert_eq!(settings["output_config"]["effort"], "high");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_effort_persists_output_config_compat_value() {
+        let (dir, _guard) = HomeGuard::temp();
+        let handler = EffortHandler;
+        let mut ctx = test_ctx();
+        add_codex_profile(&mut ctx);
+        let result = handler.execute("low", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => assert!(text.contains("output_config.effort=high")),
+            _ => panic!("Expected Output"),
+        }
+        assert_eq!(ctx.app_state.effort_value.as_deref(), Some("low"));
+        assert_eq!(
+            ctx.app_state
+                .settings
+                .output_config
+                .as_ref()
+                .and_then(|value| value.get("effort"))
+                .and_then(serde_json::Value::as_str),
+            Some("high")
+        );
+        let settings: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            settings["authProfiles"]["codex"]["modelReasoningEffort"],
+            "low"
+        );
+        assert_eq!(settings["output_config"]["effort"], "high");
+
+        let result = handler.execute("xhigh", &mut ctx).await.unwrap();
+        match result {
+            CommandResult::Output(text) => assert!(text.contains("output_config.effort=max")),
+            _ => panic!("Expected Output"),
+        }
+        assert_eq!(ctx.app_state.effort_value.as_deref(), Some("xhigh"));
+        assert_eq!(
+            ctx.app_state
+                .settings
+                .output_config
+                .as_ref()
+                .and_then(|value| value.get("effort"))
+                .and_then(serde_json::Value::as_str),
+            Some("max")
+        );
+        let settings: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            settings["authProfiles"]["codex"]["modelReasoningEffort"],
+            "xhigh"
+        );
+        assert_eq!(settings["output_config"]["effort"], "max");
     }
 
     #[tokio::test]

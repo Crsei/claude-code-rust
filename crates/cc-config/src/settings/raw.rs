@@ -56,6 +56,14 @@ pub struct RawSettings {
     pub terminal_progress_bar_enabled: Option<bool>,
 
     // -- Model / effort -------------------------------------------------
+    /// Anthropic thinking toggle. Accepts request-shaped values such as
+    /// `{ "type": "enabled" }` or `{ "type": "disabled" }`.
+    pub thinking: Option<Value>,
+    /// Anthropic `output_config`. `output_config.effort` is the Claude-side
+    /// reasoning effort used by the Rust TUI effort picker and request builder;
+    /// runtime request building maps aliases to the API-supported high/max set.
+    #[serde(rename = "output_config", alias = "outputConfig")]
+    pub output_config: Option<Value>,
     /// Default model used when neither CLI nor `model` selects one.
     pub default_model: Option<String>,
     /// Model used for recoverable model-call fallback retries.
@@ -195,6 +203,8 @@ impl RawSettings {
         merge_opt!(view_mode, "viewMode");
         merge_opt!(spinner_tips, "spinnerTips");
         merge_opt!(terminal_progress_bar_enabled, "terminalProgressBarEnabled");
+        merge_opt!(thinking, "thinking");
+        merge_opt!(output_config, "output_config");
         merge_opt!(default_model, "defaultModel");
         merge_opt!(fallback_model, "fallbackModel");
         merge_opt!(fast_model, "fastModel");

@@ -7,13 +7,13 @@
 /// Default budget when thinking is enabled but no explicit effort level is set.
 pub const DEFAULT_THINKING_BUDGET: u32 = 10_240;
 
-/// Highest fixed budget supported by this lite fork's budget-based thinking path.
+/// Highest fixed budget supported by the budget-based thinking path.
 pub const MAX_THINKING_BUDGET: u32 = 32_768;
 
 /// Normalize a user-provided effort value.
 ///
 /// Accepts:
-///   - `"low"` / `"medium"` / `"high"` / `"auto"` / `"max"` (case-insensitive)
+///   - `"low"` / `"medium"` / `"high"` / `"xhigh"` / `"auto"` / `"max"` (case-insensitive)
 ///   - `"med"` as a shorthand for `"medium"`
 ///   - A positive numeric string used directly as the budget
 pub fn normalize_effort_value(effort: &str) -> Option<String> {
@@ -33,9 +33,38 @@ pub fn normalize_effort_value(effort: &str) -> Option<String> {
         "low" => Some("low".to_string()),
         "medium" | "med" => Some("medium".to_string()),
         "high" => Some("high".to_string()),
+        "xhigh" => Some("xhigh".to_string()),
         "auto" => Some("auto".to_string()),
         "max" => Some("max".to_string()),
         _ => None,
+    }
+}
+
+/// Normalize a value that can be sent as `output_config.effort`.
+///
+/// Claude's `output_config.effort` path is intentionally narrower than the
+/// token-budget path. For compatibility with existing UI/settings values,
+/// low/medium collapse to high, xhigh collapses to max, and any other non-empty
+/// value is treated as max.
+pub fn normalize_output_effort_value(effort: &str) -> Option<String> {
+    let trimmed = effort.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    match trimmed.to_ascii_lowercase().as_str() {
+        "low" | "medium" | "med" | "high" => Some("high".to_string()),
+        "xhigh" | "max" => Some("max".to_string()),
+        _ => Some("max".to_string()),
+    }
+}
+
+/// Normalize a JSON settings value into `output_config.effort`.
+pub fn normalize_output_effort_json(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => normalize_output_effort_value(s),
+        serde_json::Value::Null => None,
+        _ => Some("max".to_string()),
     }
 }
 
@@ -50,6 +79,7 @@ pub fn effort_to_budget_tokens(effort: &str) -> Option<u32> {
         "low" => Some(4_096),
         "medium" => Some(10_240),
         "high" => Some(24_576),
+        "xhigh" => Some(MAX_THINKING_BUDGET),
         "auto" => Some(DEFAULT_THINKING_BUDGET),
         "max" => Some(MAX_THINKING_BUDGET),
         numeric => numeric.parse::<u32>().ok(),
@@ -81,6 +111,7 @@ mod tests {
         assert_eq!(effort_to_budget_tokens("low"), Some(4_096));
         assert_eq!(effort_to_budget_tokens("medium"), Some(10_240));
         assert_eq!(effort_to_budget_tokens("high"), Some(24_576));
+        assert_eq!(effort_to_budget_tokens("xhigh"), Some(MAX_THINKING_BUDGET));
     }
 
     #[test]
@@ -97,6 +128,7 @@ mod tests {
         assert_eq!(effort_to_budget_tokens("LOW"), Some(4_096));
         assert_eq!(effort_to_budget_tokens("Medium"), Some(10_240));
         assert_eq!(effort_to_budget_tokens("HIGH"), Some(24_576));
+        assert_eq!(effort_to_budget_tokens("XHIGH"), Some(MAX_THINKING_BUDGET));
         assert_eq!(
             effort_to_budget_tokens("AUTO"),
             Some(DEFAULT_THINKING_BUDGET)
@@ -127,8 +159,63 @@ mod tests {
     #[test]
     fn normalize_effort_value_canonicalizes_labels() {
         assert_eq!(normalize_effort_value("med"), Some("medium".to_string()));
+        assert_eq!(normalize_effort_value("XHIGH"), Some("xhigh".to_string()));
         assert_eq!(normalize_effort_value(" AUTO "), Some("auto".to_string()));
         assert_eq!(normalize_effort_value(" 12000 "), Some("12000".to_string()));
+    }
+
+    #[test]
+    fn output_effort_maps_to_claude_supported_values() {
+        assert_eq!(
+            normalize_output_effort_value("med"),
+            Some("high".to_string())
+        );
+        assert_eq!(
+            normalize_output_effort_value("low"),
+            Some("high".to_string())
+        );
+        assert_eq!(
+            normalize_output_effort_value("medium"),
+            Some("high".to_string())
+        );
+        assert_eq!(
+            normalize_output_effort_value("high"),
+            Some("high".to_string())
+        );
+        assert_eq!(
+            normalize_output_effort_value("xhigh"),
+            Some("max".to_string())
+        );
+        assert_eq!(
+            normalize_output_effort_value("max"),
+            Some("max".to_string())
+        );
+        assert_eq!(
+            normalize_output_effort_value("12000"),
+            Some("max".to_string())
+        );
+        assert_eq!(
+            normalize_output_effort_value("auto"),
+            Some("max".to_string())
+        );
+        assert_eq!(
+            normalize_output_effort_value("ultra"),
+            Some("max".to_string())
+        );
+        assert_eq!(normalize_output_effort_value("   "), None);
+    }
+
+    #[test]
+    fn output_effort_json_maps_non_string_values_to_max() {
+        assert_eq!(
+            normalize_output_effort_json(&serde_json::json!("low")),
+            Some("high".to_string())
+        );
+        assert_eq!(
+            normalize_output_effort_json(&serde_json::json!(12000)),
+            Some("max".to_string())
+        );
+        assert_eq!(normalize_output_effort_json(&serde_json::Value::Null), None);
     }
 
     #[test]

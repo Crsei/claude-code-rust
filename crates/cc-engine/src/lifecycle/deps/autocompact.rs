@@ -181,6 +181,7 @@ impl QueryEngineDeps {
                     skip_cache_write: Some(true),
                     thinking_enabled: None,
                     effort_value: None,
+                    output_config: None,
                     model_reasoning_effort: None,
                     advisor_model: None,
                 };

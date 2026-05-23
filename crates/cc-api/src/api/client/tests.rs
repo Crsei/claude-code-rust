@@ -461,6 +461,28 @@ fn compatible_anthropic_headers_omit_beta_extensions() {
 }
 
 #[test]
+fn anthropic_headers_include_effort_beta_for_output_config_effort() {
+    let body = serde_json::json!({
+        "model": "claude-sonnet-4-20250514",
+        "messages": [{"role": "user", "content": "hello"}],
+        "output_config": {"effort": "high"}
+    });
+    let headers = build_anthropic_headers_for_body(
+        &AnthropicAuth::ApiKey("sk-test-key-123".to_string()),
+        false,
+        &body,
+    )
+    .expect("headers build");
+
+    assert!(headers
+        .get("anthropic-beta")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .contains(cc_config::constants::api::EFFORT_BETA));
+}
+
+#[test]
 fn test_build_headers_azure_has_api_key() {
     let config = ApiClientConfig {
         provider: ApiProvider::Azure {
@@ -1994,6 +2016,7 @@ fn minimal_stream_request() -> MessagesRequest {
         top_k: None,
         context_management: None,
         thinking: None,
+        output_config: None,
         tool_choice: None,
         reasoning_effort: None,
         advisor_model: None,
@@ -2196,6 +2219,7 @@ fn test_messages_request_serialization() {
         top_k: None,
         context_management: None,
         thinking: None,
+        output_config: None,
         tool_choice: None,
         reasoning_effort: None,
         advisor_model: None,
@@ -2205,8 +2229,9 @@ fn test_messages_request_serialization() {
     assert_eq!(json["model"], "claude-sonnet-4-20250514");
     assert_eq!(json["max_tokens"], 1024);
     assert_eq!(json["stream"], true);
-    // thinking, tool_choice and advisor_model should be omitted when None
+    // thinking, output_config, tool_choice and advisor_model should be omitted when None
     assert!(json.get("thinking").is_none());
+    assert!(json.get("output_config").is_none());
     assert!(json.get("tool_choice").is_none());
     assert!(json.get("advisor_model").is_none());
     assert!(json.get("metadata").is_none());
@@ -2237,6 +2262,7 @@ fn test_messages_request_optional_fields_serialize_when_present() {
             "edits": [{"type": "clear_tool_uses_20250919"}]
         })),
         thinking: None,
+        output_config: Some(serde_json::json!({"effort": "high"})),
         tool_choice: None,
         reasoning_effort: None,
         advisor_model: None,
@@ -2253,6 +2279,7 @@ fn test_messages_request_optional_fields_serialize_when_present() {
         json["context_management"]["edits"][0]["type"],
         "clear_tool_uses_20250919"
     );
+    assert_eq!(json["output_config"]["effort"], "high");
 }
 
 #[test]
@@ -2276,6 +2303,7 @@ fn regression_prompt_cache_marker_serializes_in_anthropic_body() {
         top_k: None,
         context_management: None,
         thinking: None,
+        output_config: None,
         tool_choice: None,
         reasoning_effort: None,
         advisor_model: None,
@@ -2428,6 +2456,7 @@ fn test_messages_request_with_thinking() {
         top_k: None,
         context_management: None,
         thinking: Some(serde_json::json!({"type": "enabled", "budget_tokens": 2048})),
+        output_config: None,
         tool_choice: None,
         reasoning_effort: None,
         advisor_model: None,
@@ -2464,6 +2493,7 @@ fn test_anthropic_count_tokens_body_omits_generation_only_fields() {
         top_k: None,
         context_management: None,
         thinking: Some(serde_json::json!({"type": "enabled", "budget_tokens": 1024})),
+        output_config: None,
         tool_choice: None,
         reasoning_effort: None,
         advisor_model: Some("advisor".to_string()),
@@ -2589,6 +2619,7 @@ fn test_messages_request_advisor_model_serializes_when_set() {
         top_k: None,
         context_management: None,
         thinking: None,
+        output_config: None,
         tool_choice: None,
         reasoning_effort: None,
         advisor_model: Some("claude-opus-4-20250514".to_string()),

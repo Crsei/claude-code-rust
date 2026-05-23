@@ -4,6 +4,7 @@
 //! invalid or suspicious settings.
 
 use anyhow::{bail, Result};
+use serde_json::Value;
 
 use crate::permission_validation::{self, PermissionValidationWarning};
 use crate::runtime_settings::SettingsJson;
@@ -38,7 +39,7 @@ fn effort_label_is_known(effort: &str) -> bool {
     }
     matches!(
         trimmed.to_ascii_lowercase().as_str(),
-        "low" | "medium" | "med" | "high" | "auto" | "max"
+        "low" | "medium" | "med" | "high" | "xhigh" | "auto" | "max"
     )
 }
 
@@ -359,9 +360,59 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
             warnings.push(ValidationWarning {
                 field: "effortLevel".to_string(),
                 message: format!(
-                    "Unknown effort '{}'. Expected low/medium/high or a positive integer token count.",
+                    "Unknown effort '{}'. Expected low/medium/high/xhigh/auto/max or a positive integer token count.",
                     trimmed
                 ),
+                severity: WarningSeverity::Warning,
+            });
+        }
+    }
+
+    if let Some(thinking) = &settings.thinking {
+        let kind = thinking
+            .get("type")
+            .and_then(Value::as_str)
+            .or_else(|| thinking.as_str());
+        if let Some(kind) = kind {
+            if !matches!(
+                kind.trim().to_ascii_lowercase().as_str(),
+                "enabled" | "adaptive" | "disabled"
+            ) {
+                warnings.push(ValidationWarning {
+                    field: "thinking".to_string(),
+                    message: format!(
+                        "Unknown thinking type '{}'. Expected enabled, adaptive, or disabled.",
+                        kind.trim()
+                    ),
+                    severity: WarningSeverity::Warning,
+                });
+            }
+        } else if !thinking.is_boolean() {
+            warnings.push(ValidationWarning {
+                field: "thinking".to_string(),
+                message: "Expected thinking to be a boolean, string, or object with a type field."
+                    .to_string(),
+                severity: WarningSeverity::Warning,
+            });
+        }
+    }
+
+    if let Some(output_config) = &settings.output_config {
+        if let Some(effort) = output_config.get("effort") {
+            let string_or_null = effort.as_str().is_some() || effort.is_null();
+            if !string_or_null {
+                warnings.push(ValidationWarning {
+                    field: "output_config.effort".to_string(),
+                    message:
+                        "Expected output_config.effort to be a string; non-string values map to max."
+                            .to_string(),
+                    severity: WarningSeverity::Warning,
+                });
+            }
+        } else if !output_config.is_object() {
+            warnings.push(ValidationWarning {
+                field: "output_config".to_string(),
+                message: "Expected output_config to be an object.".to_string(),
                 severity: WarningSeverity::Warning,
             });
         }

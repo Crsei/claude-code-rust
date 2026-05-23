@@ -61,6 +61,7 @@ impl SafetyClassifierModel for ApiClientClassifierModel {
             top_k: None,
             context_management: None,
             thinking,
+            output_config: None,
             tool_choice: None,
             reasoning_effort: None,
             advisor_model: None,

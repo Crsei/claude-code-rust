@@ -4,7 +4,7 @@ use crate::ui::better_view_panel::BetterViewPanel;
 use crate::ui::command_surface::CommandSurfaceOutcome;
 use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFormState};
 use crate::ui::selection_surface::{SelectionItem, SelectionSurface, SelectionSurfaceEvent};
-use cc_engine::effort::effort_to_budget_tokens;
+use cc_engine::effort::{effort_to_budget_tokens, normalize_output_effort_json};
 use cc_engine::types::app_state::AppState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +52,7 @@ impl ConfigSurface {
             .thinking_enabled
             .map(|enabled| enabled.to_string())
             .unwrap_or_else(|| "auto".to_string());
+        let current_effort = current_effort_value(state);
 
         Self {
             state: TabbedFormState::new(
@@ -125,12 +126,7 @@ impl ConfigSurface {
                         vec![FormOption::new("picker", "Reasoning effort")
                             .with_description(format!(
                                 "current effort={}; thinking={thinking}; fastMode={fast_mode}; use /effort to change",
-                                state
-                                    .effort_value
-                                    .as_deref()
-                                    .or(state.settings.model_reasoning_effort.as_deref())
-                                    .or(state.settings.effort_level.as_deref())
-                                    .unwrap_or("auto")
+                                current_effort.as_deref().unwrap_or("auto")
                             ))
                             .disabled()],
                     ),
@@ -569,11 +565,7 @@ fn theme_item(
 }
 
 fn build_effort_picker(state: &AppState) -> SelectionSurface {
-    let current = state
-        .effort_value
-        .as_deref()
-        .or(state.settings.model_reasoning_effort.as_deref())
-        .or(state.settings.effort_level.as_deref());
+    let current_effort = current_effort_value(state);
     let Some(capability) = capability_for_model(state, &state.main_loop_model) else {
         let mut picker = SelectionSurface::new(
             "Effort",
@@ -610,6 +602,21 @@ fn build_effort_picker(state: &AppState) -> SelectionSurface {
         return picker;
     }
 
+    let current = match current_effort.as_deref() {
+        Some("max")
+            if capability
+                .supported_reasoning_levels
+                .iter()
+                .any(|level| level == "xhigh")
+                && !capability
+                    .supported_reasoning_levels
+                    .iter()
+                    .any(|level| level == "max") =>
+        {
+            Some("xhigh")
+        }
+        other => other,
+    };
     let default = capability
         .default_reasoning_level
         .as_deref()
@@ -641,6 +648,21 @@ fn build_effort_picker(state: &AppState) -> SelectionSurface {
     let mut picker = SelectionSurface::new("Effort", items);
     picker.selected = selected;
     picker
+}
+
+fn current_effort_value(state: &AppState) -> Option<String> {
+    state
+        .effort_value
+        .clone()
+        .or_else(|| output_config_effort_value(state.settings.output_config.as_ref()))
+        .or_else(|| state.settings.model_reasoning_effort.clone())
+        .or_else(|| state.settings.effort_level.clone())
+}
+
+fn output_config_effort_value(output_config: Option<&serde_json::Value>) -> Option<String> {
+    output_config?
+        .get("effort")
+        .and_then(normalize_output_effort_json)
 }
 
 fn effort_item(

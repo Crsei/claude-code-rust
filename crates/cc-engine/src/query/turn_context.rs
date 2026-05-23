@@ -91,6 +91,7 @@ pub(crate) async fn prepare_model_request(
     let request_model = app_state_for_request.main_loop_model.clone();
     let request_thinking_enabled = app_state_for_request.thinking_enabled;
     let request_effort_value = app_state_for_request.effort_value.clone();
+    let request_output_config = app_state_for_request.settings.output_config.clone();
     let request_model_reasoning_effort = app_state_for_request
         .settings
         .model_reasoning_effort
@@ -106,6 +107,7 @@ pub(crate) async fn prepare_model_request(
         skip_cache_write: context.skip_cache_write,
         thinking_enabled: request_thinking_enabled,
         effort_value: request_effort_value.clone(),
+        output_config: request_output_config.clone(),
         model_reasoning_effort: request_model_reasoning_effort.clone(),
         advisor_model: request_advisor_model.clone(),
     };
@@ -149,6 +151,7 @@ pub(crate) async fn prepare_model_request(
         skip_cache_write: context.skip_cache_write,
         thinking_enabled: request_thinking_enabled,
         effort_value: request_effort_value,
+        output_config: request_output_config,
         model_reasoning_effort: request_model_reasoning_effort,
         advisor_model: request_advisor_model,
     };

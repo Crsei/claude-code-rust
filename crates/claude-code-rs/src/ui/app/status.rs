@@ -61,6 +61,7 @@ impl App {
         let effort = state
             .effort_value
             .clone()
+            .or_else(|| output_config_effort(state.settings.output_config.as_ref()))
             .or_else(|| state.settings.effort_level.clone())
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
@@ -163,6 +164,12 @@ fn remote_indicator_label(state: &cc_engine::types::app_state::AppState) -> Opti
     }
 
     Some("attention".to_string())
+}
+
+fn output_config_effort(output_config: Option<&serde_json::Value>) -> Option<String> {
+    output_config?
+        .get("effort")
+        .and_then(cc_engine::effort::normalize_output_effort_json)
 }
 
 fn sandbox_label(settings: &cc_config::settings::SandboxSettings) -> String {

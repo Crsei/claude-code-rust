@@ -197,6 +197,9 @@ pub(crate) fn build_messages_request(
         }
     });
 
+    let output_config =
+        build_output_config(params.output_config.clone(), params.effort_value.as_deref());
+
     let resolved_model = params
         .model
         .clone()
@@ -224,6 +227,7 @@ pub(crate) fn build_messages_request(
         top_k: None,
         context_management: None,
         thinking,
+        output_config,
         tool_choice: None,
         reasoning_effort: model_reasoning_effort,
         advisor_model: params.advisor_model.clone(),
@@ -256,6 +260,35 @@ fn codex_effort_from_effort_level(value: Option<&str>) -> Option<String> {
         "max" => Some("xhigh".to_string()),
         _ => None,
     }
+}
+
+fn build_output_config(
+    configured: Option<serde_json::Value>,
+    effort_value: Option<&str>,
+) -> Option<serde_json::Value> {
+    let mut object = configured
+        .and_then(|value| match value {
+            serde_json::Value::Object(map) => Some(map),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    if let Some(existing) = object.get("effort") {
+        match crate::effort::normalize_output_effort_json(existing) {
+            Some(effort) => {
+                object.insert("effort".to_string(), serde_json::Value::String(effort));
+            }
+            None => {
+                object.remove("effort");
+            }
+        }
+    }
+
+    if let Some(effort) = effort_value.and_then(crate::effort::normalize_output_effort_value) {
+        object.insert("effort".to_string(), serde_json::Value::String(effort));
+    }
+
+    (!object.is_empty()).then(|| serde_json::Value::Object(object))
 }
 
 fn default_cache_marker() -> serde_json::Value {
@@ -456,6 +489,7 @@ mod tests {
             skip_cache_write: None,
             thinking_enabled: Some(true),
             effort_value: None,
+            output_config: None,
             model_reasoning_effort: None,
             advisor_model: None,
         }
@@ -577,6 +611,63 @@ mod tests {
         let req = build_messages_request(&p);
         let thinking = req.thinking.expect("thinking config present");
         assert_eq!(thinking["budget_tokens"], 12_345);
+    }
+
+    #[test]
+    fn output_config_effort_uses_runtime_effort_value() {
+        let mut p = base_params();
+        p.effort_value = Some("max".into());
+
+        let req = build_messages_request(&p);
+        let output_config = req.output_config.expect("output_config present");
+        assert_eq!(output_config["effort"], "max");
+    }
+
+    #[test]
+    fn output_config_effort_preserves_settings_when_no_runtime_override() {
+        let mut p = base_params();
+        p.effort_value = None;
+        p.output_config = Some(serde_json::json!({
+            "effort": "high",
+            "format": {"type": "json_schema"}
+        }));
+
+        let req = build_messages_request(&p);
+        let output_config = req.output_config.expect("output_config present");
+        assert_eq!(output_config["effort"], "high");
+        assert_eq!(output_config["format"]["type"], "json_schema");
+    }
+
+    #[test]
+    fn output_config_effort_runtime_value_overrides_settings() {
+        let mut p = base_params();
+        p.effort_value = Some("low".into());
+        p.output_config = Some(serde_json::json!({
+            "effort": "high",
+            "format": {"type": "json_schema"}
+        }));
+
+        let req = build_messages_request(&p);
+        let output_config = req.output_config.expect("output_config present");
+        assert_eq!(output_config["effort"], "high");
+        assert_eq!(output_config["format"]["type"], "json_schema");
+    }
+
+    #[test]
+    fn output_config_effort_maps_settings_aliases() {
+        let mut p = base_params();
+        p.effort_value = None;
+        p.output_config = Some(serde_json::json!({"effort": "medium"}));
+        let req = build_messages_request(&p);
+        assert_eq!(req.output_config.unwrap()["effort"], "high");
+
+        p.output_config = Some(serde_json::json!({"effort": "xhigh"}));
+        let req = build_messages_request(&p);
+        assert_eq!(req.output_config.unwrap()["effort"], "max");
+
+        p.output_config = Some(serde_json::json!({"effort": "ultra"}));
+        let req = build_messages_request(&p);
+        assert_eq!(req.output_config.unwrap()["effort"], "max");
     }
 
     #[test]

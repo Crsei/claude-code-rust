@@ -193,7 +193,25 @@ pub fn settings_schema() -> Value {
             "sotaModel": { "type": "string" },
             "motaModel": { "type": "string" },
             "fotaModel": { "type": "string" },
-            "effortLevel": { "type": "string" },
+            "effortLevel": {
+                "type": "string",
+                "description": "Thinking budget label (low|medium|high|xhigh|auto|max) or a positive integer token count."
+            },
+            "thinking": {
+                "type": ["object", "boolean", "string"],
+                "description": "Anthropic thinking toggle. Object form accepts type=enabled/adaptive/disabled."
+            },
+            "output_config": {
+                "type": "object",
+                "properties": {
+                    "effort": {
+                        "type": "string",
+                        "description": "Claude output effort. low/medium map to high; xhigh and any other non-empty value map to max."
+                    }
+                },
+                "additionalProperties": true,
+                "description": "Anthropic output_config passthrough. effort controls Claude-side reasoning strength."
+            },
             "model_reasoning_effort": {
                 "type": "string",
                 "enum": ["none", "minimal", "low", "medium", "high", "xhigh"],

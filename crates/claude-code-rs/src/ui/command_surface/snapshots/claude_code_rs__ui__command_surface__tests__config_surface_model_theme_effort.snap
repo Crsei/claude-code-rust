@@ -114,7 +114,7 @@ expression: "rendered.join(\"\\n\\n\")"
 |   Theme                                    Low - supported; 4096 tokens                                                                  |
 |   Usage                                  > Medium - supported; default; 10240 tokens; current                                            |
 |   Output                                   High - supported; 24576 tokens                                                                |
-|   Language                                 Extra high - supported                                                                        |
+|   Language                                 Extra high - supported; 32768 tokens                                                          |
 | > Thinking                                                                                                                               |
 |   Safety                                                                                                                                 |
 |   Config                                                                                                                                 |

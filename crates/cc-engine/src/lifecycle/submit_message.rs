@@ -132,6 +132,7 @@ async fn build_model_assisted_memory_context(
         top_k: None,
         context_management: None,
         thinking: None,
+        output_config: None,
         tool_choice: None,
         reasoning_effort: None,
         advisor_model: None,

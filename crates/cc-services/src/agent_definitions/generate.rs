@@ -109,6 +109,7 @@ async fn run_generation(user_prompt: String, existing_names: Vec<String>) {
         top_k: None,
         context_management: None,
         thinking: None,
+        output_config: None,
         tool_choice: None,
         reasoning_effort: None,
         advisor_model: None,

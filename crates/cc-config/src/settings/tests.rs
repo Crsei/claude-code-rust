@@ -4,7 +4,7 @@ use std::path::Path;
 use super::load::apply_active_auth_profile;
 use super::raw::{merge_permissions, merge_str_lists};
 use super::*;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use serial_test::serial;
 
 struct EnvGuard {
@@ -841,6 +841,35 @@ fn active_codex_profile_projects_codex_env() {
 }
 
 #[test]
+fn raw_settings_preserve_thinking_and_output_config_effort() {
+    let raw: RawSettings = serde_json::from_str(
+        r#"{
+            "thinking": { "type": "enabled" },
+            "output_config": { "effort": "max" }
+        }"#,
+    )
+    .unwrap();
+
+    let effective = EffectiveSettings::from_raw(raw);
+    assert_eq!(
+        effective
+            .thinking
+            .as_ref()
+            .and_then(|value| value.get("type"))
+            .and_then(serde_json::Value::as_str),
+        Some("enabled")
+    );
+    assert_eq!(
+        effective
+            .output_config
+            .as_ref()
+            .and_then(|value| value.get("effort"))
+            .and_then(serde_json::Value::as_str),
+        Some("max")
+    );
+}
+
+#[test]
 fn schema_has_known_keys() {
     let s = settings_schema();
     let props = s
@@ -864,6 +893,8 @@ fn schema_has_known_keys() {
         "sotaModel",
         "motaModel",
         "fotaModel",
+        "thinking",
+        "output_config",
         "model_reasoning_effort",
         "fastMode",
         "env",

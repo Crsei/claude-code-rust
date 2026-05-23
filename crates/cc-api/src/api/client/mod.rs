@@ -251,6 +251,7 @@ pub(crate) fn build_anthropic_headers(
         true,
         false,
         false,
+        false,
         true,
     )
 }
@@ -275,6 +276,7 @@ pub(crate) fn build_anthropic_headers_for_body_with_beta_policy(
         body_contains_key(body, "cache_control"),
         body_contains_cache_attr(body, "ttl"),
         body_contains_cache_attr(body, "scope"),
+        body_contains_output_effort(body),
         include_anthropic_beta_header,
     )
 }
@@ -285,6 +287,7 @@ fn build_anthropic_headers_with_cache_betas(
     include_prompt_cache_beta: bool,
     include_ttl_beta: bool,
     include_global_scope_beta: bool,
+    include_effort_beta: bool,
     include_anthropic_beta_header: bool,
 ) -> Result<reqwest::header::HeaderMap> {
     use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
@@ -308,6 +311,9 @@ fn build_anthropic_headers_with_cache_betas(
         if include_global_scope_beta {
             betas.push("prompt-caching-scope-2026-01-05");
         }
+        if include_effort_beta {
+            betas.push(cc_config::constants::api::EFFORT_BETA);
+        }
         if include_token_counting_beta {
             betas.push("token-counting-2024-11-01");
         }
@@ -327,6 +333,13 @@ fn body_contains_key(value: &Value, key: &str) -> bool {
         Value::Array(values) => values.iter().any(|v| body_contains_key(v, key)),
         _ => false,
     }
+}
+
+fn body_contains_output_effort(value: &Value) -> bool {
+    value
+        .get("output_config")
+        .and_then(|config| config.get("effort"))
+        .is_some()
 }
 
 fn body_contains_cache_attr(value: &Value, attr: &str) -> bool {

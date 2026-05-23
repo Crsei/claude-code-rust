@@ -225,6 +225,18 @@ pub(super) fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<Comman
         &mut lines,
     );
     row(
+        "thinking",
+        opt_json(state.settings.thinking.clone()),
+        "thinking",
+        &mut lines,
+    );
+    row(
+        "output_config",
+        opt_json(state.settings.output_config.clone()),
+        "output_config",
+        &mut lines,
+    );
+    row(
         "model_reasoning_effort",
         opt_str(state.settings.model_reasoning_effort.clone()),
         "model_reasoning_effort",
@@ -295,6 +307,11 @@ pub(super) fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<Comman
 
 fn opt_str(v: Option<String>) -> String {
     v.unwrap_or_else(|| "(unset)".into())
+}
+
+fn opt_json(v: Option<serde_json::Value>) -> String {
+    v.map(|value| serde_json::to_string(&value).unwrap_or_else(|_| "(invalid json)".to_string()))
+        .unwrap_or_else(|| "(unset)".into())
 }
 
 fn join_or_dash(v: &[String]) -> String {

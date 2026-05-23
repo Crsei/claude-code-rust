@@ -503,6 +503,36 @@ fn effort_command_opens_thinking_picker() {
 }
 
 #[test]
+fn effort_command_maps_settings_output_config_effort() {
+    let mut state = AppState::default();
+    add_codex_profile(&mut state, "gpt-5.5");
+    state.settings.output_config = Some(serde_json::json!({"effort": "low"}));
+    let cwd = std::env::current_dir().expect("current dir");
+    let mut surface =
+        CommandSurface::for_slash_command("effort", "", &state, &cwd).expect("surface");
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/effort high".to_string())
+    );
+
+    state.settings.output_config = Some(serde_json::json!({"effort": "xhigh"}));
+    let mut surface =
+        CommandSurface::for_slash_command("effort", "", &state, &cwd).expect("surface");
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/effort xhigh".to_string())
+    );
+
+    state.settings.output_config = Some(serde_json::json!({"effort": "ultra"}));
+    let mut surface =
+        CommandSurface::for_slash_command("effort", "", &state, &cwd).expect("surface");
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/effort xhigh".to_string())
+    );
+}
+
+#[test]
 fn config_surface_exposes_model_theme_and_effort_pickers() {
     let mut state = AppState::default();
     add_codex_profile(&mut state, "gpt-5.5");
