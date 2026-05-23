@@ -90,6 +90,20 @@ git add <files>
 git commit -m "<short imperative summary>"
 ```
 
+也可以使用仓库脚本完成“构建、暂存指定文件、提交、推送”：
+
+```bash
+scripts/git-commit-update-and-push.sh -m "<short imperative summary>" -- <files...>
+```
+
+脚本行为：
+
+- 自动设置本仓库本地 Git 身份 `Crsei <Crsei@protonmail.com>`。
+- 自动加载仓库父目录下的本地 Rust 工具链，并默认执行 `cargo build --workspace --release`。
+- 只暂存命令行显式传入的文件，避免误提交共享 worktree 中无关修改。
+- 默认推送当前分支；可用 `--branch tui` 指定分支，用 `--no-build` 跳过构建，用 `--skip-push` 只提交不推送。
+- 推送时仍使用临时 `GIT_ASKPASS` 脚本读取 `/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/github_token.txt`，命令结束后自动删除临时脚本；不要读取、打印、提交或复制 token 文件内容。
+
 推送 `tui` 分支时继续使用
 `/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/github_token.txt`。不要读取、打印、提交或复制该 token 文件内容。使用临时 `GIT_ASKPASS` 脚本向 Git 提供认证，并在命令结束后删除脚本：
 
