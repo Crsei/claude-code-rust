@@ -304,14 +304,15 @@ fn permissions_command_surface_routes_confirmed_safety_modes() {
 fn login_surface_routes_auth_actions() {
     let mut surface = CommandSurface::Login(LoginSurface { action_index: 0 });
 
-    assert!(surface.render().contains("Login / OAuth"));
+    assert!(surface.render().contains("Login / Claude Code"));
+    assert!(surface.render().contains("profile=claude_code"));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
         CommandSurfaceOutcome::Submit("/login status".to_string())
     );
 
     surface.handle_key(key(KeyCode::Right));
-    assert!(surface.render().contains("> API key"));
+    assert!(surface.render().contains("> Claude Code key"));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
         CommandSurfaceOutcome::FillPrompt("/login ".to_string())

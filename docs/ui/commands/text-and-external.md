@@ -330,7 +330,7 @@ After authorization:
 触发: `/login 3`
 
 ```text
-Anthropic Console OAuth
+Console OAuth
 authorization_url: https://console.anthropic.com/oauth/authorize?...
 will attempt: create/store API key
 
@@ -491,4 +491,3 @@ With argument:
 
 - 当前不弹 `ResumePicker`。
 - 直接恢复最近 session 或按 id/prefix 恢复。
-

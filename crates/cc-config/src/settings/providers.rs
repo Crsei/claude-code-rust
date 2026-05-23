@@ -8,6 +8,11 @@ use super::raw::RawSettings;
 pub const API_PROVIDER_ANTHROPIC: &str = "anthropic";
 pub const API_PROVIDER_OPENAI_CODEX: &str = "openai-codex";
 pub const API_PROVIDER_OPENAI: &str = "openai";
+pub const AUTH_PROFILE_CLAUDE_CODE: &str = "claude_code";
+pub const AUTH_PROFILE_ANTHROPIC_LEGACY: &str = "anthropic";
+pub const AUTH_PROFILE_CODEX: &str = "codex";
+pub const AUTH_PROFILE_OPENAI: &str = "openai";
+pub const AUTH_PROFILE_CUSTOM: &str = "custom";
 pub const VALID_API_PROVIDERS: &[&str] = &[
     API_PROVIDER_ANTHROPIC,
     API_PROVIDER_OPENAI_CODEX,
@@ -307,9 +312,35 @@ pub fn upsert_auth_profile(
 
 pub fn auth_profile_name_for_provider(api_provider: &str) -> &'static str {
     match normalize_api_provider(api_provider).unwrap_or(api_provider) {
-        API_PROVIDER_OPENAI_CODEX => "codex",
-        API_PROVIDER_ANTHROPIC => "anthropic",
-        API_PROVIDER_OPENAI => "openai",
-        _ => "custom",
+        API_PROVIDER_OPENAI_CODEX => AUTH_PROFILE_CODEX,
+        API_PROVIDER_ANTHROPIC => AUTH_PROFILE_CLAUDE_CODE,
+        API_PROVIDER_OPENAI => AUTH_PROFILE_OPENAI,
+        _ => AUTH_PROFILE_CUSTOM,
+    }
+}
+
+pub fn auth_profile_lookup_names_for_provider(api_provider: &str) -> &'static [&'static str] {
+    match normalize_api_provider(api_provider).unwrap_or(api_provider) {
+        API_PROVIDER_OPENAI_CODEX => &[AUTH_PROFILE_CODEX],
+        API_PROVIDER_ANTHROPIC => &[AUTH_PROFILE_CLAUDE_CODE, AUTH_PROFILE_ANTHROPIC_LEGACY],
+        API_PROVIDER_OPENAI => &[AUTH_PROFILE_OPENAI],
+        _ => &[AUTH_PROFILE_CUSTOM],
+    }
+}
+
+pub fn get_auth_profile_for_provider<'a>(
+    profiles: &'a HashMap<String, ProviderProfileSettings>,
+    api_provider: &str,
+) -> Option<&'a ProviderProfileSettings> {
+    auth_profile_lookup_names_for_provider(api_provider)
+        .iter()
+        .find_map(|name| profiles.get(*name))
+}
+
+pub fn display_auth_profile_name(profile_name: &str) -> &str {
+    if profile_name.eq_ignore_ascii_case(AUTH_PROFILE_ANTHROPIC_LEGACY) {
+        AUTH_PROFILE_CLAUDE_CODE
+    } else {
+        profile_name
     }
 }

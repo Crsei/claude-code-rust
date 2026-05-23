@@ -228,7 +228,7 @@ fn persist_provider_selection(
     let mut profile = raw
         .auth_profiles
         .as_ref()
-        .and_then(|profiles| profiles.get(profile_name))
+        .and_then(|profiles| settings::get_auth_profile_for_provider(profiles, api_provider))
         .cloned()
         .unwrap_or_default();
     profile.api_provider = Some(api_provider.to_string());

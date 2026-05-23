@@ -367,11 +367,11 @@
 
 ```text
 + Login ----------------------------------------------------------------+
-| auth=unknown                             backend=native  codex=unknown |
+| profile=claude_code                      backend=native  codex=unknown |
 |-----------------------------------------------------------------------|
 | Sections              Login methods                                   |
 | > Status              > Status       command=/login status            |
-|   API key               API key      fills /login                     |
+|   Claude Code key       Claude key   fills /login                     |
 |   Claude.ai             Claude.ai    OAuth URL, then /login-code      |
 |   Console               Console      OAuth URL, may create API key    |
 |   Codex                 Codex        OpenAI Codex OAuth               |
@@ -387,7 +387,7 @@
 
 关键期望:
 
-- API key fills `/login `.
+- Claude Code key fills `/login `.
 - OAuth rows submit `/login 2|3|4` and then external URL output handles the next step.
 - Codex CLI submits `/login 5`.
 

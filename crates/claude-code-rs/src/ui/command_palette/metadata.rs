@@ -107,8 +107,13 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "init" => simple_meta("/init", &["/init"]),
         "insights" => simple_meta("/insights [fast|full]", &["/insights"]),
         "login" => simple_meta(
-            "/login [anthropic|codex|api-key|bedrock|vertex|cloud]",
-            &["/login", "/login codex", "/login bedrock", "/login vertex"],
+            "/login [claude_code|codex|openai_api|bedrock|vertex|cloud]",
+            &[
+                "/login claude_code",
+                "/login codex",
+                "/login bedrock",
+                "/login vertex",
+            ],
         ),
         "login-code" => simple_meta("/login-code <authorization-code>", &["/login-code abc123"]),
         "logout" => simple_meta("/logout", &["/logout"]),
@@ -197,11 +202,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "rename" => simple_meta("/rename [title|clear]", &["/rename UI command fixes"]),
         "remote" => simple_meta(
             "/remote <status|adapters|connect|test-message|runs|show|events|stop|doctor> ...",
-            &[
-                "/remote status",
-                "/remote connect telegram",
-                "/remote runs",
-            ],
+            &["/remote status", "/remote connect telegram", "/remote runs"],
         ),
         "resume" => simple_meta(
             "/resume <session-id|recent>",
@@ -221,10 +222,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             "/security-review [scope]",
             &["/security-review crates/claude-code-rs/src/ui"],
         ),
-        "session" => simple_meta(
-            "/session [list|list all]",
-            &["/session list", "/sessions"],
-        ),
+        "session" => simple_meta("/session [list|list all]", &["/session list", "/sessions"]),
         "session-export" => simple_meta(
             "/session-export <list|session-id|path>",
             &["/session-export list", "/structured-export"],

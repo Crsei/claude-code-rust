@@ -4,7 +4,7 @@ use std::path::Path;
 use super::load::apply_active_auth_profile;
 use super::raw::{merge_permissions, merge_str_lists};
 use super::*;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use serial_test::serial;
 
 struct EnvGuard {
@@ -82,6 +82,24 @@ fn empty_configs_produce_defaults() {
     assert!(merged.backend.is_none());
     assert!(!merged.verbose);
     assert!(merged.allowed_tools.is_empty());
+}
+
+#[test]
+fn anthropic_provider_uses_claude_code_auth_profile_name() {
+    assert_eq!(
+        auth_profile_name_for_provider(API_PROVIDER_ANTHROPIC),
+        AUTH_PROFILE_CLAUDE_CODE
+    );
+    assert_eq!(
+        auth_profile_lookup_names_for_provider(API_PROVIDER_ANTHROPIC),
+        &[AUTH_PROFILE_CLAUDE_CODE, AUTH_PROFILE_ANTHROPIC_LEGACY]
+    );
+    assert_eq!(auth_profile_name_for_provider("openai-codex"), "codex");
+    assert_eq!(auth_profile_name_for_provider("unknown"), "custom");
+    assert_eq!(
+        display_auth_profile_name(AUTH_PROFILE_ANTHROPIC_LEGACY),
+        AUTH_PROFILE_CLAUDE_CODE
+    );
 }
 
 #[test]
@@ -688,9 +706,9 @@ fn active_auth_profile_projects_runtime_fields_and_env() {
                 "model": "legacy-model",
                 "backend": "native",
                 "apiProvider": "anthropic",
-                "activeAuthProfile": "custom",
+                "activeAuthProfile": "claude_code",
                 "authProfiles": {
-                    "custom": {
+                    "claude_code": {
                         "backend": "native",
                         "apiProvider": "anthropic",
                         "model": "deepseek-v4-pro",
@@ -728,6 +746,36 @@ fn active_auth_profile_projects_runtime_fields_and_env() {
         Some("custom-token")
     );
     assert_eq!(sources.get("model"), Some(&SettingsSource::User));
+}
+
+#[test]
+fn legacy_anthropic_auth_profile_still_projects_runtime_fields() {
+    let raw: RawSettings = serde_json::from_str(
+        r#"{
+                "activeAuthProfile": "anthropic",
+                "authProfiles": {
+                    "anthropic": {
+                        "backend": "native",
+                        "apiProvider": "anthropic",
+                        "model": "deepseek-v4-pro",
+                        "baseUrl": "https://inferaichat.com"
+                    }
+                }
+            }"#,
+    )
+    .unwrap();
+    let mut sources = SourceMap::new();
+    let mut effective = EffectiveSettings::from_raw(raw);
+    sources.insert("authProfiles".to_string(), SettingsSource::User);
+
+    apply_active_auth_profile(&mut effective, &mut sources);
+
+    assert_eq!(effective.model.as_deref(), Some("deepseek-v4-pro"));
+    assert_eq!(effective.api_provider.as_deref(), Some("anthropic"));
+    assert_eq!(
+        effective.env.get("ANTHROPIC_BASE_URL").map(String::as_str),
+        Some("https://inferaichat.com")
+    );
 }
 
 #[test]

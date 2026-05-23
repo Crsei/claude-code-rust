@@ -1,6 +1,5 @@
 ---
 source: crates/claude-code-rs/src/ui/command_palette/tests.rs
-assertion_line: 313
 expression: normalize_snapshot_text(rendered)
 ---
 ## /init
@@ -229,9 +228,9 @@ expression: normalize_snapshot_text(rendered)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /login
 ┌ /login arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /login [anthropic|codex|api-key|bedrock|vertex|cloud]                                                │
-│Example: /login                                                                                             │
-│About: Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth, Bedrock, Vertex)                         │
+│Usage: /login [claude_code|codex|openai_api|bedrock|vertex|cloud]                                           │
+│Example: /login claude_code                                                                                 │
+│About: Authenticate (Claude Code / Anthropic-compatible, OpenAI Codex, OpenAI API, Bedrock, Vertex)         │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /login-code
 ┌ /login-code arguments ─────────────────────────────────────────────────────────────────────────────────────┐

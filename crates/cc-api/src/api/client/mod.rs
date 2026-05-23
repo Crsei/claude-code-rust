@@ -366,6 +366,7 @@ pub(crate) fn strip_anthropic_compatible_only_fields(value: &mut Value) {
     strip_anthropic_cache_fields(value);
     if let Value::Object(map) = value {
         map.remove("thinking");
+        map.remove("output_config");
         map.remove("context_management");
     }
     strip_anthropic_thinking_blocks(value);
@@ -563,6 +564,10 @@ pub struct MessagesRequest {
     pub context_management: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<Value>,
+    /// Anthropic `output_config` for controlling reasoning effort.
+    /// Used as an alternative to `thinking` on newer Anthropic models.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_config: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<Value>,
     /// Optional Responses API reasoning effort. Honored by the openai-codex

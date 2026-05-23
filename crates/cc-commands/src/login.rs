@@ -43,11 +43,12 @@ impl CommandHandler for LoginHandler {
         let rest = parts.collect::<Vec<_>>().join(" ");
 
         match head {
-            "anthropic_method" | "anthropic-method" | "anthropic" => {
+            "claude_code" | "claude-code" | "claude" | "anthropic_method" | "anthropic-method"
+            | "anthropic" => {
                 if rest.trim().is_empty() {
-                    Ok(CommandResult::Output(anthropic_login_menu()))
+                    Ok(CommandResult::Output(claude_code_login_menu()))
                 } else {
-                    execute_anthropic_method(&rest, ctx)
+                    execute_claude_code_method(&rest, ctx)
                 }
             }
             "openai_api" | "openai-api" | "openai" => {
@@ -59,7 +60,8 @@ impl CommandHandler for LoginHandler {
             }
             "openai_codex" | "openai-codex" => Ok(CommandResult::Output(start_codex_oauth(ctx))),
             "1" => Ok(CommandResult::Output(
-                "Paste your Anthropic API key:\n  /login sk-ant-api03-...".to_string(),
+                "Paste your Claude Code / Anthropic-compatible API key:\n  /login sk-ant-api03-..."
+                    .to_string(),
             )),
             "2" => Ok(CommandResult::Output(login_code::start_pending(
                 OAuthMethod::ClaudeAi,
@@ -85,19 +87,19 @@ impl CommandHandler for LoginHandler {
 
 fn login_menu() -> String {
     "Select login method:\n\
-     \n  anthropic_method  Anthropic API Key / Claude.ai OAuth / Console OAuth\
+     \n  claude_code       Claude Code / Anthropic-compatible API Key, Claude.ai OAuth, Console OAuth\
      \n  openai_codex      OpenAI Codex OAuth / Codex CLI import\
      \n  openai_api        OpenAI API Key\
-     \n\nCompatibility shortcuts: /login 1..7, /login codex, /login codex-cli, /login bedrock, /login vertex, /login cloud"
+     \n\nCompatibility shortcuts: /login anthropic, /login anthropic_method, /login 1..7, /login codex, /login codex-cli, /login bedrock, /login vertex, /login cloud"
         .to_string()
 }
 
-fn anthropic_login_menu() -> String {
-    "Anthropic login methods:\n\
+fn claude_code_login_menu() -> String {
+    "Claude Code / Anthropic-compatible login methods:\n\
      \n  [1] API Key (paste manually)\
      \n  [2] Claude.ai OAuth (Pro/Max subscription)\
      \n  [3] Console OAuth (API billing)\
-     \n\nType /login 1, /login 2, /login 3, or paste an Anthropic key with /login sk-ant-api03-..."
+     \n\nType /login 1, /login 2, /login 3, or paste a key with /login sk-ant-api03-..."
         .to_string()
 }
 
@@ -105,10 +107,11 @@ fn openai_api_prompt() -> String {
     "Paste your OpenAI API key:\n  /login openai_api sk-...".to_string()
 }
 
-fn execute_anthropic_method(args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
+fn execute_claude_code_method(args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
     match args.trim() {
         "1" | "api" | "api-key" | "api_key" => Ok(CommandResult::Output(
-            "Paste your Anthropic API key:\n  /login sk-ant-api03-...".to_string(),
+            "Paste your Claude Code / Anthropic-compatible API key:\n  /login sk-ant-api03-..."
+                .to_string(),
         )),
         "2" | "claude" | "claude-ai" | "claude_ai" => Ok(CommandResult::Output(
             login_code::start_pending(OAuthMethod::ClaudeAi),
@@ -120,54 +123,69 @@ fn execute_anthropic_method(args: &str, ctx: &mut CommandContext) -> Result<Comm
             Ok(CommandResult::Output(store_anthropic_api_key(key, ctx)))
         }
         other => Ok(CommandResult::Output(format!(
-            "Unknown Anthropic login option: \"{}\"\n\n{}",
+            "Unknown Claude Code / Anthropic-compatible login option: \"{}\"\n\n{}",
             other,
-            anthropic_login_menu()
+            claude_code_login_menu()
         ))),
     }
 }
 
 fn auth_status_text() -> String {
-    if let Some(cloud_status) = cloud_auth_status_text() {
-        return cloud_status;
-    }
-
-    if let Some(openai_status) = openai_api_status_text() {
-        return openai_status;
-    }
-
-    if let Some(codex_status) = codex_auth_status_text() {
-        return codex_status;
-    }
-
-    let current = match auth::try_resolve_auth() {
-        Ok(current) => current,
-        Err(error) => return format!("Authentication error: {error}"),
+    let status = if let Some(cloud_status) = cloud_auth_status_text() {
+        cloud_status
+    } else if let Some(openai_status) = openai_api_status_text() {
+        openai_status
+    } else if let Some(codex_status) = codex_auth_status_text() {
+        codex_status
+    } else {
+        let current = match auth::try_resolve_auth() {
+            Ok(current) => current,
+            Err(error) => return format!("Authentication error: {error}"),
+        };
+        match &current {
+            auth::AuthMethod::ApiKey(key) => {
+                let source = if std::env::var("ANTHROPIC_API_KEY")
+                    .map(|v| !v.is_empty())
+                    .unwrap_or(false)
+                {
+                    "env ANTHROPIC_API_KEY"
+                } else {
+                    "system keychain"
+                };
+                format!(
+                    "Authenticated: API Key {} (source: {})",
+                    mask_key(key),
+                    source
+                )
+            }
+            auth::AuthMethod::ExternalToken(_) => {
+                "Authenticated: External Token (ANTHROPIC_AUTH_TOKEN)".to_string()
+            }
+            auth::AuthMethod::OAuthToken { method, .. } => {
+                format!("Authenticated: OAuth ({})", method)
+            }
+            auth::AuthMethod::None => "Not authenticated".to_string(),
+        }
     };
-    match &current {
-        auth::AuthMethod::ApiKey(key) => {
-            let source = if std::env::var("ANTHROPIC_API_KEY")
-                .map(|v| !v.is_empty())
-                .unwrap_or(false)
-            {
-                "env ANTHROPIC_API_KEY"
-            } else {
-                "system keychain"
-            };
-            format!(
-                "Authenticated: API Key {} (source: {})",
-                mask_key(key),
-                source
-            )
-        }
-        auth::AuthMethod::ExternalToken(_) => {
-            "Authenticated: External Token (ANTHROPIC_AUTH_TOKEN)".to_string()
-        }
-        auth::AuthMethod::OAuthToken { method, .. } => {
-            format!("Authenticated: OAuth ({})", method)
-        }
-        auth::AuthMethod::None => "Not authenticated".to_string(),
-    }
+    append_active_profile_status(status)
+}
+
+fn append_active_profile_status(mut status: String) -> String {
+    let Some(profile_name) = active_auth_profile_display_name() else {
+        return status;
+    };
+    status.push_str("\nActive profile: ");
+    status.push_str(&profile_name);
+    status
+}
+
+fn active_auth_profile_display_name() -> Option<String> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    settings::load_effective(&cwd)
+        .ok()
+        .and_then(|loaded| loaded.effective.active_auth_profile)
+        .map(|name| settings::display_auth_profile_name(name.trim()).to_string())
+        .filter(|name| !name.is_empty())
 }
 
 fn openai_api_status_text() -> Option<String> {
@@ -545,7 +563,10 @@ fn store_anthropic_api_key(key: &str, ctx: &mut CommandContext) -> String {
     }
     match auth::api_key::store_api_key(key) {
         Ok(()) => {
-            let mut msg = format!("Anthropic API Key {} stored to keychain.", mask_key(key));
+            let mut msg = format!(
+                "Claude Code / Anthropic-compatible API key {} stored to keychain.",
+                mask_key(key)
+            );
             if let Some(provider_msg) =
                 persist_provider_selection(settings::API_PROVIDER_ANTHROPIC, Some("native"), ctx)
             {
@@ -605,7 +626,7 @@ fn persist_provider_selection(
     let mut profile = raw
         .auth_profiles
         .as_ref()
-        .and_then(|profiles| profiles.get(profile_name))
+        .and_then(|profiles| settings::get_auth_profile_for_provider(profiles, api_provider))
         .cloned()
         .unwrap_or_default();
     profile.api_provider = Some(api_provider.to_string());
@@ -858,7 +879,9 @@ mod tests {
     #[test]
     fn test_login_menu_contains_options() {
         let menu = login_menu();
-        assert!(menu.contains("anthropic_method"));
+        assert!(menu.contains("claude_code"));
+        assert!(menu.contains("Claude Code / Anthropic-compatible"));
+        assert!(menu.contains("/login anthropic"));
         assert!(menu.contains("openai_codex"));
         assert!(menu.contains("openai_api"));
         assert!(menu.contains("/login 1..7"));
@@ -866,12 +889,31 @@ mod tests {
     }
 
     #[test]
-    fn test_anthropic_menu_contains_legacy_options() {
-        let menu = anthropic_login_menu();
+    fn test_claude_code_menu_contains_legacy_options() {
+        let menu = claude_code_login_menu();
+        assert!(menu.contains("Claude Code / Anthropic-compatible"));
         assert!(menu.contains("[1]"));
         assert!(menu.contains("[2]"));
         assert!(menu.contains("[3]"));
         assert!(menu.contains("sk-ant-api03"));
+    }
+
+    #[tokio::test]
+    async fn test_legacy_anthropic_alias_opens_claude_code_menu() {
+        let mut ctx = test_ctx();
+
+        let result = LoginHandler
+            .execute("anthropic", &mut ctx)
+            .await
+            .expect("login command succeeds");
+
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("Claude Code / Anthropic-compatible"));
+                assert!(text.contains("[1]"));
+            }
+            _ => panic!("expected output"),
+        }
     }
 
     #[test]
@@ -939,6 +981,83 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
+    fn test_anthropic_provider_selection_persists_claude_code_profile() {
+        let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let dir = tempfile::TempDir::new().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let mut ctx = test_ctx();
+
+        let msg =
+            persist_provider_selection(settings::API_PROVIDER_ANTHROPIC, Some("native"), &mut ctx)
+                .expect("message");
+
+        assert!(msg.contains("apiProvider=anthropic"));
+        assert_eq!(
+            ctx.app_state.settings.active_auth_profile.as_deref(),
+            Some(settings::AUTH_PROFILE_CLAUDE_CODE)
+        );
+        let raw: RawSettings = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            raw.active_auth_profile.as_deref(),
+            Some(settings::AUTH_PROFILE_CLAUDE_CODE)
+        );
+        let profiles = raw.auth_profiles.as_ref().expect("auth profiles");
+        assert!(profiles.contains_key(settings::AUTH_PROFILE_CLAUDE_CODE));
+        assert!(!profiles.contains_key(settings::AUTH_PROFILE_ANTHROPIC_LEGACY));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_anthropic_provider_selection_copies_legacy_profile() {
+        let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let dir = tempfile::TempDir::new().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let legacy = settings::ProviderProfileSettings {
+            backend: Some("native".to_string()),
+            api_provider: Some(settings::API_PROVIDER_ANTHROPIC.to_string()),
+            model: Some("deepseek-v4-pro".to_string()),
+            base_url: Some("https://inferaichat.com".to_string()),
+            ..Default::default()
+        };
+        settings::write_user_settings(&RawSettings {
+            active_auth_profile: Some(settings::AUTH_PROFILE_ANTHROPIC_LEGACY.to_string()),
+            auth_profiles: Some(std::collections::HashMap::from([(
+                settings::AUTH_PROFILE_ANTHROPIC_LEGACY.to_string(),
+                legacy,
+            )])),
+            ..RawSettings::default()
+        })
+        .unwrap();
+        let mut ctx = test_ctx();
+
+        persist_provider_selection(settings::API_PROVIDER_ANTHROPIC, Some("native"), &mut ctx)
+            .expect("message");
+
+        let raw: RawSettings = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            raw.active_auth_profile.as_deref(),
+            Some(settings::AUTH_PROFILE_CLAUDE_CODE)
+        );
+        let claude_code = raw
+            .auth_profiles
+            .as_ref()
+            .and_then(|profiles| profiles.get(settings::AUTH_PROFILE_CLAUDE_CODE))
+            .expect("claude_code profile persisted");
+        assert_eq!(claude_code.model.as_deref(), Some("deepseek-v4-pro"));
+        assert_eq!(
+            claude_code.base_url.as_deref(),
+            Some("https://inferaichat.com")
+        );
+    }
+
+    #[test]
     fn test_check_codex_cli_no_file() {
         // Point CODEX_HOME at a nonexistent directory
         let dir = tempfile::TempDir::new().unwrap();
@@ -983,16 +1102,18 @@ mod tests {
         assert!(msg.contains("model=gpt-5.5"));
         assert_eq!(ctx.app_state.main_loop_backend, "codex");
         assert_eq!(ctx.app_state.main_loop_model, "gpt-5.5");
-        assert!(ctx
-            .app_state
-            .settings
-            .available_models
-            .contains(&"gpt-5.5".to_string()));
-        assert!(ctx
-            .app_state
-            .settings
-            .model_capabilities
-            .contains_key("gpt-5.5"));
+        assert!(
+            ctx.app_state
+                .settings
+                .available_models
+                .contains(&"gpt-5.5".to_string())
+        );
+        assert!(
+            ctx.app_state
+                .settings
+                .model_capabilities
+                .contains_key("gpt-5.5")
+        );
 
         let raw: RawSettings = serde_json::from_str(
             &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
@@ -1010,16 +1131,20 @@ mod tests {
         );
         assert_eq!(codex.backend.as_deref(), Some("codex"));
         assert_eq!(codex.model.as_deref(), Some("gpt-5.5"));
-        assert!(codex
-            .available_models
-            .as_ref()
-            .expect("availableModels persisted")
-            .contains(&"gpt-5.5".to_string()));
-        assert!(codex
-            .model_capabilities
-            .as_ref()
-            .expect("modelCapabilities persisted")
-            .contains_key("gpt-5.5"));
+        assert!(
+            codex
+                .available_models
+                .as_ref()
+                .expect("availableModels persisted")
+                .contains(&"gpt-5.5".to_string())
+        );
+        assert!(
+            codex
+                .model_capabilities
+                .as_ref()
+                .expect("modelCapabilities persisted")
+                .contains_key("gpt-5.5")
+        );
     }
 
     #[test]
@@ -1056,21 +1181,24 @@ mod tests {
         assert!(msg.contains("model=gpt-5.4"));
         assert_eq!(ctx.app_state.main_loop_backend, "codex");
         assert_eq!(ctx.app_state.main_loop_model, "gpt-5.4");
-        assert!(!ctx
-            .app_state
-            .settings
-            .available_models
-            .contains(&"deepseek-v4-pro".to_string()));
-        assert!(ctx
-            .app_state
-            .settings
-            .available_models
-            .contains(&"gpt-5.4-mini".to_string()));
-        assert!(ctx
-            .app_state
-            .settings
-            .model_capabilities
-            .contains_key("gpt-5.4"));
+        assert!(
+            !ctx.app_state
+                .settings
+                .available_models
+                .contains(&"deepseek-v4-pro".to_string())
+        );
+        assert!(
+            ctx.app_state
+                .settings
+                .available_models
+                .contains(&"gpt-5.4-mini".to_string())
+        );
+        assert!(
+            ctx.app_state
+                .settings
+                .model_capabilities
+                .contains_key("gpt-5.4")
+        );
 
         let raw: RawSettings = serde_json::from_str(
             &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
@@ -1083,15 +1211,19 @@ mod tests {
             .and_then(|profiles| profiles.get("codex"))
             .expect("codex profile persisted");
         assert_eq!(codex.model.as_deref(), Some("gpt-5.4"));
-        assert!(!codex
-            .available_models
-            .as_ref()
-            .expect("availableModels persisted")
-            .contains(&"deepseek-v4-pro".to_string()));
-        assert!(codex
-            .model_capabilities
-            .as_ref()
-            .expect("modelCapabilities persisted")
-            .contains_key("gpt-5.4"));
+        assert!(
+            !codex
+                .available_models
+                .as_ref()
+                .expect("availableModels persisted")
+                .contains(&"deepseek-v4-pro".to_string())
+        );
+        assert!(
+            codex
+                .model_capabilities
+                .as_ref()
+                .expect("modelCapabilities persisted")
+                .contains_key("gpt-5.4")
+        );
     }
 }

@@ -727,7 +727,7 @@ pub fn get_all_commands() -> Vec<Command> {
         command(
             "login",
             &[],
-            "Authenticate (API key, Anthropic OAuth, OpenAI Codex OAuth, Bedrock, Vertex)",
+            "Authenticate (Claude Code / Anthropic-compatible, OpenAI Codex, OpenAI API, Bedrock, Vertex)",
             login::LoginHandler,
         ),
         command(

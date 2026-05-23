@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::ui::better_view_panel::{plain_row, selected_row, BetterViewPanel};
-use crate::ui::command_surface::{cycle_index, CommandSurfaceOutcome};
+use crate::ui::better_view_panel::{BetterViewPanel, plain_row, selected_row};
+use crate::ui::command_surface::{CommandSurfaceOutcome, cycle_index};
 
 const LOGIN_ACTIONS: &[LoginAction] = &[
     LoginAction {
@@ -12,8 +12,8 @@ const LOGIN_ACTIONS: &[LoginAction] = &[
     },
     LoginAction {
         shortcut: '1',
-        label: "API key",
-        description: "paste a full Anthropic API key",
+        label: "Claude Code key",
+        description: "paste a Claude Code / Anthropic-compatible API key",
         command: LoginCommand::FillPrompt("/login "),
     },
     LoginAction {
@@ -25,7 +25,7 @@ const LOGIN_ACTIONS: &[LoginAction] = &[
     LoginAction {
         shortcut: '3',
         label: "Console",
-        description: "start Anthropic Console OAuth for API billing",
+        description: "start Console OAuth for API billing",
         command: LoginCommand::Submit("/login 3"),
     },
     LoginAction {
@@ -94,8 +94,8 @@ impl LoginSurface {
                 detail_lines.push(plain_row("completion:", "/login-code <code>"));
             }
         }
-        BetterViewPanel::new("Login / OAuth")
-            .summary("method=select step=1/3 status=ready")
+        BetterViewPanel::new("Login / Claude Code")
+            .summary("profile=claude_code step=1/3 status=ready")
             .sections_title("Steps")
             .sections(sections, self.action_index)
             .detail_title("OAuth details")

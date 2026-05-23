@@ -242,12 +242,12 @@ Left/Right switch settings scope | Up/Down navigate | Enter select | o open scop
 触发: `/login`
 
 ```text
-[Status]  API key  Claude.ai  Console  Codex  Codex CLI
+[Status]  Claude Code key  Claude.ai  Console  Codex  Codex CLI
 Login methods
 > s. Status     - show current authentication source
-  1. API key    - paste a full Anthropic API key
+  1. Claude Code key - paste a Claude Code / Anthropic-compatible API key
   2. Claude.ai  - start Claude.ai OAuth for Pro/Max accounts
-  3. Console    - start Anthropic Console OAuth for API billing
+  3. Console    - start Console OAuth for API billing
   4. Codex      - start OpenAI Codex OAuth for ChatGPT accounts
   5. Codex CLI  - check or import ~/.codex/auth.json
 
@@ -416,4 +416,3 @@ c create | l list | Esc close
 - `s` 填充 `/team send <name> `。
 - `k` 提交 `/team kill <name>`。
 - `p` 填充 `/team spawn `，`c` 填充 `/team create `。
-

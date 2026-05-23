@@ -304,7 +304,7 @@ FEATURE_KAIROS=1 claude-code-rs --daemon --port 19836
 
 | 命令 | 别名 | 说明 |
 |------|------|------|
-| `/login` | — | 认证入口：API Key / Anthropic OAuth / OpenAI Codex OAuth / Codex CLI 导入 / Bedrock / Vertex |
+| `/login` | — | 认证入口：Claude Code / Anthropic-compatible、OpenAI Codex、OpenAI API、Bedrock / Vertex |
 | `/login-code` | — | 用授权码完成 OAuth 登录 |
 | `/logout` | — | 清除已保存凭据 |
 
@@ -314,7 +314,9 @@ FEATURE_KAIROS=1 claude-code-rs --daemon --port 19836
 |------|------|
 | `/login` | 显示认证菜单 |
 | `/login status` | 查看当前认证状态 |
-| `/login sk-ant-...` | 直接保存 Anthropic API Key |
+| `/login claude_code` | Claude Code / Anthropic-compatible 登录菜单 |
+| `/login anthropic` | 兼容别名，等价于 `/login claude_code` |
+| `/login sk-ant-...` | 直接保存 Claude Code / Anthropic-compatible API Key |
 | `/login 1` | 手动粘贴 API Key |
 | `/login 2` | Claude.ai OAuth |
 | `/login 3` | Console OAuth |

@@ -72,7 +72,7 @@ pub mod user_text_message;
 pub mod user_tool_result_message;
 // END generated upstream messages modules
 
-#[path = "messages/render.rs"]
+#[path = "messages/render/mod.rs"]
 mod render;
 #[path = "messages/wrap.rs"]
 mod wrap;

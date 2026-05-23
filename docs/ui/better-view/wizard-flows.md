@@ -7,8 +7,8 @@
 ## Login OAuth Flow
 
 ```text
-+ Login / OAuth --------------------------------------------------------+
-| method=Claude.ai                             step=1/3  status=waiting |
++ Login / Claude Code -------------------------------------------------+
+| profile=claude_code method=Claude.ai        step=1/3  status=waiting |
 |-----------------------------------------------------------------------|
 | Steps                 OAuth details                                   |
 | > Choose method       provider: Claude.ai                             |
@@ -125,4 +125,3 @@
 
 - This is a future target only.
 - `/agents` should not show create wizard until explicitly wired.
-

@@ -111,7 +111,7 @@
 | 命令 | 外部行为 | 备注 |
 | --- | --- | --- |
 | `/login 2` | 输出 Claude.ai OAuth 授权 URL | 之后用 `/login-code <code>` |
-| `/login 3` | 输出 Anthropic Console OAuth 授权 URL | Console flow 还会尝试创建/存储 API key |
+| `/login 3` | 输出 Console OAuth 授权 URL | Console flow 还会尝试创建/存储 API key |
 | `/login 4` 或 `/login codex` | 输出 OpenAI Codex OAuth 授权 URL | 之后用 `/login-code <code>` |
 | `/login 5` 或 `/login codex-cli` | 读取/刷新 Codex CLI auth | 依赖 `~/.codex/auth.json`，不打开 UI |
 | `/login bedrock` | 提示 AWS Bedrock 环境配置 | 可能要求用户在外部 shell/cloud 环境配置凭据 |

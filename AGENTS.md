@@ -64,33 +64,8 @@ Known build warnings on this machine:
 - `crates/claude-code-rs/src/tools/exec/process_control.rs` currently has an
   unused Unix `CommandExt` import.
 
-## Commit And Push Automation
 
-本仓库使用本地 Git 身份：
-
-```bash
-git config user.name "Crsei"
-git config user.email "Crsei@protonmail.com"
-```
-
-Rust 工具链安装在仓库父目录的 `.rust/` 下。构建或提交前需要使用这套本地工具链：
-
-```bash
-export CARGO_HOME=/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/.rust/cargo
-export RUSTUP_HOME=/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/.rust/rustup
-export PATH="$CARGO_HOME/bin:$PATH"
-```
-
-常规提交流程：
-
-```bash
-git status --short
-cargo build --workspace --release
-git add <files>
-git commit -m "<short imperative summary>"
-```
-
-也可以使用仓库脚本完成“构建、暂存指定文件、提交、推送”：
+使用仓库脚本完成“构建、暂存指定文件、提交、推送”：
 
 ```bash
 scripts/git-commit-update-and-push.sh -m "<short imperative summary>" -- <files...>
