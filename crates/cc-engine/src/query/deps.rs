@@ -50,6 +50,7 @@ pub struct ModelCallParams {
     pub skip_cache_write: Option<bool>,
     pub thinking_enabled: Option<bool>,
     pub effort_value: Option<String>,
+    pub model_reasoning_effort: Option<String>,
     pub advisor_model: Option<String>,
 }
 
@@ -64,6 +65,7 @@ impl std::fmt::Debug for ModelCallParams {
             .field("skip_cache_write", &self.skip_cache_write)
             .field("thinking_enabled", &self.thinking_enabled)
             .field("effort_value", &self.effort_value)
+            .field("model_reasoning_effort", &self.model_reasoning_effort)
             .field("advisor_model", &self.advisor_model)
             .finish()
     }

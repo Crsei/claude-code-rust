@@ -649,6 +649,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let raw = to_bedrock_body(&req).unwrap();
@@ -681,6 +682,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: Some("advisor".to_string()),
         };
 

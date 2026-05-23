@@ -286,7 +286,7 @@ fn build_codex_responses_request(request: &MessagesRequest) -> Value {
         .unwrap_or_default();
     let tools = build_responses_tools(request);
 
-    json!({
+    let mut body = json!({
         "model": request.model,
         "instructions": instructions,
         "input": build_responses_input(request),
@@ -296,7 +296,28 @@ fn build_codex_responses_request(request: &MessagesRequest) -> Value {
         "store": false,
         "stream": true,
         "include": [],
-    })
+    });
+    if let Some(effort) = request
+        .reasoning_effort
+        .as_deref()
+        .and_then(normalize_codex_reasoning_effort)
+    {
+        body["reasoning"] = json!({ "effort": effort });
+        body["include"] = json!(["reasoning.encrypted_content"]);
+    }
+    body
+}
+
+fn normalize_codex_reasoning_effort(effort: &str) -> Option<&str> {
+    match effort.trim().to_ascii_lowercase().as_str() {
+        "none" => Some("none"),
+        "minimal" => Some("minimal"),
+        "low" => Some("low"),
+        "medium" => Some("medium"),
+        "high" => Some("high"),
+        "xhigh" => Some("xhigh"),
+        _ => None,
+    }
 }
 
 /// Convert a MessagesRequest (Anthropic format) to OpenAI chat completions body.
@@ -1166,6 +1187,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: Some("high".to_string()),
             advisor_model: None,
         };
         let body = build_openai_request(&req, "openai");
@@ -1201,6 +1223,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: Some("high".to_string()),
             advisor_model: None,
         };
         let body = build_openai_request(&req, "openai");
@@ -1239,6 +1262,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: Some("high".to_string()),
             advisor_model: None,
         };
         let body = build_openai_request(&req, OPENAI_CODEX_PROVIDER_NAME);
@@ -1251,6 +1275,8 @@ mod tests {
         assert!(body.get("messages").is_none());
         assert!(body.get("max_tokens").is_none());
         assert!(body.get("max_completion_tokens").is_none());
+        assert_eq!(body["reasoning"], json!({"effort": "high"}));
+        assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
         assert_eq!(body["input"][0]["type"], "message");
         assert_eq!(body["input"][0]["role"], "user");
         assert_eq!(body["input"][0]["content"][0]["type"], "input_text");
@@ -1293,6 +1319,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
 
@@ -1320,6 +1347,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let body = build_openai_request(&req, "deepseek");
@@ -1354,6 +1382,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let body = build_openai_request(&req, "openai");
@@ -1390,6 +1419,7 @@ mod tests {
             context_management: None,
             thinking: Some(json!({"type": "enabled"})),
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
 
@@ -1432,6 +1462,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
 

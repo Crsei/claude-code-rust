@@ -85,6 +85,7 @@
   - `backend`
   - `theme`
   - `verbose`
+  - `model_reasoning_effort`
 - Notes:
   - `/config` 默认等价于 `/config show`
   - `backend` 会走规范化逻辑：`codex` 保留为 `codex`，其他值会回退成 `native`
@@ -92,6 +93,7 @@
   - `/config`
   - `/config set model MOTA`
   - `/config set backend codex`
+  - `/config set model_reasoning_effort high`
   - `/config set verbose true`
   - `/config reset`
 
@@ -193,7 +195,7 @@
   - `off` / `disable`
 - Behavior:
   - 无参数时切换 fast mode
-  - 启用时如果当前模型不兼容，会自动切到配置的 `fastModel`，默认 `MOTA` (`gpt-5.5`)
+  - 启用时如果当前模型不兼容，会自动切到配置的 `fastModel`，默认 `MOTA`（可由 `motaModel` 覆盖）
 - Examples:
   - `/fast`
   - `/fast on`

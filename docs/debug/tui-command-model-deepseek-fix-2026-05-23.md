@@ -55,6 +55,43 @@
   3. settings 中已有 `model`
   4. Codex provider 默认模型
 
+#### 2026-05-23 追加：Codex CLI 切换后 `/model` 仍显示 DeepSeek
+
+用户反馈：切换到 `codex-cli` 后，`/model` 的模型列表仍然显示 `deepseek-v4-pro`。
+
+根因：
+
+- model picker 只要检测到 `ANTHROPIC_DEFAULT_*` 环境变量，就按 Anthropic-compatible alias 映射显示，即使当前 `apiProvider` 已经明确是 `openai-codex`。
+- `/login codex-cli` 切换 provider 时没有替换旧的 `availableModels`，用户 settings 中残留的 DeepSeek allow-list 会继续影响 `/model` 和下次启动的模型解析。
+
+修复：
+
+- `apiProvider` 明确存在时，provider 判断以 `apiProvider` 为准；只有没有明确 provider 时才使用 `ANTHROPIC_*` 环境变量推断 Anthropic-compatible。
+- Codex provider selection 会同步更新 live 和 persisted `availableModels`，保留 Codex 相关模型/alias，过滤掉旧 DeepSeek 条目。
+- 旧 settings 中的 `model=deepseek-v4-pro` 不再作为 Codex 默认模型候选；除非显式设置 `OPENAI_CODEX_MODEL`，否则回退到 Codex provider 默认模型。
+
+#### 2026-05-23 追加：SOTA/MOTA/FOTA 由 settings 覆盖
+
+用户反馈：`SOTA_MODEL_ID`、`MOTA_MODEL_ID`、`FOTA_MODEL_ID` 不应写死在代码中；应允许在 settings 中配置，并让 settings 的模型设置具有最高优先级。
+
+修复：
+
+- 新增 settings 字段：`sotaModel`、`motaModel`、`fotaModel`。
+- 有 settings 上下文的路径优先用这些字段解析 `SOTA`、`MOTA`、`FOTA`，再回退到 provider 环境映射或内置 fallback。
+- 覆盖范围包括启动模型解析、`/model`、`/config set model`、`/fast` 默认模型、Codex login/import 后的模型 allow-list、TUI model picker。
+- 更新 settings schema 和模型配置文档，保留 `cc_models` 中的常量作为无 settings 上下文时的 fallback。
+
+#### 2026-05-23 追加：Codex model_reasoning_effort
+
+用户反馈：Codex 模型不直接支持设置 reasoning token 数，应该支持 Codex 原生的 `model_reasoning_effort`。
+
+修复：
+
+- 新增 settings 字段 `model_reasoning_effort`，支持 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`。
+- `openai-codex` 请求会写入 Responses API body：`reasoning: { "effort": ... }`，并请求 `reasoning.encrypted_content`。
+- `/config set model_reasoning_effort high` 会同步 live settings 并持久化到 cc-rust settings。
+- 优先级：`model_reasoning_effort` 最高；未设置时，`effortLevel` 的 `low`/`medium`/`high` 会作为 Codex fallback，`max` 映射为 `xhigh`，数字 token budget 不映射到 Codex。
+
 ### DeepSeek Anthropic-compatible thinking 回放
 
 - 非官方 Anthropic-compatible 请求继续清理：

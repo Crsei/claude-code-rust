@@ -201,6 +201,10 @@ pub(crate) fn build_messages_request(
         .model
         .clone()
         .unwrap_or_else(cc_models::default_fallback_model_id);
+    let model_reasoning_effort = resolve_model_reasoning_effort(
+        params.model_reasoning_effort.as_deref(),
+        params.effort_value.as_deref(),
+    );
 
     cc_api::api::client::MessagesRequest {
         max_tokens: clamp_max_tokens_for_model(
@@ -221,7 +225,36 @@ pub(crate) fn build_messages_request(
         context_management: None,
         thinking,
         tool_choice: None,
+        reasoning_effort: model_reasoning_effort,
         advisor_model: params.advisor_model.clone(),
+    }
+}
+
+fn resolve_model_reasoning_effort(
+    explicit: Option<&str>,
+    effort_value: Option<&str>,
+) -> Option<String> {
+    explicit
+        .and_then(normalize_model_reasoning_effort)
+        .or_else(|| codex_effort_from_effort_level(effort_value))
+}
+
+fn normalize_model_reasoning_effort(value: &str) -> Option<String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" | "minimal" | "low" | "medium" | "high" | "xhigh" => {
+            Some(value.trim().to_ascii_lowercase())
+        }
+        _ => None,
+    }
+}
+
+fn codex_effort_from_effort_level(value: Option<&str>) -> Option<String> {
+    match value?.trim().to_ascii_lowercase().as_str() {
+        "low" => Some("low".to_string()),
+        "medium" | "med" => Some("medium".to_string()),
+        "high" => Some("high".to_string()),
+        "max" => Some("xhigh".to_string()),
+        _ => None,
     }
 }
 
@@ -423,6 +456,7 @@ mod tests {
             skip_cache_write: None,
             thinking_enabled: Some(true),
             effort_value: None,
+            model_reasoning_effort: None,
             advisor_model: None,
         }
     }
@@ -543,6 +577,34 @@ mod tests {
         let req = build_messages_request(&p);
         let thinking = req.thinking.expect("thinking config present");
         assert_eq!(thinking["budget_tokens"], 12_345);
+    }
+
+    #[test]
+    fn codex_reasoning_effort_prefers_explicit_setting() {
+        let mut p = base_params();
+        p.model_reasoning_effort = Some("xhigh".into());
+        p.effort_value = Some("low".into());
+
+        let req = build_messages_request(&p);
+        assert_eq!(req.reasoning_effort.as_deref(), Some("xhigh"));
+    }
+
+    #[test]
+    fn codex_reasoning_effort_falls_back_to_effort_label() {
+        let mut p = base_params();
+        p.effort_value = Some("max".into());
+
+        let req = build_messages_request(&p);
+        assert_eq!(req.reasoning_effort.as_deref(), Some("xhigh"));
+    }
+
+    #[test]
+    fn codex_reasoning_effort_ignores_numeric_budget() {
+        let mut p = base_params();
+        p.effort_value = Some("12345".into());
+
+        let req = build_messages_request(&p);
+        assert!(req.reasoning_effort.is_none());
     }
 
     #[test]

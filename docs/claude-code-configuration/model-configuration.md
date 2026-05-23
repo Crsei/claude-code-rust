@@ -76,6 +76,22 @@ When `availableModels` is set, users cannot switch to models not in the list via
 }
 ```
 
+### Configure cc-rust model aliases
+
+cc-rust resolves the neutral aliases `SOTA`, `MOTA`, and `FOTA` from settings before falling back to provider-specific environment mapping or built-in constants.
+
+```json theme={null}
+{
+  "sotaModel": "gpt-5.5",
+  "motaModel": "gpt-5.4-mini",
+  "fotaModel": "gpt-5.3-codex-spark",
+  "model": "SOTA",
+  "availableModels": ["SOTA", "MOTA", "FOTA"]
+}
+```
+
+This keeps aliases stable in commands and policy while letting user, project, local, or managed settings choose the concrete model IDs.
+
 ### Default model behavior
 
 The Default option in the model picker is not affected by `availableModels`. It always remains available and represents the system's runtime default [based on the user's subscription tier](#default-model-setting).
@@ -149,6 +165,19 @@ For one-off deep reasoning without changing your session setting, include "ultra
 * **Environment variable**: set `CLAUDE_CODE_EFFORT_LEVEL` to `low`, `medium`, `high`, `max`, or `auto`
 * **Settings**: set `effortLevel` in your settings file to `"low"`, `"medium"`, or `"high"`
 * **Skill and subagent frontmatter**: set `effort` in a [skill](/en/skills#frontmatter-reference) or [subagent](/en/sub-agents#supported-frontmatter-fields) markdown file to override the effort level when that skill or subagent runs
+
+For Codex/OpenAI Responses models, use the Codex-native setting instead of a token budget:
+
+```json
+{
+  "apiProvider": "openai-codex",
+  "backend": "codex",
+  "model": "SOTA",
+  "model_reasoning_effort": "high"
+}
+```
+
+`model_reasoning_effort` accepts `"none"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, and `"xhigh"`. It maps to the Responses API `reasoning.effort` field.
 
 The environment variable takes precedence over all other methods, then your configured level, then the model default. Frontmatter effort applies when that skill or subagent is active, overriding the session level but not the environment variable.
 

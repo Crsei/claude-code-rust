@@ -91,6 +91,10 @@ pub(crate) async fn prepare_model_request(
     let request_model = app_state_for_request.main_loop_model.clone();
     let request_thinking_enabled = app_state_for_request.thinking_enabled;
     let request_effort_value = app_state_for_request.effort_value.clone();
+    let request_model_reasoning_effort = app_state_for_request
+        .settings
+        .model_reasoning_effort
+        .clone();
     let request_advisor_model = app_state_for_request.advisor_model.clone();
 
     let autocompact_params = ModelCallParams {
@@ -102,6 +106,7 @@ pub(crate) async fn prepare_model_request(
         skip_cache_write: context.skip_cache_write,
         thinking_enabled: request_thinking_enabled,
         effort_value: request_effort_value.clone(),
+        model_reasoning_effort: request_model_reasoning_effort.clone(),
         advisor_model: request_advisor_model.clone(),
     };
 
@@ -144,6 +149,7 @@ pub(crate) async fn prepare_model_request(
         skip_cache_write: context.skip_cache_write,
         thinking_enabled: request_thinking_enabled,
         effort_value: request_effort_value,
+        model_reasoning_effort: request_model_reasoning_effort,
         advisor_model: request_advisor_model,
     };
 

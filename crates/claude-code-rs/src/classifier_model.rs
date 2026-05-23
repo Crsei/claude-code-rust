@@ -62,6 +62,7 @@ impl SafetyClassifierModel for ApiClientClassifierModel {
             context_management: None,
             thinking,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let response = self.client.messages(request).await?;

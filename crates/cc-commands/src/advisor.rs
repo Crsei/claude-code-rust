@@ -20,7 +20,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::model::resolve_and_validate_model;
 use crate::{CommandContext, CommandHandler, CommandResult};
 
 pub struct AdvisorHandler;
@@ -99,9 +98,20 @@ fn set_advisor_with_persist<F>(
 where
     F: FnOnce(&std::path::Path, Option<&str>) -> Result<std::path::PathBuf>,
 {
-    let resolved = match resolve_and_validate_model(raw, &[]) {
-        Ok(model) => model,
-        Err(message) => return Ok(CommandResult::Output(format!("Rejected: {}", message))),
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(CommandResult::Output(
+            "Rejected: model name required".into(),
+        ));
+    }
+
+    let resolved = if crate::model::is_removed_legacy_model_alias(raw) {
+        return Ok(CommandResult::Output(format!(
+            "Rejected: {}",
+            crate::model::removed_legacy_model_alias_error(raw)
+        )));
+    } else {
+        crate::model::resolve_model_alias_with_settings(raw, &ctx.app_state.settings)
     };
     let trimmed = resolved.trim();
 

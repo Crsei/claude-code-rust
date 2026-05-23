@@ -9,6 +9,27 @@
     "model": { "type": "string" },
     "backend": { "type": "string", "enum": ["native", "codex"] },
     "apiProvider": { "type": "string", "enum": ["anthropic", "openai-codex", "openai"] },
+    "activeAuthProfile": { "type": "string" },
+    "authProfiles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "backend": { "type": "string", "enum": ["native", "codex"] },
+          "apiProvider": { "type": "string", "enum": ["anthropic", "openai-codex", "openai"] },
+          "model": { "type": "string" },
+          "availableModels": { "type": "array", "items": { "type": "string" } },
+          "baseUrl": { "type": "string" },
+          "apiKey": { "type": "string" },
+          "env": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "authSource": true
+        }
+      }
+    },
     "theme": { "type": "string" },
     "verbose": { "type": "boolean" },
     "permissionMode": {
@@ -120,9 +141,17 @@
     "defaultModel": { "type": "string" },
     "fallbackModel": { "type": "string" },
     "fastModel": { "type": "string" },
+    "sotaModel": { "type": "string" },
+    "motaModel": { "type": "string" },
+    "fotaModel": { "type": "string" },
     "effortLevel": {
       "type": "string",
       "description": "Thinking budget label (low|medium|high) or a positive integer token count. low=4096, medium=10240, high=24576."
+    },
+    "model_reasoning_effort": {
+      "type": "string",
+      "enum": ["none", "minimal", "low", "medium", "high", "xhigh"],
+      "description": "Codex/OpenAI Responses reasoning effort. Directly maps to reasoning.effort for openai-codex requests."
     },
     "fastMode": { "type": "boolean" },
     "fastModePerSessionOptIn": { "type": "boolean" },

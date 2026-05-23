@@ -14,8 +14,11 @@
 //! The root crate keeps `types::app_state::SettingsJson` as a re-export of
 //! this type so existing call sites compile unchanged.
 
+use std::collections::HashMap;
+
 use crate::settings::{
-    PermissionsSettings, SandboxSettings, SourceMap, SpinnerTipsSettings, StatusLineSettings,
+    PermissionsSettings, ProviderProfileSettings, SandboxSettings, SourceMap, SpinnerTipsSettings,
+    StatusLineSettings,
 };
 
 /// Runtime projection of [`crate::settings::EffectiveSettings`] —
@@ -27,6 +30,8 @@ pub struct SettingsJson {
     pub model: Option<String>,
     pub backend: Option<String>,
     pub api_provider: Option<String>,
+    pub active_auth_profile: Option<String>,
+    pub auth_profiles: HashMap<String, ProviderProfileSettings>,
     pub theme: Option<String>,
     pub verbose: Option<bool>,
 
@@ -49,8 +54,12 @@ pub struct SettingsJson {
     pub default_model: Option<String>,
     pub fallback_model: Option<String>,
     pub fast_model: Option<String>,
+    pub sota_model: Option<String>,
+    pub mota_model: Option<String>,
+    pub fota_model: Option<String>,
     pub available_models: Vec<String>,
     pub effort_level: Option<String>,
+    pub model_reasoning_effort: Option<String>,
     pub fast_mode: Option<bool>,
     pub fast_mode_per_session_opt_in: Option<bool>,
     /// Optional advisor model id (issue #33). Persisted under

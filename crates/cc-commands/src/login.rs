@@ -15,6 +15,15 @@ use super::login_code;
 use crate::{CommandContext, CommandHandler, CommandResult};
 use cc_auth::{self as auth, oauth::OAuthMethod};
 
+const CODEX_MODEL_CHOICES: &[&str] = &[
+    "SOTA",
+    "MOTA",
+    "FOTA",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.3-codex-spark",
+];
+
 pub struct LoginHandler;
 
 #[async_trait]
@@ -601,9 +610,16 @@ fn persist_provider_selection(
         RawSettings::default()
     };
 
-    raw.api_provider = Some(api_provider.to_string());
+    let profile_name = settings::auth_profile_name_for_provider(api_provider);
+    let mut profile = raw
+        .auth_profiles
+        .as_ref()
+        .and_then(|profiles| profiles.get(profile_name))
+        .cloned()
+        .unwrap_or_default();
+    profile.api_provider = Some(api_provider.to_string());
     if let Some(backend) = backend {
-        raw.backend = Some(backend.to_string());
+        profile.backend = Some(backend.to_string());
         ctx.app_state.main_loop_backend = backend.to_string();
         ctx.app_state.settings.backend = Some(backend.to_string());
         ctx.app_state
@@ -613,22 +629,40 @@ fn persist_provider_selection(
     }
     let selected_model = if api_provider == settings::API_PROVIDER_OPENAI_CODEX {
         let model = resolve_codex_default_model(ctx, &raw);
-        raw.model = Some(model.clone());
+        let available_models = codex_available_models(&model, &raw, ctx);
+        profile.model = Some(model.clone());
+        profile.available_models = Some(available_models.clone());
         ctx.app_state.main_loop_model = model.clone();
         ctx.app_state.settings.model = Some(model);
+        ctx.app_state.settings.available_models = available_models;
         ctx.app_state
             .settings
             .sources
             .insert("model".to_string(), settings::SettingsSource::User);
+        ctx.app_state.settings.sources.insert(
+            "availableModels".to_string(),
+            settings::SettingsSource::User,
+        );
         ctx.app_state.settings.model.clone()
     } else {
         None
     };
+    settings::upsert_auth_profile(&mut raw, profile_name, profile, true);
     ctx.app_state.settings.api_provider = Some(api_provider.to_string());
+    ctx.app_state.settings.active_auth_profile = Some(profile_name.to_string());
+    ctx.app_state.settings.auth_profiles = raw.auth_profiles.clone().unwrap_or_default();
     ctx.app_state
         .settings
         .sources
         .insert("apiProvider".to_string(), settings::SettingsSource::User);
+    ctx.app_state.settings.sources.insert(
+        "activeAuthProfile".to_string(),
+        settings::SettingsSource::User,
+    );
+    ctx.app_state
+        .settings
+        .sources
+        .insert("authProfiles".to_string(), settings::SettingsSource::User);
 
     match settings::write_user_settings(&raw) {
         Ok(path) => Some(format!(
@@ -654,26 +688,155 @@ fn resolve_codex_default_model(ctx: &CommandContext, raw: &RawSettings) -> Strin
     std::env::var(cc_api::api::client::OPENAI_CODEX_MODEL_ENV)
         .ok()
         .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+        .and_then(|value| resolve_codex_model_candidate(&value, raw, ctx))
         .or_else(|| {
             raw.env
                 .as_ref()
                 .and_then(|env| env.get(cc_api::api::client::OPENAI_CODEX_MODEL_ENV))
                 .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
+                .and_then(|value| resolve_codex_model_candidate(&value, raw, ctx))
+        })
+        .or_else(|| {
+            raw.auth_profiles
+                .as_ref()
+                .and_then(|profiles| profiles.get("codex"))
+                .and_then(|profile| {
+                    profile
+                        .env
+                        .as_ref()
+                        .and_then(|env| env.get(cc_api::api::client::OPENAI_CODEX_MODEL_ENV))
+                        .or(profile.model.as_ref())
+                })
+                .map(|value| value.trim().to_string())
+                .and_then(|value| resolve_codex_model_candidate(&value, raw, ctx))
         })
         .or_else(|| {
             raw.model
                 .as_deref()
-                .or(ctx.app_state.settings.model.as_deref())
                 .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
+                .and_then(|value| resolve_codex_model_candidate(&value, raw, ctx))
+        })
+        .or_else(|| {
+            ctx.app_state
+                .settings
+                .model
+                .as_deref()
+                .map(|value| value.trim().to_string())
+                .and_then(|value| resolve_codex_model_candidate(&value, raw, ctx))
         })
         .or_else(|| {
             cc_api::api::providers::get_provider(settings::API_PROVIDER_OPENAI_CODEX)
                 .map(|provider| provider.default_model.to_string())
         })
         .unwrap_or_else(cc_models::default_model_id)
+}
+
+fn resolve_codex_model_candidate(
+    model: &str,
+    raw: &RawSettings,
+    ctx: &CommandContext,
+) -> Option<String> {
+    let trimmed = model.trim();
+    if trimmed.is_empty() || !is_codex_model_choice(trimmed) {
+        return None;
+    }
+    Some(
+        codex_alias_model(trimmed, raw, ctx)
+            .unwrap_or_else(|| cc_models::resolve_model_alias(trimmed)),
+    )
+}
+
+fn codex_alias_model(alias: &str, raw: &RawSettings, ctx: &CommandContext) -> Option<String> {
+    let value = match alias.trim().to_ascii_uppercase().as_str() {
+        "SOTA" => raw
+            .sota_model
+            .as_deref()
+            .or(ctx.app_state.settings.sota_model.as_deref()),
+        "MOTA" => raw
+            .mota_model
+            .as_deref()
+            .or(ctx.app_state.settings.mota_model.as_deref()),
+        "FOTA" => raw
+            .fota_model
+            .as_deref()
+            .or(ctx.app_state.settings.fota_model.as_deref()),
+        _ => None,
+    }?;
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+fn codex_available_models(
+    selected_model: &str,
+    raw: &RawSettings,
+    ctx: &CommandContext,
+) -> Vec<String> {
+    let mut models = Vec::new();
+    push_unique_model(&mut models, selected_model);
+    for model in CODEX_MODEL_CHOICES {
+        push_unique_model(&mut models, model);
+        if let Some(resolved) = codex_alias_model(model, raw, ctx) {
+            push_unique_model(&mut models, &resolved);
+        }
+    }
+    if let Some(existing) = raw.available_models.as_deref() {
+        for model in existing {
+            if is_codex_model_choice(model) {
+                let resolved =
+                    codex_alias_model(model, raw, ctx).unwrap_or_else(|| model.trim().to_string());
+                push_unique_model(&mut models, &resolved);
+            }
+        }
+    }
+    if let Some(existing) = raw
+        .auth_profiles
+        .as_ref()
+        .and_then(|profiles| profiles.get("codex"))
+        .and_then(|profile| profile.available_models.as_deref())
+    {
+        for model in existing {
+            if is_codex_model_choice(model) {
+                let resolved =
+                    codex_alias_model(model, raw, ctx).unwrap_or_else(|| model.trim().to_string());
+                push_unique_model(&mut models, &resolved);
+            }
+        }
+    }
+    models
+}
+
+fn push_unique_model(models: &mut Vec<String>, model: &str) {
+    let trimmed = model.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    if models
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(trimmed))
+    {
+        return;
+    }
+    models.push(trimmed.to_string());
+}
+
+fn is_codex_model_choice(model: &str) -> bool {
+    let trimmed = model.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed.eq_ignore_ascii_case("SOTA")
+        || trimmed.eq_ignore_ascii_case("MOTA")
+        || trimmed.eq_ignore_ascii_case("FOTA")
+    {
+        return true;
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    lower.starts_with("gpt-")
+        || lower.starts_with("o1")
+        || lower.starts_with("o3")
+        || lower.starts_with("o4")
+        || lower.contains("codex")
 }
 
 fn mask_secret(value: &str) -> String {
@@ -878,16 +1041,100 @@ mod tests {
         assert!(msg.contains("model=gpt-codex-test"));
         assert_eq!(ctx.app_state.main_loop_backend, "codex");
         assert_eq!(ctx.app_state.main_loop_model, "gpt-codex-test");
+        assert!(ctx
+            .app_state
+            .settings
+            .available_models
+            .contains(&"gpt-codex-test".to_string()));
+        assert!(ctx
+            .app_state
+            .settings
+            .available_models
+            .contains(&"SOTA".to_string()));
 
         let raw: RawSettings = serde_json::from_str(
             &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
         )
         .unwrap();
+        assert_eq!(raw.active_auth_profile.as_deref(), Some("codex"));
+        let codex = raw
+            .auth_profiles
+            .as_ref()
+            .and_then(|profiles| profiles.get("codex"))
+            .expect("codex profile persisted");
         assert_eq!(
-            raw.api_provider.as_deref(),
+            codex.api_provider.as_deref(),
             Some(settings::API_PROVIDER_OPENAI_CODEX)
         );
-        assert_eq!(raw.backend.as_deref(), Some("codex"));
-        assert_eq!(raw.model.as_deref(), Some("gpt-codex-test"));
+        assert_eq!(codex.backend.as_deref(), Some("codex"));
+        assert_eq!(codex.model.as_deref(), Some("gpt-codex-test"));
+        assert!(codex
+            .available_models
+            .as_ref()
+            .expect("availableModels persisted")
+            .contains(&"gpt-codex-test".to_string()));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_codex_provider_selection_replaces_deepseek_model_list() {
+        let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let dir = tempfile::TempDir::new().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let _model = EnvGuard::set("OPENAI_CODEX_MODEL", None);
+        let mut ctx = test_ctx();
+        ctx.app_state.main_loop_model = "deepseek-v4-pro".to_string();
+        ctx.app_state.settings.model = Some("deepseek-v4-pro".to_string());
+        ctx.app_state.settings.available_models = vec![
+            "SOTA".to_string(),
+            "MOTA".to_string(),
+            "FOTA".to_string(),
+            "deepseek-v4-pro".to_string(),
+        ];
+        settings::write_user_settings(&RawSettings {
+            model: Some("deepseek-v4-pro".to_string()),
+            available_models: Some(ctx.app_state.settings.available_models.clone()),
+            ..RawSettings::default()
+        })
+        .unwrap();
+
+        let msg = persist_provider_selection(
+            settings::API_PROVIDER_OPENAI_CODEX,
+            Some("codex"),
+            &mut ctx,
+        )
+        .expect("message");
+
+        assert!(msg.contains("apiProvider=openai-codex"));
+        assert!(msg.contains("model=gpt-5.4"));
+        assert_eq!(ctx.app_state.main_loop_backend, "codex");
+        assert_eq!(ctx.app_state.main_loop_model, "gpt-5.4");
+        assert!(!ctx
+            .app_state
+            .settings
+            .available_models
+            .contains(&"deepseek-v4-pro".to_string()));
+        assert!(ctx
+            .app_state
+            .settings
+            .available_models
+            .contains(&"SOTA".to_string()));
+
+        let raw: RawSettings = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(raw.active_auth_profile.as_deref(), Some("codex"));
+        let codex = raw
+            .auth_profiles
+            .as_ref()
+            .and_then(|profiles| profiles.get("codex"))
+            .expect("codex profile persisted");
+        assert_eq!(codex.model.as_deref(), Some("gpt-5.4"));
+        assert!(!codex
+            .available_models
+            .as_ref()
+            .expect("availableModels persisted")
+            .contains(&"deepseek-v4-pro".to_string()));
     }
 }

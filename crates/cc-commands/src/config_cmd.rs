@@ -107,8 +107,9 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
              Available keys: model, backend, theme, verbose, permissionMode,\n  \
                apiProvider,\n  \
                outputStyle, language, voiceEnabled, editorMode, viewMode,\n  \
-               terminalProgressBarEnabled, effortLevel, fastMode,\n  \
-               defaultModel, fallbackModel, fastModel, fastModePerSessionOptIn,\n  \
+               terminalProgressBarEnabled, effortLevel, model_reasoning_effort, fastMode,\n  \
+               defaultModel, fallbackModel, fastModel,\n  \
+               sotaModel, motaModel, fotaModel, fastModePerSessionOptIn,\n  \
                teammateMode, claudeInChromeDefaultEnabled,\n  \
                autoMemoryEnabled\n\n{}",
             usage_text()
@@ -154,7 +155,8 @@ fn apply_set_in_memory(key: &str, value: &str, app_state: &mut AppState) -> Resu
     match key {
         "model" => {
             let available = s.available_models.clone();
-            let resolved = crate::model::resolve_and_validate_model(value, &available)
+            let resolved = crate::model::resolve_model_alias_with_settings(value, s);
+            crate::model::check_available_with_settings(&resolved, &available, s)
                 .map_err(anyhow::Error::msg)?;
             app_state.main_loop_model = resolved.clone();
             s.model = Some(resolved.clone());
@@ -171,6 +173,14 @@ fn apply_set_in_memory(key: &str, value: &str, app_state: &mut AppState) -> Resu
                 .ok_or_else(|| anyhow::anyhow!("Unknown apiProvider: {}", value))?;
             s.api_provider = Some(provider.to_string());
             Ok(format!("API provider set to: {}", provider))
+        }
+        "activeAuthProfile" | "active_auth_profile" => {
+            let profile = value.trim();
+            if profile.is_empty() {
+                anyhow::bail!("activeAuthProfile cannot be empty");
+            }
+            s.active_auth_profile = Some(profile.to_string());
+            Ok(format!("Active auth profile set to: {}", profile))
         }
         "theme" => {
             s.theme = Some(value.to_string());
@@ -228,20 +238,37 @@ fn apply_set_in_memory(key: &str, value: &str, app_state: &mut AppState) -> Resu
             app_state.effort_value = Some(value.to_string());
             Ok(format!("Effort level set to: {}", value))
         }
+        "model_reasoning_effort" | "modelReasoningEffort" => {
+            let effort = normalize_model_reasoning_effort(value)?;
+            s.model_reasoning_effort = Some(effort.clone());
+            Ok(format!("Codex reasoning effort set to: {}", effort))
+        }
         "defaultModel" | "default_model" => {
-            let resolved = crate::model::resolve_model_alias(value);
+            let resolved = crate::model::resolve_model_alias_with_settings(value, s);
             s.default_model = Some(resolved.clone());
             Ok(format!("Default model set to: {}", resolved))
         }
         "fallbackModel" | "fallback_model" => {
-            let resolved = crate::model::resolve_model_alias(value);
+            let resolved = crate::model::resolve_model_alias_with_settings(value, s);
             s.fallback_model = Some(resolved.clone());
             Ok(format!("Fallback model set to: {}", resolved))
         }
         "fastModel" | "fast_model" => {
-            let resolved = crate::model::resolve_model_alias(value);
+            let resolved = crate::model::resolve_model_alias_with_settings(value, s);
             s.fast_model = Some(resolved.clone());
             Ok(format!("Fast model set to: {}", resolved))
+        }
+        "sotaModel" | "sota_model" => {
+            s.sota_model = Some(value.to_string());
+            Ok(format!("SOTA model set to: {}", value))
+        }
+        "motaModel" | "mota_model" => {
+            s.mota_model = Some(value.to_string());
+            Ok(format!("MOTA model set to: {}", value))
+        }
+        "fotaModel" | "fota_model" => {
+            s.fota_model = Some(value.to_string());
+            Ok(format!("FOTA model set to: {}", value))
         }
         "fastMode" | "fast_mode" => {
             let v = parse_config_bool(key, value)?;
@@ -323,6 +350,13 @@ fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) -> Result<()>
                 .ok_or_else(|| anyhow::anyhow!("Unknown apiProvider: {}", value))?;
             raw.api_provider = Some(provider.to_string());
         }
+        "activeAuthProfile" | "active_auth_profile" => {
+            let profile = value.trim();
+            if profile.is_empty() {
+                anyhow::bail!("activeAuthProfile cannot be empty");
+            }
+            raw.active_auth_profile = Some(profile.to_string());
+        }
         "theme" => raw.theme = Some(value.into()),
         "verbose" => raw.verbose = Some(parse_config_bool(key, value)?),
         "permissionMode" | "permission_mode" => {
@@ -344,9 +378,15 @@ fn apply_set_to_raw(raw: &mut RawSettings, key: &str, value: &str) -> Result<()>
             raw.terminal_progress_bar_enabled = Some(parse_config_bool(key, value)?);
         }
         "effortLevel" | "effort_level" => raw.effort_level = Some(value.into()),
+        "model_reasoning_effort" | "modelReasoningEffort" => {
+            raw.model_reasoning_effort = Some(normalize_model_reasoning_effort(value)?)
+        }
         "defaultModel" | "default_model" => raw.default_model = Some(value.into()),
         "fallbackModel" | "fallback_model" => raw.fallback_model = Some(value.into()),
         "fastModel" | "fast_model" => raw.fast_model = Some(value.into()),
+        "sotaModel" | "sota_model" => raw.sota_model = Some(value.into()),
+        "motaModel" | "mota_model" => raw.mota_model = Some(value.into()),
+        "fotaModel" | "fota_model" => raw.fota_model = Some(value.into()),
         "fastMode" | "fast_mode" => raw.fast_mode = Some(parse_config_bool(key, value)?),
         "fastModePerSessionOptIn" | "fast_mode_per_session_opt_in" => {
             raw.fast_mode_per_session_opt_in = Some(parse_config_bool(key, value)?);
@@ -377,6 +417,17 @@ fn parse_config_bool(key: &str, value: &str) -> Result<bool> {
         _ => anyhow::bail!(
             "Invalid boolean for {}: '{}'. Use true/false or 1/0.",
             key,
+            value
+        ),
+    }
+}
+
+fn normalize_model_reasoning_effort(value: &str) -> Result<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "none" | "minimal" | "low" | "medium" | "high" | "xhigh" => Ok(normalized),
+        _ => anyhow::bail!(
+            "Invalid model_reasoning_effort: '{}'. Use none, minimal, low, medium, high, or xhigh.",
             value
         ),
     }

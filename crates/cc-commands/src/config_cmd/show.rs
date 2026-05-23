@@ -40,6 +40,12 @@ pub(super) fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<Comman
         &mut lines,
     );
     row(
+        "activeAuthProfile",
+        opt_str(state.settings.active_auth_profile.clone()),
+        "activeAuthProfile",
+        &mut lines,
+    );
+    row(
         "theme",
         state
             .settings
@@ -195,9 +201,33 @@ pub(super) fn handle_show(parts: &[&str], ctx: &CommandContext) -> Result<Comman
         &mut lines,
     );
     row(
+        "sotaModel",
+        opt_str(state.settings.sota_model.clone()),
+        "sotaModel",
+        &mut lines,
+    );
+    row(
+        "motaModel",
+        opt_str(state.settings.mota_model.clone()),
+        "motaModel",
+        &mut lines,
+    );
+    row(
+        "fotaModel",
+        opt_str(state.settings.fota_model.clone()),
+        "fotaModel",
+        &mut lines,
+    );
+    row(
         "effortLevel",
         opt_str(state.settings.effort_level.clone()),
         "effortLevel",
+        &mut lines,
+    );
+    row(
+        "model_reasoning_effort",
+        opt_str(state.settings.model_reasoning_effort.clone()),
+        "model_reasoning_effort",
         &mut lines,
     );
     row(

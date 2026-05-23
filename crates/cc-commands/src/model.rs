@@ -1,4 +1,4 @@
-﻿//! /model command -- switch the active model.
+//! /model command -- switch the active model.
 //!
 //! Subcommands:
 //! - `/model`            -- show the currently active model
@@ -10,6 +10,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use cc_config::runtime_settings::SettingsJson;
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 
@@ -56,23 +57,52 @@ fn anthropic_alias_model(alias: &str) -> Option<String> {
         })
 }
 
+pub fn settings_alias_model(alias: &str, settings: &SettingsJson) -> Option<String> {
+    let value = match neutral_model_alias(alias)? {
+        "SOTA" => settings.sota_model.as_deref(),
+        "MOTA" => settings.mota_model.as_deref(),
+        "FOTA" => settings.fota_model.as_deref(),
+        _ => None,
+    }?;
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+pub fn resolve_model_alias_with_settings(name: &str, settings: &SettingsJson) -> String {
+    let trimmed = name.trim();
+    if let Some(model) = settings_alias_model(trimmed, settings) {
+        return model;
+    }
+    resolve_model_alias(trimmed)
+}
+
 fn anthropic_provider_selected(ctx: &CommandContext) -> bool {
-    ctx.app_state
+    if let Some(provider) = ctx
+        .app_state
         .settings
         .api_provider
         .as_deref()
         .and_then(cc_config::settings::normalize_api_provider)
-        == Some(cc_config::settings::API_PROVIDER_ANTHROPIC)
-        || std::env::var_os("ANTHROPIC_BASE_URL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_SOTA_MODEL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_MOTA_MODEL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_FOTA_MODEL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_OPUS_MODEL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_SONNET_MODEL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_HAIKU_MODEL").is_some()
+    {
+        return provider == cc_config::settings::API_PROVIDER_ANTHROPIC;
+    }
+
+    ctx.app_state.settings.api_provider.is_none()
+        && (std::env::var_os("ANTHROPIC_BASE_URL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_SOTA_MODEL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_MOTA_MODEL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_FOTA_MODEL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_OPUS_MODEL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_SONNET_MODEL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_HAIKU_MODEL").is_some())
 }
 
 fn configured_model_label(model: &str, ctx: &CommandContext) -> String {
+    if let Some(alias) = neutral_model_alias(model) {
+        if let Some(settings_model) = settings_alias_model(alias, &ctx.app_state.settings) {
+            return format!("{alias} -> {settings_model}");
+        }
+    }
     if anthropic_provider_selected(ctx) {
         if let Some(alias) = neutral_model_alias(model) {
             if let Some(provider_model) = anthropic_alias_model(alias) {
@@ -98,6 +128,17 @@ fn available_model_matches(allowed: &str, resolved_target: &str) -> bool {
         && resolve_model_alias(trimmed) == resolved_target
 }
 
+fn available_model_matches_with_settings(
+    allowed: &str,
+    resolved_target: &str,
+    settings: &SettingsJson,
+) -> bool {
+    let trimmed = allowed.trim();
+    !trimmed.is_empty()
+        && !is_removed_legacy_model_alias(trimmed)
+        && resolve_model_alias_with_settings(trimmed, settings) == resolved_target
+}
+
 pub fn resolve_model_list_entry(entry: &str) -> Option<String> {
     let trimmed = entry.trim();
     if trimmed.is_empty() || is_removed_legacy_model_alias(trimmed) {
@@ -119,6 +160,30 @@ pub fn check_available(model: &str, available: &[String]) -> Result<(), String> 
         return Ok(());
     }
     if available.iter().any(|m| available_model_matches(m, model)) {
+        return Ok(());
+    }
+    Err(format!(
+        "Model '{}' is not in availableModels.\nAllowed: {}",
+        model,
+        available.join(", "),
+    ))
+}
+
+pub fn check_available_with_settings(
+    model: &str,
+    available: &[String],
+    settings: &SettingsJson,
+) -> Result<(), String> {
+    if is_removed_legacy_model_alias(model) {
+        return Err(removed_legacy_model_alias_error(model));
+    }
+    if available.is_empty() {
+        return Ok(());
+    }
+    if available
+        .iter()
+        .any(|m| available_model_matches_with_settings(m, model, settings))
+    {
         return Ok(());
     }
     Err(format!(
@@ -169,10 +234,22 @@ fn resolve_and_validate_model_for_context(
     if anthropic_provider_selected(ctx) {
         if let Some(alias) = neutral_model_alias(name) {
             check_available_anthropic_alias(alias, available)?;
+            if let Some(settings_model) = settings_alias_model(alias, &ctx.app_state.settings) {
+                return Ok(settings_model);
+            }
             return Ok(alias.to_string());
         }
     }
-    resolve_and_validate_model(name, available)
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("model name required".to_string());
+    }
+    if is_removed_legacy_model_alias(trimmed) {
+        return Err(removed_legacy_model_alias_error(trimmed));
+    }
+    let resolved = resolve_model_alias_with_settings(trimmed, &ctx.app_state.settings);
+    check_available_with_settings(&resolved, available, &ctx.app_state.settings)?;
+    Ok(resolved)
 }
 
 /// Handler for the `/model` slash command.
@@ -255,6 +332,7 @@ mod tests {
     async fn test_model_switch_by_alias() {
         let handler = ModelHandler;
         let mut ctx = test_ctx();
+        ctx.app_state.settings.api_provider = Some("openai-codex".to_string());
         let result = handler.execute("SOTA", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
@@ -285,6 +363,31 @@ mod tests {
         assert_eq!(resolve_model_alias("mota"), cc_models::MOTA_MODEL_ID);
         assert_eq!(resolve_model_alias("opus"), "opus");
         assert_eq!(resolve_model_alias("unknown"), "unknown");
+    }
+
+    #[test]
+    fn test_resolve_alias_prefers_settings_model() {
+        let mut settings = cc_config::runtime_settings::SettingsJson::default();
+        settings.sota_model = Some("custom-sota".to_string());
+        settings.mota_model = Some("custom-mota".to_string());
+        settings.fota_model = Some("custom-fota".to_string());
+
+        assert_eq!(
+            resolve_model_alias_with_settings("SOTA", &settings),
+            "custom-sota"
+        );
+        assert_eq!(
+            resolve_model_alias_with_settings("mota", &settings),
+            "custom-mota"
+        );
+        assert_eq!(
+            resolve_model_alias_with_settings("FOTA", &settings),
+            "custom-fota"
+        );
+        assert_eq!(
+            resolve_model_alias_with_settings("gpt-4o", &settings),
+            "gpt-4o"
+        );
     }
 
     #[test]
@@ -372,6 +475,25 @@ mod tests {
             _ => panic!("Expected Output"),
         }
         assert_eq!(ctx.app_state.main_loop_model, cc_models::SOTA_MODEL_ID);
+    }
+
+    #[tokio::test]
+    async fn test_model_switch_uses_settings_alias_model() {
+        let handler = ModelHandler;
+        let mut ctx = test_ctx();
+        ctx.app_state.settings.sota_model = Some("custom-sota".to_string());
+        ctx.app_state.settings.available_models = vec!["SOTA".to_string()];
+
+        let result = handler.execute("SOTA", &mut ctx).await.unwrap();
+
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("Model changed"));
+                assert!(text.contains("custom-sota"));
+            }
+            _ => panic!("Expected Output"),
+        }
+        assert_eq!(ctx.app_state.main_loop_model, "custom-sota");
     }
 
     #[tokio::test]

@@ -51,6 +51,7 @@ fn resolve_startup_model(
     provider_default: Option<&str>,
     hardcoded_default: &str,
     available: &[String],
+    settings: &settings::EffectiveSettings,
 ) -> String {
     for candidate in [requested, provider_default, Some(hardcoded_default)] {
         let Some(candidate) = candidate else { continue };
@@ -62,14 +63,15 @@ fn resolve_startup_model(
             );
             continue;
         }
-        if let Ok(model) = cc_commands::model::resolve_and_validate_model(candidate, available) {
+        let model = resolve_model_alias_for_effective_settings(candidate, settings);
+        if check_startup_available(&model, available, settings).is_ok() {
             return model;
         }
     }
 
     if let Some(first_allowed) = available
         .iter()
-        .find_map(|entry| cc_commands::model::resolve_model_list_entry(entry))
+        .find_map(|entry| resolve_startup_model_list_entry(entry, settings))
     {
         warn!(
             fallback = %first_allowed,
@@ -83,7 +85,70 @@ fn resolve_startup_model(
             "availableModels contained no usable model entries; using the hardcoded default model"
         );
     }
-    cc_commands::model::resolve_model_alias(hardcoded_default)
+    resolve_model_alias_for_effective_settings(hardcoded_default, settings)
+}
+
+fn resolve_startup_model_list_entry(
+    entry: &str,
+    settings: &settings::EffectiveSettings,
+) -> Option<String> {
+    let trimmed = entry.trim();
+    if trimmed.is_empty() || cc_commands::model::is_removed_legacy_model_alias(trimmed) {
+        None
+    } else {
+        Some(resolve_model_alias_for_effective_settings(
+            trimmed, settings,
+        ))
+    }
+}
+
+fn resolve_model_alias_for_effective_settings(
+    name: &str,
+    settings: &settings::EffectiveSettings,
+) -> String {
+    let trimmed = name.trim();
+    match trimmed.to_ascii_uppercase().as_str() {
+        "SOTA" => settings
+            .sota_model
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| cc_commands::model::resolve_model_alias(trimmed)),
+        "MOTA" => settings
+            .mota_model
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| cc_commands::model::resolve_model_alias(trimmed)),
+        "FOTA" => settings
+            .fota_model
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| cc_commands::model::resolve_model_alias(trimmed)),
+        _ => cc_commands::model::resolve_model_alias(trimmed),
+    }
+}
+
+fn check_startup_available(
+    model: &str,
+    available: &[String],
+    settings: &settings::EffectiveSettings,
+) -> Result<(), String> {
+    if available.is_empty() {
+        return Ok(());
+    }
+    if available.iter().any(|entry| {
+        resolve_startup_model_list_entry(entry, settings)
+            .as_deref()
+            .is_some_and(|allowed| allowed == model)
+    }) {
+        return Ok(());
+    }
+    Err(format!("Model '{model}' is not in availableModels."))
 }
 
 fn log_skill_report(scope: &str, report: &cc_skills::SkillLoadReport) {
@@ -850,11 +915,12 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         provider_default_model.as_deref(),
         &hardcoded_default,
         &merged_config.available_models,
+        &merged_config,
     );
     let fallback_model = merged_config
         .fallback_model
         .as_deref()
-        .map(cc_commands::model::resolve_model_alias)
+        .map(|model| resolve_model_alias_for_effective_settings(model, &merged_config))
         .unwrap_or_else(|| {
             let is_anthropic_compatible = detected_client.as_ref().is_some_and(|client| {
                 matches!(
@@ -865,7 +931,10 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             if is_anthropic_compatible {
                 model.clone()
             } else {
-                cc_commands::model::resolve_model_alias(cc_models::DEFAULT_FALLBACK_MODEL_ALIAS)
+                resolve_model_alias_for_effective_settings(
+                    cc_models::DEFAULT_FALLBACK_MODEL_ALIAS,
+                    &merged_config,
+                )
             }
         });
     let persisted_plan_workflow = match cc_commands::plan_workflow::load(std::path::Path::new(&cwd))
@@ -902,6 +971,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             model: Some(model.clone()),
             backend: Some(backend.clone()),
             api_provider: merged_config.api_provider.clone(),
+            active_auth_profile: merged_config.active_auth_profile.clone(),
+            auth_profiles: merged_config.auth_profiles.clone(),
             theme: merged_config.theme.clone(),
             verbose: Some(cli.verbose),
             permission_mode: merged_config.permission_mode.clone(),
@@ -918,8 +989,12 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             default_model: merged_config.default_model.clone(),
             fallback_model: merged_config.fallback_model.clone(),
             fast_model: merged_config.fast_model.clone(),
+            sota_model: merged_config.sota_model.clone(),
+            mota_model: merged_config.mota_model.clone(),
+            fota_model: merged_config.fota_model.clone(),
             available_models: merged_config.available_models.clone(),
             effort_level: merged_config.effort_level.clone(),
+            model_reasoning_effort: merged_config.model_reasoning_effort.clone(),
             fast_mode: merged_config.fast_mode,
             fast_mode_per_session_opt_in: merged_config.fast_mode_per_session_opt_in,
             teammate_mode: merged_config.teammate_mode,

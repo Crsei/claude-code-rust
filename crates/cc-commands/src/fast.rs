@@ -75,8 +75,15 @@ fn enable_fast_mode(ctx: &mut CommandContext) -> Result<CommandResult> {
         .settings
         .fast_model
         .as_deref()
-        .map(crate::model::resolve_model_alias)
-        .unwrap_or_else(cc_models::default_fast_model_id);
+        .map(|model| {
+            crate::model::resolve_model_alias_with_settings(model, &ctx.app_state.settings)
+        })
+        .unwrap_or_else(|| {
+            crate::model::resolve_model_alias_with_settings(
+                cc_models::DEFAULT_FAST_MODEL_ALIAS,
+                &ctx.app_state.settings,
+            )
+        });
 
     // Auto-switch if current model doesn't support fast mode.
     if !model_supports_fast(&ctx.app_state.main_loop_model) {

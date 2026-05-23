@@ -42,6 +42,13 @@ fn effort_label_is_known(effort: &str) -> bool {
     )
 }
 
+fn model_reasoning_effort_is_known(effort: &str) -> bool {
+    matches!(
+        effort.trim().to_ascii_lowercase().as_str(),
+        "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -184,6 +191,9 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
         ("defaultModel", settings.default_model.as_ref()),
         ("fallbackModel", settings.fallback_model.as_ref()),
         ("fastModel", settings.fast_model.as_ref()),
+        ("sotaModel", settings.sota_model.as_ref()),
+        ("motaModel", settings.mota_model.as_ref()),
+        ("fotaModel", settings.fota_model.as_ref()),
     ] {
         if let Some(model) = model {
             if model.trim().is_empty() {
@@ -350,6 +360,20 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
                 field: "effortLevel".to_string(),
                 message: format!(
                     "Unknown effort '{}'. Expected low/medium/high or a positive integer token count.",
+                    trimmed
+                ),
+                severity: WarningSeverity::Warning,
+            });
+        }
+    }
+
+    if let Some(effort) = &settings.model_reasoning_effort {
+        let trimmed = effort.trim();
+        if !trimmed.is_empty() && !model_reasoning_effort_is_known(trimmed) {
+            warnings.push(ValidationWarning {
+                field: "model_reasoning_effort".to_string(),
+                message: format!(
+                    "Unknown Codex reasoning effort '{}'. Expected none/minimal/low/medium/high/xhigh.",
                     trimmed
                 ),
                 severity: WarningSeverity::Warning,

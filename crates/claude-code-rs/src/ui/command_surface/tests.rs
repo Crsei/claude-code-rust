@@ -598,6 +598,52 @@ fn model_surface_uses_legacy_anthropic_alias_env_mapping() {
 }
 
 #[test]
+#[serial_test::serial]
+fn model_surface_codex_provider_ignores_anthropic_alias_env_mapping() {
+    let _sota = EnvGuard::set("ANTHROPIC_DEFAULT_SOTA_MODEL", "deepseek-v4-pro");
+    let _mota = EnvGuard::set("ANTHROPIC_DEFAULT_MOTA_MODEL", "deepseek-v4-pro");
+    let _fota = EnvGuard::set("ANTHROPIC_DEFAULT_FOTA_MODEL", "deepseek-v4-flash");
+    let mut state = AppState {
+        main_loop_model: "gpt-5.5".into(),
+        ..Default::default()
+    };
+    state.settings.api_provider = Some("openai-codex".into());
+    state.settings.available_models = vec!["SOTA".into(), "MOTA".into(), "FOTA".into()];
+
+    let surface = CommandSurface::Model(ModelSurface::new(&state));
+    let rendered = surface.render();
+
+    assert!(rendered.contains(&format!("SOTA ({})", cc_models::SOTA_MODEL_ID)));
+    assert!(rendered.contains(&format!("MOTA ({})", cc_models::MOTA_MODEL_ID)));
+    assert!(rendered.contains(&format!("FOTA ({})", cc_models::FOTA_MODEL_ID)));
+    assert!(!rendered.contains("deepseek-v4-pro"));
+    assert!(!rendered.contains("deepseek-v4-flash"));
+}
+
+#[test]
+#[serial_test::serial]
+fn model_surface_prefers_settings_alias_models() {
+    let _sota = EnvGuard::set("ANTHROPIC_DEFAULT_SOTA_MODEL", "deepseek-v4-pro");
+    let mut state = AppState {
+        main_loop_model: "custom-sota".into(),
+        ..Default::default()
+    };
+    state.settings.api_provider = Some("openai-codex".into());
+    state.settings.sota_model = Some("custom-sota".into());
+    state.settings.mota_model = Some("custom-mota".into());
+    state.settings.fota_model = Some("custom-fota".into());
+    state.settings.available_models = vec!["SOTA".into(), "MOTA".into(), "FOTA".into()];
+
+    let surface = CommandSurface::Model(ModelSurface::new(&state));
+    let rendered = surface.render();
+
+    assert!(rendered.contains("SOTA (custom-sota)"));
+    assert!(rendered.contains("MOTA (custom-mota)"));
+    assert!(rendered.contains("FOTA (custom-fota)"));
+    assert!(!rendered.contains("deepseek-v4-pro"));
+}
+
+#[test]
 fn config_surface_picker_selection_submits_config_set_commands() {
     let mut state = AppState {
         main_loop_model: "custom-model".into(),

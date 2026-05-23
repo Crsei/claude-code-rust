@@ -1069,6 +1069,136 @@ fn settings_runtime_env_is_visible_to_codex_backend_auth() {
     restore_env(saved);
 }
 
+#[test]
+fn active_codex_profile_env_builds_codex_client() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let saved = save_env(&[
+        "CC_RUST_HOME",
+        OPENAI_CODEX_TOKEN_ENV,
+        OPENAI_CODEX_BASE_URL_ENV,
+        OPENAI_CODEX_MODEL_ENV,
+    ]);
+    clear_env(&[
+        OPENAI_CODEX_TOKEN_ENV,
+        OPENAI_CODEX_BASE_URL_ENV,
+        OPENAI_CODEX_MODEL_ENV,
+    ]);
+    std::env::set_var("CC_RUST_HOME", temp.path());
+    cc_config::settings::write_user_settings(&cc_config::settings::RawSettings {
+        active_auth_profile: Some("codex".to_string()),
+        auth_profiles: Some(HashMap::from([(
+            "codex".to_string(),
+            cc_config::settings::ProviderProfileSettings {
+                backend: Some("codex".to_string()),
+                api_provider: Some(cc_config::settings::API_PROVIDER_OPENAI_CODEX.to_string()),
+                model: Some("gpt-5.4".to_string()),
+                base_url: Some("https://example.com/codex/".to_string()),
+                api_key: Some("codex-profile-token".to_string()),
+                ..Default::default()
+            },
+        )])),
+        ..Default::default()
+    })
+    .unwrap();
+    let loaded = cc_config::settings::load_effective(temp.path()).unwrap();
+    cc_config::settings::apply_startup_runtime_env(&loaded.effective.env)
+        .expect("profile env applies");
+
+    let client = ApiClient::from_backend(Some("codex")).expect("codex profile client");
+
+    match &client.config().provider {
+        ApiProvider::OpenAiCompat {
+            name,
+            api_key,
+            base_url,
+            default_model,
+        } => {
+            assert_eq!(name, OPENAI_CODEX_PROVIDER_NAME);
+            assert_eq!(api_key, "codex-profile-token");
+            assert_eq!(base_url, "https://example.com/codex");
+            assert_eq!(default_model, "gpt-5.4");
+        }
+        other => panic!("expected OpenAiCompat provider, got {:?}", other),
+    }
+
+    restore_env(saved);
+}
+
+#[test]
+fn active_custom_profile_env_builds_anthropic_compatible_client() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let saved = save_env(&[
+        "CC_RUST_HOME",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    clear_env(&[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    std::env::set_var("CC_RUST_HOME", temp.path());
+    cc_config::settings::write_user_settings(&cc_config::settings::RawSettings {
+        active_auth_profile: Some("custom".to_string()),
+        auth_profiles: Some(HashMap::from([(
+            "custom".to_string(),
+            cc_config::settings::ProviderProfileSettings {
+                backend: Some("native".to_string()),
+                api_provider: Some(cc_config::settings::API_PROVIDER_ANTHROPIC.to_string()),
+                model: Some("deepseek-v4-pro".to_string()),
+                base_url: Some("https://compatible.example.com/anthropic".to_string()),
+                env: Some(HashMap::from([(
+                    "ANTHROPIC_AUTH_TOKEN".to_string(),
+                    "custom-profile-token".to_string(),
+                )])),
+                ..Default::default()
+            },
+        )])),
+        ..Default::default()
+    })
+    .unwrap();
+    let loaded = cc_config::settings::load_effective(temp.path()).unwrap();
+    cc_config::settings::apply_startup_runtime_env(&loaded.effective.env)
+        .expect("profile env applies");
+
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("custom profile client");
+
+    match &client.config().provider {
+        ApiProvider::Anthropic {
+            auth,
+            base_url,
+            endpoint_kind,
+        } => {
+            assert_eq!(
+                auth,
+                &AnthropicAuth::BearerToken("custom-profile-token".to_string())
+            );
+            assert_eq!(
+                base_url.as_deref(),
+                Some("https://compatible.example.com/anthropic")
+            );
+            assert_eq!(endpoint_kind, &AnthropicEndpointKind::CompatibleAnthropic);
+            assert_eq!(client.config().default_model, "deepseek-v4-pro");
+        }
+        other => panic!("expected Anthropic provider, got {:?}", other),
+    }
+
+    restore_env(saved);
+}
+
 // -----------------------------------------------------------------------
 // from_provider_info
 // -----------------------------------------------------------------------
@@ -1865,6 +1995,7 @@ fn minimal_stream_request() -> MessagesRequest {
         context_management: None,
         thinking: None,
         tool_choice: None,
+        reasoning_effort: None,
         advisor_model: None,
     }
 }
@@ -2066,6 +2197,7 @@ fn test_messages_request_serialization() {
         context_management: None,
         thinking: None,
         tool_choice: None,
+        reasoning_effort: None,
         advisor_model: None,
     };
 
@@ -2106,6 +2238,7 @@ fn test_messages_request_optional_fields_serialize_when_present() {
         })),
         thinking: None,
         tool_choice: None,
+        reasoning_effort: None,
         advisor_model: None,
     };
 
@@ -2144,6 +2277,7 @@ fn regression_prompt_cache_marker_serializes_in_anthropic_body() {
         context_management: None,
         thinking: None,
         tool_choice: None,
+        reasoning_effort: None,
         advisor_model: None,
     };
 
@@ -2295,6 +2429,7 @@ fn test_messages_request_with_thinking() {
         context_management: None,
         thinking: Some(serde_json::json!({"type": "enabled", "budget_tokens": 2048})),
         tool_choice: None,
+        reasoning_effort: None,
         advisor_model: None,
     };
 
@@ -2330,6 +2465,7 @@ fn test_anthropic_count_tokens_body_omits_generation_only_fields() {
         context_management: None,
         thinking: Some(serde_json::json!({"type": "enabled", "budget_tokens": 1024})),
         tool_choice: None,
+        reasoning_effort: None,
         advisor_model: Some("advisor".to_string()),
     };
 
@@ -2454,6 +2590,7 @@ fn test_messages_request_advisor_model_serializes_when_set() {
         context_management: None,
         thinking: None,
         tool_choice: None,
+        reasoning_effort: None,
         advisor_model: Some("claude-opus-4-20250514".to_string()),
     };
 

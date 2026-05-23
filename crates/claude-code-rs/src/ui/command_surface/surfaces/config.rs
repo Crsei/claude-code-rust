@@ -22,19 +22,23 @@ fn neutral_model_alias(name: &str) -> Option<&'static str> {
 }
 
 fn anthropic_provider_selected(state: &AppState) -> bool {
-    state
+    if let Some(provider) = state
         .settings
         .api_provider
         .as_deref()
         .and_then(cc_config::settings::normalize_api_provider)
-        == Some(cc_config::settings::API_PROVIDER_ANTHROPIC)
-        || std::env::var_os("ANTHROPIC_BASE_URL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_SOTA_MODEL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_MOTA_MODEL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_FOTA_MODEL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_OPUS_MODEL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_SONNET_MODEL").is_some()
-        || std::env::var_os("ANTHROPIC_DEFAULT_HAIKU_MODEL").is_some()
+    {
+        return provider == cc_config::settings::API_PROVIDER_ANTHROPIC;
+    }
+
+    state.settings.api_provider.is_none()
+        && (std::env::var_os("ANTHROPIC_BASE_URL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_SOTA_MODEL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_MOTA_MODEL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_FOTA_MODEL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_OPUS_MODEL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_SONNET_MODEL").is_some()
+            || std::env::var_os("ANTHROPIC_DEFAULT_HAIKU_MODEL").is_some())
 }
 
 fn anthropic_alias_model(alias: &str) -> Option<String> {
@@ -63,6 +67,35 @@ fn anthropic_alias_model(alias: &str) -> Option<String> {
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
         })
+}
+
+fn settings_alias_model(alias: &str, state: &AppState) -> Option<String> {
+    let value = match neutral_model_alias(alias)? {
+        "SOTA" => state.settings.sota_model.as_deref(),
+        "MOTA" => state.settings.mota_model.as_deref(),
+        "FOTA" => state.settings.fota_model.as_deref(),
+        _ => None,
+    }?;
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+fn resolve_model_alias_for_state(name: &str, state: &AppState) -> String {
+    let trimmed = name.trim();
+    if let Some(model) = settings_alias_model(trimmed, state) {
+        return model;
+    }
+    model_registry::resolve_model_alias(trimmed)
+}
+
+fn alias_model_for_state(alias: &str, state: &AppState) -> String {
+    settings_alias_model(alias, state)
+        .or_else(|| {
+            anthropic_provider_selected(state)
+                .then(|| anthropic_alias_model(alias))
+                .flatten()
+        })
+        .unwrap_or_else(|| model_registry::resolve_model_alias(alias))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -395,11 +428,7 @@ pub(super) fn build_model_picker(state: &AppState) -> SelectionSurface {
 
     if state.settings.available_models.is_empty() {
         for entry in model_registry::MODEL_ALIASES {
-            let model = if anthropic_provider_selected(state) {
-                anthropic_alias_model(entry.alias).unwrap_or_else(|| entry.target.to_string())
-            } else {
-                entry.target.to_string()
-            };
+            let model = alias_model_for_state(entry.alias, state);
             push_model_item(
                 &mut items,
                 entry.alias,
@@ -415,10 +444,12 @@ pub(super) fn build_model_picker(state: &AppState) -> SelectionSurface {
             let alias = neutral_model_alias(configured);
             let resolved = if anthropic_provider_selected(state) {
                 alias
-                    .and_then(anthropic_alias_model)
-                    .unwrap_or_else(|| model_registry::resolve_model_alias(configured))
+                    .map(|alias| alias_model_for_state(alias, state))
+                    .unwrap_or_else(|| resolve_model_alias_for_state(configured, state))
             } else {
-                model_registry::resolve_model_alias(configured)
+                alias
+                    .map(|alias| alias_model_for_state(alias, state))
+                    .unwrap_or_else(|| resolve_model_alias_for_state(configured, state))
             };
             push_model_item(
                 &mut items,

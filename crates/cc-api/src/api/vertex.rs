@@ -763,6 +763,7 @@ aM0cnYVle4nyuGi3M6aECuC6ggfLfXOQ3yGAmE3DKg2bgcmJag2cOT6fTRZemThD
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let raw = to_vertex_body(&req).unwrap();
@@ -795,6 +796,7 @@ aM0cnYVle4nyuGi3M6aECuC6ggfLfXOQ3yGAmE3DKg2bgcmJag2cOT6fTRZemThD
             context_management: None,
             thinking: Some(json!({"type":"enabled","budget_tokens":128})),
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: Some("advisor".to_string()),
         };
 

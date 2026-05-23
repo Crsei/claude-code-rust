@@ -254,20 +254,20 @@ pub async fn settings_handler(
     match req.action.as_str() {
         "set_model" => {
             let model = req.value.as_str().unwrap_or("").to_string();
-            let available = state.engine().app_state().settings.available_models.clone();
-            let resolved = match cc_commands::model::resolve_and_validate_model(&model, &available)
+            let settings = state.engine().app_state().settings.clone();
+            let available = settings.available_models.clone();
+            let resolved = cc_commands::model::resolve_model_alias_with_settings(&model, &settings);
+            if let Err(message) =
+                cc_commands::model::check_available_with_settings(&resolved, &available, &settings)
             {
-                Ok(model) => model,
-                Err(message) => {
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        Json(SettingsResponse {
-                            ok: false,
-                            message: format!("Rejected: {}", message),
-                        }),
-                    );
-                }
-            };
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(SettingsResponse {
+                        ok: false,
+                        message: format!("Rejected: {}", message),
+                    }),
+                );
+            }
             state.engine().update_app_state(|s| {
                 s.main_loop_model = resolved.clone();
                 s.settings.model = Some(resolved.clone());

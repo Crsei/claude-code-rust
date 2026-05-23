@@ -758,6 +758,7 @@ impl QueryDeps for QueryEngineDeps {
                     skip_cache_write: Some(true),
                     thinking_enabled: None,
                     effort_value: None,
+                    model_reasoning_effort: None,
                     advisor_model: None,
                 };
 
@@ -2285,6 +2286,7 @@ mod tests {
             skip_cache_write: None,
             thinking_enabled: Some(true),
             effort_value: Some("low".to_string()),
+            model_reasoning_effort: None,
             advisor_model: Some("advisor-model".to_string()),
         };
 

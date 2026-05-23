@@ -71,6 +71,32 @@ async fn test_config_set_model_rejects_removed_legacy_alias() {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn test_config_set_model_reasoning_effort() {
+    let dir = tempfile::tempdir().unwrap();
+    let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+    let handler = ConfigHandler;
+    let mut ctx = test_ctx();
+    let result = handler
+        .execute("set model_reasoning_effort xhigh", &mut ctx)
+        .await
+        .unwrap();
+    let CommandResult::Output(text) = result else {
+        panic!("expected output")
+    };
+    assert!(text.contains("Codex reasoning effort set to: xhigh"));
+    assert_eq!(
+        ctx.app_state.settings.model_reasoning_effort.as_deref(),
+        Some("xhigh")
+    );
+
+    let settings: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("settings.json")).unwrap())
+            .unwrap();
+    assert_eq!(settings["model_reasoning_effort"], "xhigh");
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn test_config_set_permission_mode_updates_live_context() {
     let dir = tempfile::tempdir().unwrap();
     let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());

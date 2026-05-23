@@ -565,6 +565,10 @@ pub struct MessagesRequest {
     pub thinking: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<Value>,
+    /// Optional Responses API reasoning effort. Honored by the openai-codex
+    /// provider and omitted for Anthropic-compatible serialization.
+    #[serde(skip_serializing)]
+    pub reasoning_effort: Option<String>,
     /// Optional advisor model id (issue #33). Carried through the request
     /// pipeline only for providers that advertise advisor support
     /// (see [`provider_supports_advisor`]). Serialized as `advisor_model`;

@@ -798,6 +798,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let body = build_gemini_request(&req);
@@ -827,6 +828,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let body = build_gemini_request(&req);
@@ -865,6 +867,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let body = build_gemini_request(&req);
@@ -893,6 +896,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
 
@@ -931,6 +935,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let body = build_gemini_request(&req);
@@ -963,6 +968,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let body = build_gemini_request(&req);
@@ -999,6 +1005,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
         let body = build_gemini_request(&req);
@@ -1034,6 +1041,7 @@ mod tests {
             context_management: None,
             thinking: Some(json!({"type": "enabled", "budget_tokens": 512})),
             tool_choice: Some(json!({"type": "tool", "name": "Read"})),
+            reasoning_effort: None,
             advisor_model: None,
         };
 
@@ -1090,6 +1098,7 @@ mod tests {
             context_management: None,
             thinking: None,
             tool_choice: None,
+            reasoning_effort: None,
             advisor_model: None,
         };
 
