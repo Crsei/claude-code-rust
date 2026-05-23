@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
+use super::providers::ModelCapabilitySettings;
 use super::providers::ProviderProfileSettings;
 use super::raw::{merge_str_lists, RawSettings};
 use super::source::{SettingsSource, SourceMap};
@@ -56,6 +57,7 @@ pub struct EffectiveSettings {
     pub mota_model: Option<String>,
     pub fota_model: Option<String>,
     pub available_models: Vec<String>,
+    pub model_capabilities: HashMap<String, ModelCapabilitySettings>,
     pub effort_level: Option<String>,
     pub model_reasoning_effort: Option<String>,
     pub fast_mode: Option<bool>,
@@ -112,6 +114,7 @@ impl EffectiveSettings {
             mota_model: raw.mota_model,
             fota_model: raw.fota_model,
             available_models: raw.available_models.unwrap_or_default(),
+            model_capabilities: HashMap::new(),
             effort_level: raw.effort_level,
             model_reasoning_effort: raw.model_reasoning_effort,
             fast_mode: raw.fast_mode,

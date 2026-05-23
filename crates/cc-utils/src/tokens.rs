@@ -9,6 +9,26 @@ pub fn get_context_window_size(model: &str) -> u64 {
     resolve_context_window_size(model, env_override.as_deref())
 }
 
+pub fn get_context_window_size_with_settings(
+    model: &str,
+    settings: Option<&cc_config::runtime_settings::SettingsJson>,
+) -> u64 {
+    let env_override = std::env::var(CONTEXT_WINDOW_ENV).ok();
+    if let Some(value) = env_override
+        .as_deref()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+    {
+        return value;
+    }
+
+    settings
+        .and_then(|settings| settings.model_capabilities.get(model))
+        .and_then(|capability| capability.context_window)
+        .filter(|value| *value > 0)
+        .unwrap_or_else(|| resolve_context_window_size(model, None))
+}
+
 fn resolve_context_window_size(model: &str, env_override: Option<&str>) -> u64 {
     if let Some(value) = env_override
         .and_then(|raw| raw.trim().parse::<u64>().ok())
@@ -268,6 +288,27 @@ mod tests {
         assert_eq!(
             resolve_context_window_size("claude-sonnet-4-20250514[1m]", Some("0")),
             1_000_000
+        );
+    }
+
+    #[test]
+    fn test_context_window_uses_settings_capability() {
+        let mut settings = cc_config::runtime_settings::SettingsJson::default();
+        settings.model_capabilities.insert(
+            "gpt-5.3-codex-spark".to_string(),
+            cc_config::settings::ModelCapabilitySettings {
+                context_window: Some(128_000),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(
+            get_context_window_size_with_settings("gpt-5.3-codex-spark", Some(&settings)),
+            128_000
+        );
+        assert_eq!(
+            get_context_window_size_with_settings("unknown-model", Some(&settings)),
+            200_000
         );
     }
 

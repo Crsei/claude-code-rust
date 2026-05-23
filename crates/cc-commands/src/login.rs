@@ -15,15 +15,6 @@ use super::login_code;
 use crate::{CommandContext, CommandHandler, CommandResult};
 use cc_auth::{self as auth, oauth::OAuthMethod};
 
-const CODEX_MODEL_CHOICES: &[&str] = &[
-    "SOTA",
-    "MOTA",
-    "FOTA",
-    "gpt-5.5",
-    "gpt-5.4",
-    "gpt-5.3-codex-spark",
-];
-
 pub struct LoginHandler;
 
 #[async_trait]
@@ -629,18 +620,25 @@ fn persist_provider_selection(
     }
     let selected_model = if api_provider == settings::API_PROVIDER_OPENAI_CODEX {
         let model = resolve_codex_default_model(ctx, &raw);
-        let available_models = codex_available_models(&model, &raw, ctx);
+        let available_models = settings::codex_model_ids();
+        let model_capabilities = settings::codex_model_capabilities();
         profile.model = Some(model.clone());
         profile.available_models = Some(available_models.clone());
+        profile.model_capabilities = Some(model_capabilities.clone());
         ctx.app_state.main_loop_model = model.clone();
         ctx.app_state.settings.model = Some(model);
         ctx.app_state.settings.available_models = available_models;
+        ctx.app_state.settings.model_capabilities = model_capabilities;
         ctx.app_state
             .settings
             .sources
             .insert("model".to_string(), settings::SettingsSource::User);
         ctx.app_state.settings.sources.insert(
             "availableModels".to_string(),
+            settings::SettingsSource::User,
+        );
+        ctx.app_state.settings.sources.insert(
+            "modelCapabilities".to_string(),
             settings::SettingsSource::User,
         );
         ctx.app_state.settings.model.clone()
@@ -766,59 +764,6 @@ fn codex_alias_model(alias: &str, raw: &RawSettings, ctx: &CommandContext) -> Op
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
-fn codex_available_models(
-    selected_model: &str,
-    raw: &RawSettings,
-    ctx: &CommandContext,
-) -> Vec<String> {
-    let mut models = Vec::new();
-    push_unique_model(&mut models, selected_model);
-    for model in CODEX_MODEL_CHOICES {
-        push_unique_model(&mut models, model);
-        if let Some(resolved) = codex_alias_model(model, raw, ctx) {
-            push_unique_model(&mut models, &resolved);
-        }
-    }
-    if let Some(existing) = raw.available_models.as_deref() {
-        for model in existing {
-            if is_codex_model_choice(model) {
-                let resolved =
-                    codex_alias_model(model, raw, ctx).unwrap_or_else(|| model.trim().to_string());
-                push_unique_model(&mut models, &resolved);
-            }
-        }
-    }
-    if let Some(existing) = raw
-        .auth_profiles
-        .as_ref()
-        .and_then(|profiles| profiles.get("codex"))
-        .and_then(|profile| profile.available_models.as_deref())
-    {
-        for model in existing {
-            if is_codex_model_choice(model) {
-                let resolved =
-                    codex_alias_model(model, raw, ctx).unwrap_or_else(|| model.trim().to_string());
-                push_unique_model(&mut models, &resolved);
-            }
-        }
-    }
-    models
-}
-
-fn push_unique_model(models: &mut Vec<String>, model: &str) {
-    let trimmed = model.trim();
-    if trimmed.is_empty() {
-        return;
-    }
-    if models
-        .iter()
-        .any(|existing| existing.eq_ignore_ascii_case(trimmed))
-    {
-        return;
-    }
-    models.push(trimmed.to_string());
-}
-
 fn is_codex_model_choice(model: &str) -> bool {
     let trimmed = model.trim();
     if trimmed.is_empty() {
@@ -831,12 +776,9 @@ fn is_codex_model_choice(model: &str) -> bool {
         return true;
     }
 
-    let lower = trimmed.to_ascii_lowercase();
-    lower.starts_with("gpt-")
-        || lower.starts_with("o1")
-        || lower.starts_with("o3")
-        || lower.starts_with("o4")
-        || lower.contains("codex")
+    settings::codex_model_ids()
+        .iter()
+        .any(|model| model.eq_ignore_ascii_case(trimmed))
 }
 
 fn mask_secret(value: &str) -> String {
@@ -1025,7 +967,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
         let dir = tempfile::TempDir::new().unwrap();
         let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
-        let _model = EnvGuard::set("OPENAI_CODEX_MODEL", Some("gpt-codex-test"));
+        let _model = EnvGuard::set("OPENAI_CODEX_MODEL", Some("gpt-5.5"));
         let mut ctx = test_ctx();
         ctx.app_state.main_loop_model = "deepseek-v4-pro".to_string();
 
@@ -1038,19 +980,19 @@ mod tests {
 
         assert!(msg.contains("apiProvider=openai-codex"));
         assert!(msg.contains("backend=codex"));
-        assert!(msg.contains("model=gpt-codex-test"));
+        assert!(msg.contains("model=gpt-5.5"));
         assert_eq!(ctx.app_state.main_loop_backend, "codex");
-        assert_eq!(ctx.app_state.main_loop_model, "gpt-codex-test");
+        assert_eq!(ctx.app_state.main_loop_model, "gpt-5.5");
         assert!(ctx
             .app_state
             .settings
             .available_models
-            .contains(&"gpt-codex-test".to_string()));
+            .contains(&"gpt-5.5".to_string()));
         assert!(ctx
             .app_state
             .settings
-            .available_models
-            .contains(&"SOTA".to_string()));
+            .model_capabilities
+            .contains_key("gpt-5.5"));
 
         let raw: RawSettings = serde_json::from_str(
             &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
@@ -1067,12 +1009,17 @@ mod tests {
             Some(settings::API_PROVIDER_OPENAI_CODEX)
         );
         assert_eq!(codex.backend.as_deref(), Some("codex"));
-        assert_eq!(codex.model.as_deref(), Some("gpt-codex-test"));
+        assert_eq!(codex.model.as_deref(), Some("gpt-5.5"));
         assert!(codex
             .available_models
             .as_ref()
             .expect("availableModels persisted")
-            .contains(&"gpt-codex-test".to_string()));
+            .contains(&"gpt-5.5".to_string()));
+        assert!(codex
+            .model_capabilities
+            .as_ref()
+            .expect("modelCapabilities persisted")
+            .contains_key("gpt-5.5"));
     }
 
     #[test]
@@ -1118,7 +1065,12 @@ mod tests {
             .app_state
             .settings
             .available_models
-            .contains(&"SOTA".to_string()));
+            .contains(&"gpt-5.4-mini".to_string()));
+        assert!(ctx
+            .app_state
+            .settings
+            .model_capabilities
+            .contains_key("gpt-5.4"));
 
         let raw: RawSettings = serde_json::from_str(
             &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
@@ -1136,5 +1088,10 @@ mod tests {
             .as_ref()
             .expect("availableModels persisted")
             .contains(&"deepseek-v4-pro".to_string()));
+        assert!(codex
+            .model_capabilities
+            .as_ref()
+            .expect("modelCapabilities persisted")
+            .contains_key("gpt-5.4"));
     }
 }

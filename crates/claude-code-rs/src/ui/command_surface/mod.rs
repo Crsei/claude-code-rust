@@ -34,12 +34,21 @@ pub enum CommandSurfaceOutcome {
     Close,
     FillPrompt(String),
     Submit(String),
+    SubmitThenOpen {
+        command: String,
+        next_surface: CommandSurfaceTarget,
+    },
     LspRecommendationResponse {
         request_id: String,
         plugin_name: String,
         decision: String,
         install_prompt: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandSurfaceTarget {
+    Effort,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

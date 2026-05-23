@@ -26,7 +26,7 @@ use status::SessionUsageSnapshot;
 use workspace_trust::is_workspace_trusted;
 
 use super::command_palette::CommandPalette;
-use super::command_surface::CommandSurface;
+use super::command_surface::{CommandSurface, CommandSurfaceTarget};
 use super::history_search_dialog::{HistorySearchDialog, HistorySearchEntry};
 use super::notifications::in_app::{
     InAppNotification, NotificationPriority, NotificationState, NotificationTone,
@@ -195,6 +195,7 @@ pub struct App {
     saved_input: String,
     command_palette: CommandPalette,
     command_surface: Option<CommandSurface>,
+    pending_command_surface_after_submit: Option<CommandSurfaceTarget>,
     history_search_dialog: Option<HistorySearchDialog>,
     agent_nav: AgentNavigationState,
     agent_tree_dialog: Option<AgentTreeDialog>,
@@ -310,6 +311,7 @@ impl App {
             saved_input: String::new(),
             command_palette: CommandPalette::new(),
             command_surface: None,
+            pending_command_surface_after_submit: None,
             history_search_dialog: None,
             agent_nav: AgentNavigationState::default(),
             agent_tree_dialog: None,
@@ -658,6 +660,14 @@ impl App {
         self.command_surface = Some(surface);
         self.command_palette.close();
         self.dirty = true;
+    }
+
+    pub fn set_pending_command_surface_after_submit(&mut self, target: CommandSurfaceTarget) {
+        self.pending_command_surface_after_submit = Some(target);
+    }
+
+    pub fn take_pending_command_surface_after_submit(&mut self) -> Option<CommandSurfaceTarget> {
+        self.pending_command_surface_after_submit.take()
     }
 
     #[cfg(test)]

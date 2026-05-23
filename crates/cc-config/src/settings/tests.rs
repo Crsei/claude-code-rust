@@ -741,7 +741,18 @@ fn active_codex_profile_projects_codex_env() {
                         "apiProvider": "openai-codex",
                         "model": "gpt-5.4",
                         "baseUrl": "https://example.com/codex",
-                        "availableModels": ["gpt-5.4", "gpt-5.5"]
+                        "availableModels": ["gpt-5.4", "gpt-5.5"],
+                        "modelReasoningEffort": "high",
+                        "modelCapabilities": {
+                            "gpt-5.4": {
+                                "displayName": "gpt-5.4",
+                                "defaultReasoningLevel": "medium",
+                                "supportedReasoningLevels": ["low", "medium", "high", "xhigh"],
+                                "contextWindow": 272000,
+                                "supportsFastMode": true,
+                                "supportsSearchTool": true
+                            }
+                        }
                     }
                 }
             }"#,
@@ -771,6 +782,14 @@ fn active_codex_profile_projects_codex_env() {
         effective.available_models,
         vec!["gpt-5.4".to_string(), "gpt-5.5".to_string()]
     );
+    assert_eq!(effective.model_reasoning_effort.as_deref(), Some("high"));
+    let capability = effective
+        .model_capabilities
+        .get("gpt-5.4")
+        .expect("profile model capability projected");
+    assert_eq!(capability.context_window, Some(272_000));
+    assert!(capability.supports_fast_mode);
+    assert!(capability.supports_search_tool);
 }
 
 #[test]

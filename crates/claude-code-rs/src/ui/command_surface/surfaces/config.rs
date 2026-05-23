@@ -6,97 +6,6 @@ use crate::ui::form_navigation::{FormOption, FormTab, TabbedFormEvent, TabbedFor
 use crate::ui::selection_surface::{SelectionItem, SelectionSurface, SelectionSurfaceEvent};
 use cc_engine::effort::effort_to_budget_tokens;
 use cc_engine::types::app_state::AppState;
-use cc_models::aliases as model_registry;
-
-fn neutral_model_alias(name: &str) -> Option<&'static str> {
-    let trimmed = name.trim();
-    if trimmed.eq_ignore_ascii_case("SOTA") {
-        Some("SOTA")
-    } else if trimmed.eq_ignore_ascii_case("MOTA") {
-        Some("MOTA")
-    } else if trimmed.eq_ignore_ascii_case("FOTA") {
-        Some("FOTA")
-    } else {
-        None
-    }
-}
-
-fn anthropic_provider_selected(state: &AppState) -> bool {
-    if let Some(provider) = state
-        .settings
-        .api_provider
-        .as_deref()
-        .and_then(cc_config::settings::normalize_api_provider)
-    {
-        return provider == cc_config::settings::API_PROVIDER_ANTHROPIC;
-    }
-
-    state.settings.api_provider.is_none()
-        && (std::env::var_os("ANTHROPIC_BASE_URL").is_some()
-            || std::env::var_os("ANTHROPIC_DEFAULT_SOTA_MODEL").is_some()
-            || std::env::var_os("ANTHROPIC_DEFAULT_MOTA_MODEL").is_some()
-            || std::env::var_os("ANTHROPIC_DEFAULT_FOTA_MODEL").is_some()
-            || std::env::var_os("ANTHROPIC_DEFAULT_OPUS_MODEL").is_some()
-            || std::env::var_os("ANTHROPIC_DEFAULT_SONNET_MODEL").is_some()
-            || std::env::var_os("ANTHROPIC_DEFAULT_HAIKU_MODEL").is_some())
-}
-
-fn anthropic_alias_model(alias: &str) -> Option<String> {
-    let (env_name, legacy_env_name) = match neutral_model_alias(alias)? {
-        "SOTA" => (
-            "ANTHROPIC_DEFAULT_SOTA_MODEL",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-        ),
-        "MOTA" => (
-            "ANTHROPIC_DEFAULT_MOTA_MODEL",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
-        ),
-        "FOTA" => (
-            "ANTHROPIC_DEFAULT_FOTA_MODEL",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-        ),
-        _ => return None,
-    };
-    std::env::var(env_name)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .or_else(|| {
-            std::env::var(legacy_env_name)
-                .ok()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-        })
-}
-
-fn settings_alias_model(alias: &str, state: &AppState) -> Option<String> {
-    let value = match neutral_model_alias(alias)? {
-        "SOTA" => state.settings.sota_model.as_deref(),
-        "MOTA" => state.settings.mota_model.as_deref(),
-        "FOTA" => state.settings.fota_model.as_deref(),
-        _ => None,
-    }?;
-    let trimmed = value.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
-}
-
-fn resolve_model_alias_for_state(name: &str, state: &AppState) -> String {
-    let trimmed = name.trim();
-    if let Some(model) = settings_alias_model(trimmed, state) {
-        return model;
-    }
-    model_registry::resolve_model_alias(trimmed)
-}
-
-fn alias_model_for_state(alias: &str, state: &AppState) -> String {
-    settings_alias_model(alias, state)
-        .or_else(|| {
-            anthropic_provider_selected(state)
-                .then(|| anthropic_alias_model(alias))
-                .flatten()
-        })
-        .unwrap_or_else(|| model_registry::resolve_model_alias(alias))
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigSurface {
@@ -104,6 +13,7 @@ pub struct ConfigSurface {
     model_picker: SelectionSurface,
     theme_picker: SelectionSurface,
     effort_picker: SelectionSurface,
+    effort_picker_enabled: bool,
 }
 
 impl ConfigSurface {
@@ -160,7 +70,9 @@ impl ConfigSurface {
                     FormTab::new(
                         "model",
                         "Model",
-                        vec![FormOption::new("picker", "Model picker").disabled()],
+                        vec![FormOption::new("picker", "Model")
+                            .with_description(model_readonly_summary(state))
+                            .disabled()],
                     ),
                     FormTab::new(
                         "theme",
@@ -210,12 +122,13 @@ impl ConfigSurface {
                     FormTab::new(
                         "thinking",
                         "Thinking",
-                        vec![FormOption::new("picker", "Effort picker")
+                        vec![FormOption::new("picker", "Reasoning effort")
                             .with_description(format!(
-                                "current effort={}; thinking={thinking}; fastMode={fast_mode}; selection applies immediately",
+                                "current effort={}; thinking={thinking}; fastMode={fast_mode}; use /effort to change",
                                 state
                                     .effort_value
                                     .as_deref()
+                                    .or(state.settings.model_reasoning_effort.as_deref())
                                     .or(state.settings.effort_level.as_deref())
                                     .unwrap_or("auto")
                             ))
@@ -242,11 +155,13 @@ impl ConfigSurface {
             model_picker: build_model_picker(state),
             theme_picker: build_theme_picker(state),
             effort_picker: build_effort_picker(state),
+            effort_picker_enabled: false,
         }
     }
 
     pub(crate) fn new_thinking_picker(state: &AppState) -> Self {
         let mut surface = Self::new(state);
+        surface.effort_picker_enabled = true;
         if let Some(index) = surface
             .state
             .tabs
@@ -284,9 +199,8 @@ impl ConfigSurface {
 
         match self.active_tab_id() {
             Some("model") => {
-                return handle_picker_key(&mut self.model_picker, key, |id| {
-                    CommandSurfaceOutcome::Submit(format!("/config set model {id}"))
-                });
+                let _ = self.model_picker.handle_key(key);
+                return CommandSurfaceOutcome::None;
             }
             Some("theme") => {
                 return handle_picker_key(&mut self.theme_picker, key, |id| {
@@ -294,9 +208,13 @@ impl ConfigSurface {
                 });
             }
             Some("thinking") => {
-                return handle_picker_key(&mut self.effort_picker, key, |id| {
-                    CommandSurfaceOutcome::Submit(format!("/config set effortLevel {id}"))
-                });
+                if self.effort_picker_enabled {
+                    return handle_picker_key(&mut self.effort_picker, key, |id| {
+                        CommandSurfaceOutcome::Submit(format!("/effort {id}"))
+                    });
+                }
+                let _ = self.effort_picker.handle_key(key);
+                return CommandSurfaceOutcome::None;
             }
             _ => {}
         }
@@ -348,7 +266,7 @@ impl ConfigSurface {
                 ),
                 "raw" => CommandSurfaceOutcome::Submit("/config show --raw".to_string()),
                 "schema" => CommandSurfaceOutcome::Submit("/config schema".to_string()),
-                "set-model" => CommandSurfaceOutcome::FillPrompt("/config set model ".to_string()),
+                "set-model" => CommandSurfaceOutcome::FillPrompt("/model ".to_string()),
                 "set-theme" => CommandSurfaceOutcome::FillPrompt("/config set theme ".to_string()),
                 _ => CommandSurfaceOutcome::None,
             },
@@ -420,59 +338,25 @@ pub(super) fn build_model_picker(state: &AppState) -> SelectionSurface {
     } else {
         state.main_loop_model.clone()
     };
-    let effort = state
-        .effort_value
-        .as_deref()
-        .or(state.settings.effort_level.as_deref());
     let mut items = Vec::new();
 
-    if state.settings.available_models.is_empty() {
-        for entry in model_registry::MODEL_ALIASES {
-            let model = alias_model_for_state(entry.alias, state);
-            push_model_item(
-                &mut items,
-                entry.alias,
-                &model,
-                &current,
-                Some(entry.alias),
-                "built-in alias",
-                effort,
-            );
-        }
+    let profile_models = active_profile_model_ids(state);
+    if profile_models.is_empty() {
+        items.push(SelectionItem {
+            id: "unsupported".to_string(),
+            label: "No profile models".to_string(),
+            description: "current profile has no modelCapabilities".to_string(),
+            enabled: false,
+            disabled_reason: Some("use /login first".to_string()),
+            preview_lines: Vec::new(),
+            actions: Vec::new(),
+            search_terms: Vec::new(),
+        });
     } else {
-        for configured in &state.settings.available_models {
-            let alias = neutral_model_alias(configured);
-            let resolved = if anthropic_provider_selected(state) {
-                alias
-                    .map(|alias| alias_model_for_state(alias, state))
-                    .unwrap_or_else(|| resolve_model_alias_for_state(configured, state))
-            } else {
-                alias
-                    .map(|alias| alias_model_for_state(alias, state))
-                    .unwrap_or_else(|| resolve_model_alias_for_state(configured, state))
-            };
-            push_model_item(
-                &mut items,
-                alias.unwrap_or(&resolved),
-                &resolved,
-                &current,
-                alias.or_else(|| model_registry::alias_for_model(&resolved)),
-                "configured",
-                effort,
-            );
+        for model in profile_models {
+            let capability = capability_for_model(state, &model);
+            push_model_item(&mut items, &model, &model, &current, capability.as_ref());
         }
-    }
-
-    if !items.iter().any(|item| item.id == current) {
-        push_model_item(
-            &mut items,
-            &current,
-            &current,
-            &current,
-            model_registry::alias_for_model(&current),
-            "current custom",
-            effort,
-        );
     }
 
     let selected = items
@@ -489,35 +373,133 @@ fn push_model_item(
     id: &str,
     model: &str,
     current: &str,
-    alias: Option<&str>,
-    source: &str,
-    effort: Option<&str>,
+    capability: Option<&cc_config::settings::ModelCapabilitySettings>,
 ) {
     if items.iter().any(|item| item.id == id) {
         return;
     }
 
-    let label = alias
-        .map(|alias| format!("{alias} ({model})"))
+    let label = capability
+        .map(|capability| format!("{} ({model})", capability.display_name_or(model)))
         .unwrap_or_else(|| model.to_string());
-    let mut description = vec![source.to_string()];
+    let mut description = Vec::new();
     if model == current {
         description.push("current".to_string());
     }
-    if let Some(effort) = effort {
-        description.push(format!("effort={effort}"));
+    if let Some(capability) = capability {
+        if let Some(context_window) = capability.context_window {
+            description.push(format!("ctx={}k", context_window / 1000));
+        }
+        if let Some(effort) = capability.default_reasoning_level.as_deref() {
+            description.push(format!("default effort={effort}"));
+        }
+        if capability.supports_fast_mode {
+            description.push("fast".to_string());
+        }
+        if capability.supports_search_tool {
+            description.push("search".to_string());
+        }
+        if capability.supports_parallel_tool_calls {
+            description.push("parallel tools".to_string());
+        }
     }
 
     items.push(SelectionItem {
         id: id.to_string(),
         label,
-        description: description.join("; "),
+        description: if description.is_empty() {
+            "configured".to_string()
+        } else {
+            description.join("; ")
+        },
         enabled: true,
         disabled_reason: None,
         preview_lines: Vec::new(),
         actions: Vec::new(),
         search_terms: Vec::new(),
     });
+}
+
+fn active_profile_model_ids(state: &AppState) -> Vec<String> {
+    let Some(active) = state
+        .settings
+        .active_auth_profile
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Vec::new();
+    };
+    let Some(profile) = state.settings.auth_profiles.get(active) else {
+        return Vec::new();
+    };
+    let Some(capabilities) = profile
+        .model_capabilities
+        .as_ref()
+        .filter(|capabilities| !capabilities.is_empty())
+        .or_else(|| {
+            (!state.settings.model_capabilities.is_empty())
+                .then_some(&state.settings.model_capabilities)
+        })
+    else {
+        return Vec::new();
+    };
+    let configured = profile
+        .available_models
+        .as_deref()
+        .filter(|models| !models.is_empty())
+        .unwrap_or(&state.settings.available_models);
+    let mut models = if configured.is_empty() {
+        capabilities.keys().cloned().collect::<Vec<_>>()
+    } else {
+        configured
+            .iter()
+            .map(|model| model.trim())
+            .filter(|model| !model.is_empty())
+            .filter(|model| capabilities.contains_key(*model))
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>()
+    };
+    models.sort();
+    models
+}
+
+fn capability_for_model(
+    state: &AppState,
+    model: &str,
+) -> Option<cc_config::settings::ModelCapabilitySettings> {
+    state
+        .settings
+        .model_capabilities
+        .get(model)
+        .cloned()
+        .or_else(|| {
+            let active = state.settings.active_auth_profile.as_deref()?;
+            state
+                .settings
+                .auth_profiles
+                .get(active)?
+                .model_capabilities
+                .as_ref()?
+                .get(model)
+                .cloned()
+        })
+}
+
+fn model_readonly_summary(state: &AppState) -> String {
+    let profile = state
+        .settings
+        .active_auth_profile
+        .as_deref()
+        .unwrap_or("none");
+    let context = capability_for_model(state, &state.main_loop_model)
+        .and_then(|capability| capability.context_window)
+        .map(|tokens| format!("{}k", tokens / 1000))
+        .unwrap_or_else(|| "unknown".to_string());
+    format!(
+        "profile={profile}; model={}; context={context}; use /model to change",
+        state.main_loop_model
+    )
 }
 
 fn build_theme_picker(state: &AppState) -> SelectionSurface {
@@ -590,26 +572,69 @@ fn build_effort_picker(state: &AppState) -> SelectionSurface {
     let current = state
         .effort_value
         .as_deref()
+        .or(state.settings.model_reasoning_effort.as_deref())
         .or(state.settings.effort_level.as_deref());
-    let mut items = vec![
-        effort_item("auto", "Auto", "model default", current),
-        effort_item("low", "Low", "shorter thinking budget", current),
-        effort_item("medium", "Medium", "balanced thinking budget", current),
-        effort_item("high", "High", "deeper thinking budget", current),
-        effort_item("max", "Max", "largest fixed thinking budget", current),
-    ];
-
-    if let Some(current) = current {
-        if !items.iter().any(|item| item.id == current) {
-            items.push(effort_item(
-                current,
-                format!("Custom ({current})"),
-                "current",
-                Some(current),
-            ));
-        }
+    let Some(capability) = capability_for_model(state, &state.main_loop_model) else {
+        let mut picker = SelectionSurface::new(
+            "Effort",
+            vec![SelectionItem {
+                id: "unsupported".to_string(),
+                label: "Reasoning levels unavailable".to_string(),
+                description: "current profile has no reasoning metadata".to_string(),
+                enabled: false,
+                disabled_reason: Some("use /login and /model first".to_string()),
+                preview_lines: Vec::new(),
+                actions: Vec::new(),
+                search_terms: Vec::new(),
+            }],
+        );
+        picker.selected = 0;
+        return picker;
+    };
+    if capability.supported_reasoning_levels.is_empty() {
+        let mut picker = SelectionSurface::new(
+            "Effort",
+            vec![SelectionItem {
+                id: "unsupported".to_string(),
+                label: "Reasoning levels unavailable".to_string(),
+                description: "current profile did not configure supportedReasoningLevels"
+                    .to_string(),
+                enabled: false,
+                disabled_reason: Some("read-only".to_string()),
+                preview_lines: Vec::new(),
+                actions: Vec::new(),
+                search_terms: Vec::new(),
+            }],
+        );
+        picker.selected = 0;
+        return picker;
     }
 
+    let default = capability
+        .default_reasoning_level
+        .as_deref()
+        .unwrap_or("model default");
+    let mut items = vec![effort_item(
+        "auto",
+        "Auto",
+        format!("model default: {default}"),
+        None,
+    )];
+    for level in &capability.supported_reasoning_levels {
+        let label = match level.as_str() {
+            "low" => "Low".to_string(),
+            "medium" => "Medium".to_string(),
+            "high" => "High".to_string(),
+            "xhigh" => "Extra high".to_string(),
+            other => other.to_string(),
+        };
+        let description = if capability.default_reasoning_level.as_deref() == Some(level.as_str()) {
+            "supported; default"
+        } else {
+            "supported"
+        };
+        items.push(effort_item(level, label, description, current));
+    }
     let selected = current
         .and_then(|value| items.iter().position(|item| item.id == value))
         .unwrap_or(0);

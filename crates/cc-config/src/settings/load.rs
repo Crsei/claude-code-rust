@@ -123,6 +123,16 @@ pub(crate) fn apply_active_auth_profile(merged: &mut EffectiveSettings, sources:
         sources.insert("availableModels".to_string(), source);
         sources.insert(profile_key("availableModels"), source);
     }
+    if let Some(capabilities) = profile.model_capabilities {
+        merged.model_capabilities = capabilities;
+        sources.insert("modelCapabilities".to_string(), source);
+        sources.insert(profile_key("modelCapabilities"), source);
+    }
+    if let Some(effort) = profile.model_reasoning_effort {
+        merged.model_reasoning_effort = Some(effort);
+        sources.insert("model_reasoning_effort".to_string(), source);
+        sources.insert(profile_key("modelReasoningEffort"), source);
+    }
     if let Some(api_key) = profile.api_key {
         merged.api_key = Some(api_key.clone());
         let env_key = if is_codex {

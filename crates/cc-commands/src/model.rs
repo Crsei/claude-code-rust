@@ -11,6 +11,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use cc_config::runtime_settings::SettingsJson;
+use cc_config::settings::{self, RawSettings};
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 
@@ -98,6 +99,9 @@ fn anthropic_provider_selected(ctx: &CommandContext) -> bool {
 }
 
 fn configured_model_label(model: &str, ctx: &CommandContext) -> String {
+    if let Some(capability) = ctx.app_state.settings.model_capabilities.get(model) {
+        return format_model_capability_line(model, capability);
+    }
     if let Some(alias) = neutral_model_alias(model) {
         if let Some(settings_model) = settings_alias_model(alias, &ctx.app_state.settings) {
             return format!("{alias} -> {settings_model}");
@@ -111,6 +115,35 @@ fn configured_model_label(model: &str, ctx: &CommandContext) -> String {
         }
     }
     model.to_string()
+}
+
+fn format_model_capability_line(
+    model: &str,
+    capability: &settings::ModelCapabilitySettings,
+) -> String {
+    let mut details = Vec::new();
+    if let Some(context_window) = capability.context_window {
+        details.push(format!("ctx={}k", context_window / 1000));
+    }
+    if let Some(default_effort) = capability.default_reasoning_level.as_deref() {
+        details.push(format!("default effort={default_effort}"));
+    }
+    if capability.supports_fast_mode {
+        details.push("fast".to_string());
+    }
+    if capability.supports_search_tool {
+        details.push("search".to_string());
+    }
+    if capability.supports_parallel_tool_calls {
+        details.push("parallel tools".to_string());
+    }
+
+    let display = capability.display_name_or(model);
+    if details.is_empty() {
+        format!("{display} ({model})")
+    } else {
+        format!("{display} ({model}) - {}", details.join(", "))
+    }
 }
 
 pub fn removed_legacy_model_alias_error(name: &str) -> String {
@@ -231,6 +264,12 @@ fn resolve_and_validate_model_for_context(
     available: &[String],
     ctx: &CommandContext,
 ) -> Result<String, String> {
+    if !ctx.app_state.settings.model_capabilities.is_empty()
+        || ctx.app_state.settings.active_auth_profile.is_some()
+    {
+        return resolve_profile_model_choice(name, &ctx.app_state.settings);
+    }
+
     if anthropic_provider_selected(ctx) {
         if let Some(alias) = neutral_model_alias(name) {
             check_available_anthropic_alias(alias, available)?;
@@ -250,6 +289,130 @@ fn resolve_and_validate_model_for_context(
     let resolved = resolve_model_alias_with_settings(trimmed, &ctx.app_state.settings);
     check_available_with_settings(&resolved, available, &ctx.app_state.settings)?;
     Ok(resolved)
+}
+
+fn active_profile_model_ids(settings: &SettingsJson) -> Vec<String> {
+    let Some(active) = settings
+        .active_auth_profile
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Vec::new();
+    };
+    let Some(profile) = settings.auth_profiles.get(active) else {
+        return Vec::new();
+    };
+    let Some(capabilities) = profile
+        .model_capabilities
+        .as_ref()
+        .filter(|capabilities| !capabilities.is_empty())
+        .or_else(|| {
+            (!settings.model_capabilities.is_empty()).then_some(&settings.model_capabilities)
+        })
+    else {
+        return Vec::new();
+    };
+
+    let configured = profile
+        .available_models
+        .as_deref()
+        .filter(|models| !models.is_empty())
+        .unwrap_or(&settings.available_models);
+    let mut models = if configured.is_empty() {
+        capabilities.keys().cloned().collect::<Vec<_>>()
+    } else {
+        configured
+            .iter()
+            .map(|model| model.trim())
+            .filter(|model| !model.is_empty())
+            .filter(|model| capabilities.contains_key(*model))
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>()
+    };
+    models.sort();
+    models
+}
+
+fn resolve_profile_model_choice(name: &str, settings: &SettingsJson) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("model name required".to_string());
+    }
+    let models = active_profile_model_ids(settings);
+    if models.is_empty() {
+        return Err(
+            "current auth profile has no configured model capabilities; use /login first"
+                .to_string(),
+        );
+    }
+    models
+        .iter()
+        .find(|model| model.eq_ignore_ascii_case(trimmed))
+        .cloned()
+        .ok_or_else(|| {
+            format!(
+                "Model '{}' is not configured for the active auth profile.\nAllowed: {}",
+                trimmed,
+                models.join(", "),
+            )
+        })
+}
+
+fn persist_active_profile_model(runtime_settings: &SettingsJson, model: &str) -> String {
+    let Some(active) = runtime_settings
+        .active_auth_profile
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return "Model changed for this session; no active auth profile to persist.".to_string();
+    };
+
+    let path = settings::user_settings_path();
+    let mut raw = if path.exists() {
+        match std::fs::read_to_string(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|txt| serde_json::from_str::<RawSettings>(&txt).map_err(anyhow::Error::from))
+        {
+            Ok(raw) => raw,
+            Err(error) => {
+                return format!(
+                    "Model changed for this session, but user settings were not updated: {}",
+                    error
+                );
+            }
+        }
+    } else {
+        RawSettings::default()
+    };
+
+    let mut profile = raw
+        .auth_profiles
+        .as_ref()
+        .and_then(|profiles| profiles.get(active))
+        .cloned()
+        .or_else(|| runtime_settings.auth_profiles.get(active).cloned())
+        .unwrap_or_default();
+    profile.model = Some(model.to_string());
+    if profile.available_models.is_none() && !runtime_settings.available_models.is_empty() {
+        profile.available_models = Some(runtime_settings.available_models.clone());
+    }
+    if profile.model_capabilities.is_none() && !runtime_settings.model_capabilities.is_empty() {
+        profile.model_capabilities = Some(runtime_settings.model_capabilities.clone());
+    }
+    settings::upsert_auth_profile(&mut raw, active, profile, true);
+
+    match settings::write_user_settings(&raw) {
+        Ok(path) => format!(
+            "-> persisted authProfiles.{active}.model={model} to {}",
+            path.display()
+        ),
+        Err(error) => format!(
+            "Model changed for this session, but user settings were not updated: {}",
+            error
+        ),
+    }
 }
 
 /// Handler for the `/model` slash command.
@@ -287,10 +450,21 @@ impl CommandHandler for ModelHandler {
 
         let previous = ctx.app_state.main_loop_model.clone();
         ctx.app_state.main_loop_model = resolved.clone();
+        ctx.app_state.settings.model = Some(resolved.clone());
+        if let Some(active) = ctx.app_state.settings.active_auth_profile.clone() {
+            if let Some(profile) = ctx.app_state.settings.auth_profiles.get_mut(&active) {
+                profile.model = Some(resolved.clone());
+            }
+        }
+        ctx.app_state
+            .settings
+            .sources
+            .insert("model".to_string(), settings::SettingsSource::User);
+        let persist_msg = persist_active_profile_model(&ctx.app_state.settings, &resolved);
 
         Ok(CommandResult::Output(format!(
-            "Model changed: {} -> {}",
-            previous, resolved
+            "Model changed: {} -> {}\n{}",
+            previous, resolved, persist_msg
         )))
     }
 }
@@ -309,6 +483,25 @@ mod tests {
             app_state: AppState::default(),
             session_id: SessionId::from_string("test-session"),
         }
+    }
+
+    fn add_codex_profile(ctx: &mut CommandContext) {
+        let profile = cc_config::settings::ProviderProfileSettings {
+            backend: Some("codex".to_string()),
+            api_provider: Some("openai-codex".to_string()),
+            model: Some("gpt-5.5".to_string()),
+            available_models: Some(cc_config::settings::codex_model_ids()),
+            model_capabilities: Some(cc_config::settings::codex_model_capabilities()),
+            ..Default::default()
+        };
+        ctx.app_state.main_loop_model = "gpt-5.5".to_string();
+        ctx.app_state.settings.active_auth_profile = Some("codex".to_string());
+        ctx.app_state
+            .settings
+            .auth_profiles
+            .insert("codex".to_string(), profile);
+        ctx.app_state.settings.available_models = cc_config::settings::codex_model_ids();
+        ctx.app_state.settings.model_capabilities = cc_config::settings::codex_model_capabilities();
     }
 
     #[tokio::test]
@@ -475,6 +668,41 @@ mod tests {
             _ => panic!("Expected Output"),
         }
         assert_eq!(ctx.app_state.main_loop_model, cc_models::SOTA_MODEL_ID);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_model_switch_uses_active_profile_capabilities() {
+        let dir = tempfile::tempdir().unwrap();
+        let previous = std::env::var("CC_RUST_HOME").ok();
+        std::env::set_var("CC_RUST_HOME", dir.path());
+        let handler = ModelHandler;
+        let mut ctx = test_ctx();
+        add_codex_profile(&mut ctx);
+
+        let result = handler.execute("gpt-5.4", &mut ctx).await.unwrap();
+
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("Model changed"));
+                assert!(text.contains("authProfiles.codex.model=gpt-5.4"));
+            }
+            _ => panic!("Expected Output"),
+        }
+        assert_eq!(ctx.app_state.main_loop_model, "gpt-5.4");
+        assert_eq!(
+            ctx.app_state
+                .settings
+                .auth_profiles
+                .get("codex")
+                .and_then(|profile| profile.model.as_deref()),
+            Some("gpt-5.4")
+        );
+
+        match previous {
+            Some(value) => std::env::set_var("CC_RUST_HOME", value),
+            None => std::env::remove_var("CC_RUST_HOME"),
+        }
     }
 
     #[tokio::test]

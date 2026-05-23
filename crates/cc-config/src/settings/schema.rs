@@ -32,6 +32,35 @@ pub fn settings_schema() -> Value {
                         "apiProvider": { "type": "string", "enum": ["anthropic", "openai-codex", "openai"] },
                         "model": { "type": "string" },
                         "availableModels": { "type": "array", "items": { "type": "string" } },
+                        "modelReasoningEffort": {
+                            "type": "string",
+                            "enum": ["none", "minimal", "low", "medium", "high", "xhigh"]
+                        },
+                        "modelCapabilities": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "object",
+                                "additionalProperties": true,
+                                "properties": {
+                                    "displayName": { "type": "string" },
+                                    "description": { "type": "string" },
+                                    "defaultReasoningLevel": { "type": "string" },
+                                    "supportedReasoningLevels": { "type": "array", "items": { "type": "string" } },
+                                    "contextWindow": { "type": "integer", "minimum": 1 },
+                                    "maxContextWindow": { "type": "integer", "minimum": 1 },
+                                    "effectiveContextWindowPercent": { "type": "integer", "minimum": 1, "maximum": 100 },
+                                    "supportsFastMode": { "type": "boolean" },
+                                    "supportsReasoningSummaries": { "type": "boolean" },
+                                    "supportVerbosity": { "type": "boolean" },
+                                    "supportsParallelToolCalls": { "type": "boolean" },
+                                    "supportsImageDetailOriginal": { "type": "boolean" },
+                                    "supportsSearchTool": { "type": "boolean" },
+                                    "supportedInApi": { "type": "boolean" },
+                                    "inputModalities": { "type": "array", "items": { "type": "string" } },
+                                    "serviceTiers": { "type": "array", "items": { "type": "string" } }
+                                }
+                            }
+                        },
                         "baseUrl": { "type": "string" },
                         "apiKey": { "type": "string" },
                         "env": {

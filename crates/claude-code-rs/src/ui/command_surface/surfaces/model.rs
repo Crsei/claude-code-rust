@@ -1,7 +1,7 @@
 use crossterm::event::KeyEvent;
 
 use crate::ui::better_view_panel::BetterViewPanel;
-use crate::ui::command_surface::CommandSurfaceOutcome;
+use crate::ui::command_surface::{CommandSurfaceOutcome, CommandSurfaceTarget};
 use crate::ui::selection_surface::{SelectionSurface, SelectionSurfaceEvent};
 use cc_engine::types::app_state::AppState;
 
@@ -30,9 +30,10 @@ impl ModelSurface {
 
     pub(crate) fn handle_key(&mut self, key: KeyEvent) -> CommandSurfaceOutcome {
         match self.picker.handle_key(key) {
-            SelectionSurfaceEvent::Selected(id) => {
-                CommandSurfaceOutcome::Submit(format!("/model {id}"))
-            }
+            SelectionSurfaceEvent::Selected(id) => CommandSurfaceOutcome::SubmitThenOpen {
+                command: format!("/model {id}"),
+                next_surface: CommandSurfaceTarget::Effort,
+            },
             SelectionSurfaceEvent::Closed => CommandSurfaceOutcome::Close,
             SelectionSurfaceEvent::None => CommandSurfaceOutcome::None,
         }

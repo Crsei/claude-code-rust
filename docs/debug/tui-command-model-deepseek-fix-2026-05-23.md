@@ -92,6 +92,30 @@
 - `/config set model_reasoning_effort high` 会同步 live settings 并持久化到 cc-rust settings。
 - 优先级：`model_reasoning_effort` 最高；未设置时，`effortLevel` 的 `low`/`medium`/`high` 会作为 Codex fallback，`max` 映射为 `xhigh`，数字 token budget 不映射到 Codex。
 
+#### 2026-05-23 追加：`/model` 串联 `/effort`，并由 auth profile 模型能力驱动
+
+用户反馈：`/model` 和 `/effort` 应按当前登录的 auth profile 可用模型与模型能力工作，不应继续从全局 settings、旧 DeepSeek allow-list 或硬编码别名中混合推断。
+
+修复：
+
+- settings 扩展 `authProfiles.<profile>.modelCapabilities`，能力字段覆盖 display name、description、默认 reasoning level、支持的 reasoning levels、context window、fast/search/parallel/image/verbosity 等开关。
+- settings 扩展 profile 级 `modelReasoningEffort`；本轮之后 `/effort` 的主要持久化位置是当前 `authProfiles.<active>.modelReasoningEffort`，不再把 root-level `effortLevel` 作为主要写入口。
+- `/login codex` 会初始化或刷新 Codex profile 的模型表与模型能力：
+  - `gpt-5.5`
+  - `gpt-5.4`
+  - `gpt-5.4-mini`
+  - `gpt-5.3-codex`
+  - `gpt-5.3-codex-spark`
+  - `gpt-5.2`
+- 隐藏模型 `codex-auto-review` 不进入普通 `/model` 可选列表。
+- `/model` 只展示当前 active auth profile 中同时存在于 `availableModels` 和 `modelCapabilities` 的模型；未配置能力的 profile 不再回退展示旧模型。
+- TUI `/model` 选择模型后返回新的 `SubmitThenOpen` outcome：先提交 `/model <id>`，命令成功后自动打开当前 state 的 `/effort` 面板。
+- `/effort` 面板按当前模型的 `supportedReasoningLevels` 渲染选项；`auto` 使用 `defaultReasoningLevel`；不支持的 reasoning level 会被拒绝。
+- 如果当前 profile/模型没有配置 reasoning levels，`/effort` 显示只读提示，不允许选择。
+- `/fast` 兼容性判断改为读取当前模型能力的 `supportsFastMode`，缺失配置时默认不支持。
+- `/context` 和 context analysis 增加 settings/profile context window 注入路径；能力缺失时保留既有 200k 默认回退。
+- `/config` 中 model/effort 改为只读展示入口；`/config set model`、`/config set effortLevel`、`/config set modelReasoningEffort` 返回只读提示，引导使用 `/login`、`/model`、`/effort`。
+
 ### DeepSeek Anthropic-compatible thinking 回放
 
 - 非官方 Anthropic-compatible 请求继续清理：
@@ -141,10 +165,19 @@
 - `crates/cc-commands/src/login.rs`
 - `crates/cc-commands/src/login_code.rs`
 - `crates/cc-commands/src/lib.rs`
+- `crates/cc-commands/src/model.rs`
+- `crates/cc-commands/src/fast.rs`
+- `crates/cc-commands/src/config_cmd.rs`
 - `crates/cc-types/src/message.rs`
 - `crates/cc-api/src/api/openai_compat.rs`
 - `crates/cc-api/src/api/streaming.rs`
 - `crates/cc-compact/src/context_analysis.rs`
+- `crates/cc-config/src/settings/providers.rs`
+- `crates/cc-config/src/settings/effective.rs`
+- `crates/cc-config/src/settings/schema.rs`
+- `crates/cc-config/src/runtime_settings.rs`
+- `crates/cc-utils/src/tokens.rs`
+- `crates/claude-code-rs/src/ui/app.rs`
 - `crates/claude-code-rs/src/ui/command_surface/`
 - `crates/claude-code-rs/src/ui/command_palette/`
 - `docs/USAGE_GUIDE.md`
@@ -161,11 +194,16 @@ cargo test -p cc-commands effort
 cargo test -p cc-commands cost
 cargo test -p cc-commands context
 cargo test -p cc-commands login
+cargo test -p cc-commands
+cargo test -p cc-config settings::
+cargo test -p cc-utils tokens
 cargo test -p cc-api compatible_anthropic
 cargo test -p cc-api test_parse_codex_responses_text_stream
 cargo test -p claude-code-rs command_surface
+cargo test -p claude-code-rs ui::command_surface
 cargo test -p claude-code-rs command_palette
 cargo test -p cc-compact context_analysis
+cargo test -p cc-compact
 cargo test -p cc-engine --no-run
 cargo build --workspace --release
 ```

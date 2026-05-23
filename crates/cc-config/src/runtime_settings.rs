@@ -17,8 +17,8 @@
 use std::collections::HashMap;
 
 use crate::settings::{
-    PermissionsSettings, ProviderProfileSettings, SandboxSettings, SourceMap, SpinnerTipsSettings,
-    StatusLineSettings,
+    ModelCapabilitySettings, PermissionsSettings, ProviderProfileSettings, SandboxSettings,
+    SourceMap, SpinnerTipsSettings, StatusLineSettings,
 };
 
 /// Runtime projection of [`crate::settings::EffectiveSettings`] —
@@ -58,6 +58,7 @@ pub struct SettingsJson {
     pub mota_model: Option<String>,
     pub fota_model: Option<String>,
     pub available_models: Vec<String>,
+    pub model_capabilities: HashMap<String, ModelCapabilitySettings>,
     pub effort_level: Option<String>,
     pub model_reasoning_effort: Option<String>,
     pub fast_mode: Option<bool>,

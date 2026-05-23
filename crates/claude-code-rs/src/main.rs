@@ -993,6 +993,7 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             mota_model: merged_config.mota_model.clone(),
             fota_model: merged_config.fota_model.clone(),
             available_models: merged_config.available_models.clone(),
+            model_capabilities: merged_config.model_capabilities.clone(),
             effort_level: merged_config.effort_level.clone(),
             model_reasoning_effort: merged_config.model_reasoning_effort.clone(),
             fast_mode: merged_config.fast_mode,

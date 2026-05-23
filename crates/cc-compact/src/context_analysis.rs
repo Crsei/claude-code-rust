@@ -45,7 +45,15 @@ pub struct ContextAnalysisInput<'a> {
 }
 
 pub fn analyze_context_usage(input: ContextAnalysisInput<'_>) -> ContextAnalysis {
-    let context_window = auto_compact::get_context_window_size(input.model);
+    analyze_context_usage_with_window(input, None)
+}
+
+pub fn analyze_context_usage_with_window(
+    input: ContextAnalysisInput<'_>,
+    context_window: Option<u64>,
+) -> ContextAnalysis {
+    let context_window =
+        context_window.unwrap_or_else(|| auto_compact::get_context_window_size(input.model));
     let messages_in = input.messages.len();
     let mut compacted = false;
     let snipped = snip::snip_compact_if_needed(input.messages.to_vec(), DEFAULT_SNIP_MAX_TURNS);

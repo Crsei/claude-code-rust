@@ -119,6 +119,20 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
     let key = parts[0];
     let value = parts[1..].join(" ");
 
+    if matches!(
+        key,
+        "model"
+            | "effortLevel"
+            | "effort_level"
+            | "model_reasoning_effort"
+            | "modelReasoningEffort"
+    ) {
+        return Ok(CommandResult::Output(format!(
+            "{} is read-only in /config. Use /login to select the auth profile, /model to select the model, and /effort to select reasoning effort.",
+            key
+        )));
+    }
+
     // Stage the in-memory update before touching disk so validation errors are
     // still visible, but do not publish it until persistence succeeds. This
     // keeps a present-but-invalid settings file from creating a transient

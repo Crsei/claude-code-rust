@@ -16,7 +16,9 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use cc_compact::context_analysis::{analyze_context_usage, ContextAnalysis, ContextAnalysisInput};
+use cc_compact::context_analysis::{
+    analyze_context_usage_with_window, ContextAnalysis, ContextAnalysisInput,
+};
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 
@@ -127,7 +129,11 @@ impl CommandHandler for ContextHandler {
             hook_results: hook_results_str.as_deref(),
             model: &ctx.app_state.main_loop_model,
         };
-        let report = analyze_context_usage(input);
+        let context_window = cc_utils::tokens::get_context_window_size_with_settings(
+            &ctx.app_state.main_loop_model,
+            Some(&ctx.app_state.settings),
+        );
+        let report = analyze_context_usage_with_window(input, Some(context_window));
         match mode.as_str() {
             "json" | "raw" => {
                 let json = serde_json::to_string_pretty(&report)

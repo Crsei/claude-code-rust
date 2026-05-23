@@ -49,12 +49,6 @@ impl EnvGuard {
         std::env::set_var(key, value);
         Self { key, previous }
     }
-
-    fn unset(key: &'static str) -> Self {
-        let previous = std::env::var_os(key);
-        std::env::remove_var(key);
-        Self { key, previous }
-    }
 }
 
 impl Drop for EnvGuard {
@@ -64,6 +58,26 @@ impl Drop for EnvGuard {
             None => std::env::remove_var(self.key),
         }
     }
+}
+
+fn add_codex_profile(state: &mut AppState, model: &str) {
+    let profile = cc_config::settings::ProviderProfileSettings {
+        backend: Some("codex".to_string()),
+        api_provider: Some("openai-codex".to_string()),
+        model: Some(model.to_string()),
+        available_models: Some(cc_config::settings::codex_model_ids()),
+        model_capabilities: Some(cc_config::settings::codex_model_capabilities()),
+        ..Default::default()
+    };
+    state.main_loop_model = model.to_string();
+    state.settings.api_provider = Some("openai-codex".to_string());
+    state.settings.active_auth_profile = Some("codex".to_string());
+    state
+        .settings
+        .auth_profiles
+        .insert("codex".to_string(), profile);
+    state.settings.available_models = cc_config::settings::codex_model_ids();
+    state.settings.model_capabilities = cc_config::settings::codex_model_capabilities();
 }
 
 #[test]
@@ -472,6 +486,7 @@ fn config_surface_uses_tab_navigation_and_selection() {
 #[test]
 fn effort_command_opens_thinking_picker() {
     let mut state = AppState::default();
+    add_codex_profile(&mut state, "gpt-5.5");
     state.effort_value = Some("high".into());
     let cwd = std::env::current_dir().expect("current dir");
     let mut surface =
@@ -479,20 +494,17 @@ fn effort_command_opens_thinking_picker() {
 
     let rendered = surface.render();
     assert!(rendered.contains("Effort"));
-    assert!(rendered.contains("High - deeper thinking budget"));
+    assert!(rendered.contains("High - supported"));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
-        CommandSurfaceOutcome::Submit("/config set effortLevel high".to_string())
+        CommandSurfaceOutcome::Submit("/effort high".to_string())
     );
 }
 
 #[test]
 fn config_surface_exposes_model_theme_and_effort_pickers() {
-    let mut state = AppState {
-        main_loop_model: "custom-model".into(),
-        ..Default::default()
-    };
-    state.settings.available_models = vec!["custom-model".into(), "SOTA".into()];
+    let mut state = AppState::default();
+    add_codex_profile(&mut state, "gpt-5.5");
     state.settings.theme = Some("light".into());
     state.settings.output_style = Some("explanatory".into());
     state.settings.language = Some("English".into());
@@ -526,75 +538,41 @@ fn config_surface_exposes_model_theme_and_effort_pickers() {
 }
 
 #[test]
-#[serial_test::serial]
-fn config_surface_model_picker_uses_anthropic_alias_env_mapping() {
-    let _sota = EnvGuard::set("ANTHROPIC_DEFAULT_SOTA_MODEL", "deepseek-v4-pro");
-    let _mota = EnvGuard::set("ANTHROPIC_DEFAULT_MOTA_MODEL", "deepseek-v4-pro");
-    let _fota = EnvGuard::set("ANTHROPIC_DEFAULT_FOTA_MODEL", "deepseek-v4-flash");
-    let mut state = AppState {
-        main_loop_model: "deepseek-v4-pro".into(),
-        ..Default::default()
-    };
-    state.settings.api_provider = Some("anthropic".into());
-    state.settings.available_models = vec![
-        "SOTA".into(),
-        "MOTA".into(),
-        "FOTA".into(),
-        "deepseek-v4-pro".into(),
-    ];
+fn config_surface_model_picker_uses_active_profile_capabilities() {
+    let mut state = AppState::default();
+    add_codex_profile(&mut state, "gpt-5.5");
 
     let mut surface = CommandSurface::Config(ConfigSurface::new(&state));
     surface.handle_key(key(KeyCode::Right));
     let rendered = surface.render();
 
-    assert!(rendered.contains("SOTA (deepseek-v4-pro)"));
-    assert!(rendered.contains("MOTA (deepseek-v4-pro)"));
-    assert!(rendered.contains("FOTA (deepseek-v4-flash)"));
-    assert!(!rendered.contains("SOTA (gpt-5.5)"));
+    assert!(rendered.contains("GPT-5.5 (gpt-5.5)"));
+    assert!(rendered.contains("ctx=272k"));
+    assert!(rendered.contains("default effort=medium"));
 }
 
 #[test]
-#[serial_test::serial]
-fn model_surface_uses_anthropic_env_mapping_without_settings_snapshot() {
-    let _sota = EnvGuard::set("ANTHROPIC_DEFAULT_SOTA_MODEL", "deepseek-v4-pro");
-    let _mota = EnvGuard::set("ANTHROPIC_DEFAULT_MOTA_MODEL", "deepseek-v4-pro");
-    let _fota = EnvGuard::set("ANTHROPIC_DEFAULT_FOTA_MODEL", "deepseek-v4-flash");
-    let state = AppState {
-        main_loop_model: "deepseek-v4-pro".into(),
-        ..Default::default()
-    };
+fn model_surface_without_profile_shows_no_profile_models() {
+    let state = AppState::default();
 
     let surface = CommandSurface::Model(ModelSurface::new(&state));
     let rendered = surface.render();
 
-    assert!(rendered.contains("SOTA (deepseek-v4-pro)"));
-    assert!(rendered.contains("MOTA (deepseek-v4-pro)"));
-    assert!(rendered.contains("FOTA (deepseek-v4-flash)"));
-    assert!(!rendered.contains("SOTA (gpt-5.5)"));
-    assert!(rendered.contains("built-in alias"));
+    assert!(rendered.contains("No profile models"));
+    assert!(rendered.contains("use /login first"));
 }
 
 #[test]
-#[serial_test::serial]
-fn model_surface_uses_legacy_anthropic_alias_env_mapping() {
-    let _sota = EnvGuard::unset("ANTHROPIC_DEFAULT_SOTA_MODEL");
-    let _mota = EnvGuard::unset("ANTHROPIC_DEFAULT_MOTA_MODEL");
-    let _fota = EnvGuard::unset("ANTHROPIC_DEFAULT_FOTA_MODEL");
-    let _opus = EnvGuard::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "deepseek-v4-pro");
-    let _sonnet = EnvGuard::set("ANTHROPIC_DEFAULT_SONNET_MODEL", "deepseek-v4-pro");
-    let _haiku = EnvGuard::set("ANTHROPIC_DEFAULT_HAIKU_MODEL", "deepseek-v4-pro");
-    let state = AppState {
-        main_loop_model: "deepseek-v4-pro".into(),
-        ..Default::default()
-    };
+fn model_surface_uses_active_profile_capabilities() {
+    let mut state = AppState::default();
+    add_codex_profile(&mut state, "gpt-5.5");
 
     let surface = CommandSurface::Model(ModelSurface::new(&state));
     let rendered = surface.render();
 
-    assert!(rendered.contains("SOTA (deepseek-v4-pro)"));
-    assert!(rendered.contains("MOTA (deepseek-v4-pro)"));
-    assert!(rendered.contains("FOTA (deepseek-v4-pro)"));
-    assert!(!rendered.contains("SOTA (gpt-5.5)"));
+    assert!(rendered.contains("GPT-5.5 (gpt-5.5)"));
+    assert!(rendered.contains("gpt-5.4"));
+    assert!(rendered.contains("search"));
 }
 
 #[test]
@@ -607,22 +585,20 @@ fn model_surface_codex_provider_ignores_anthropic_alias_env_mapping() {
         main_loop_model: "gpt-5.5".into(),
         ..Default::default()
     };
-    state.settings.api_provider = Some("openai-codex".into());
-    state.settings.available_models = vec!["SOTA".into(), "MOTA".into(), "FOTA".into()];
+    add_codex_profile(&mut state, "gpt-5.5");
 
     let surface = CommandSurface::Model(ModelSurface::new(&state));
     let rendered = surface.render();
 
-    assert!(rendered.contains(&format!("SOTA ({})", cc_models::SOTA_MODEL_ID)));
-    assert!(rendered.contains(&format!("MOTA ({})", cc_models::MOTA_MODEL_ID)));
-    assert!(rendered.contains(&format!("FOTA ({})", cc_models::FOTA_MODEL_ID)));
+    assert!(rendered.contains("GPT-5.5 (gpt-5.5)"));
+    assert!(rendered.contains("gpt-5.4"));
     assert!(!rendered.contains("deepseek-v4-pro"));
     assert!(!rendered.contains("deepseek-v4-flash"));
 }
 
 #[test]
 #[serial_test::serial]
-fn model_surface_prefers_settings_alias_models() {
+fn model_surface_ignores_settings_alias_models_without_capabilities() {
     let _sota = EnvGuard::set("ANTHROPIC_DEFAULT_SOTA_MODEL", "deepseek-v4-pro");
     let mut state = AppState {
         main_loop_model: "custom-sota".into(),
@@ -637,19 +613,15 @@ fn model_surface_prefers_settings_alias_models() {
     let surface = CommandSurface::Model(ModelSurface::new(&state));
     let rendered = surface.render();
 
-    assert!(rendered.contains("SOTA (custom-sota)"));
-    assert!(rendered.contains("MOTA (custom-mota)"));
-    assert!(rendered.contains("FOTA (custom-fota)"));
+    assert!(rendered.contains("No profile models"));
+    assert!(!rendered.contains("custom-sota"));
     assert!(!rendered.contains("deepseek-v4-pro"));
 }
 
 #[test]
 fn config_surface_picker_selection_submits_config_set_commands() {
-    let mut state = AppState {
-        main_loop_model: "custom-model".into(),
-        ..Default::default()
-    };
-    state.settings.available_models = vec!["custom-model".into(), "SOTA".into()];
+    let mut state = AppState::default();
+    add_codex_profile(&mut state, "gpt-5.5");
     state.settings.theme = Some("light".into());
     state.effort_value = Some("medium".into());
 
@@ -657,7 +629,7 @@ fn config_surface_picker_selection_submits_config_set_commands() {
     model_surface.handle_key(key(KeyCode::Right));
     assert_eq!(
         model_surface.handle_key(key(KeyCode::Enter)),
-        CommandSurfaceOutcome::Submit("/config set model custom-model".to_string())
+        CommandSurfaceOutcome::None
     );
 
     let mut theme_surface = CommandSurface::Config(ConfigSurface::new(&state));
@@ -674,7 +646,7 @@ fn config_surface_picker_selection_submits_config_set_commands() {
     }
     assert_eq!(
         effort_surface.handle_key(key(KeyCode::Enter)),
-        CommandSurfaceOutcome::Submit("/config set effortLevel medium".to_string())
+        CommandSurfaceOutcome::None
     );
 }
 

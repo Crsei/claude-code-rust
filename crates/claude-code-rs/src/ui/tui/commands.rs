@@ -1,6 +1,6 @@
 use super::subsystem_events::{add_system_error, add_system_info};
 use crate::ui::app::App;
-use crate::ui::command_surface::CommandSurface;
+use crate::ui::command_surface::{CommandSurface, CommandSurfaceTarget};
 use cc_commands as slash_commands;
 use cc_engine::command_runtime::{CommandContext, CommandResult};
 use cc_engine::lifecycle::QueryEngine;
@@ -93,6 +93,7 @@ pub(super) async fn try_execute_command(
                 }
                 sync_app_runtime_from_state(engine, app, &ctx.app_state);
                 add_system_info(app, &text);
+                open_pending_command_surface(app, &ctx.app_state, &ctx.cwd);
                 Some(CmdAction::Handled)
             }
             CommandResult::SwitchSession {
@@ -122,6 +123,7 @@ pub(super) async fn try_execute_command(
                     replace_app_messages(app, &ctx.messages);
                 }
                 sync_app_runtime_from_state(engine, app, &ctx.app_state);
+                open_pending_command_surface(app, &ctx.app_state, &ctx.cwd);
                 Some(CmdAction::Query(msgs))
             }
             CommandResult::None => {
@@ -130,13 +132,31 @@ pub(super) async fn try_execute_command(
                     replace_app_messages(app, &ctx.messages);
                 }
                 sync_app_runtime_from_state(engine, app, &ctx.app_state);
+                open_pending_command_surface(app, &ctx.app_state, &ctx.cwd);
                 Some(CmdAction::Handled)
             }
         },
         Err(e) => {
+            let _ = app.take_pending_command_surface_after_submit();
             add_system_error(app, &format!("Command error: {e}"));
             Some(CmdAction::Handled)
         }
+    }
+}
+
+fn open_pending_command_surface(
+    app: &mut App,
+    state: &cc_engine::types::app_state::AppState,
+    cwd: &std::path::Path,
+) {
+    let Some(target) = app.take_pending_command_surface_after_submit() else {
+        return;
+    };
+    let surface = match target {
+        CommandSurfaceTarget::Effort => CommandSurface::for_slash_command("effort", "", state, cwd),
+    };
+    if let Some(surface) = surface {
+        app.open_command_surface(surface);
     }
 }
 

@@ -498,6 +498,14 @@ impl App {
                 self.command_surface = None;
                 AppAction::Submit(text)
             }
+            CommandSurfaceOutcome::SubmitThenOpen {
+                command,
+                next_surface,
+            } => {
+                self.command_surface = None;
+                self.set_pending_command_surface_after_submit(next_surface);
+                AppAction::Submit(command)
+            }
             CommandSurfaceOutcome::LspRecommendationResponse {
                 request_id,
                 plugin_name,

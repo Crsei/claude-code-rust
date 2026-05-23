@@ -253,18 +253,25 @@ fn persist_provider_selection(
     }
     let selected_model = if api_provider == settings::API_PROVIDER_OPENAI_CODEX {
         let model = resolve_codex_default_model(ctx, &raw);
-        let available_models = codex_available_models(&model, &raw, ctx);
+        let available_models = settings::codex_model_ids();
+        let model_capabilities = settings::codex_model_capabilities();
         profile.model = Some(model.clone());
         profile.available_models = Some(available_models.clone());
+        profile.model_capabilities = Some(model_capabilities.clone());
         ctx.app_state.main_loop_model = model.clone();
         ctx.app_state.settings.model = Some(model);
         ctx.app_state.settings.available_models = available_models;
+        ctx.app_state.settings.model_capabilities = model_capabilities;
         ctx.app_state
             .settings
             .sources
             .insert("model".to_string(), settings::SettingsSource::User);
         ctx.app_state.settings.sources.insert(
             "availableModels".to_string(),
+            settings::SettingsSource::User,
+        );
+        ctx.app_state.settings.sources.insert(
+            "modelCapabilities".to_string(),
             settings::SettingsSource::User,
         );
         ctx.app_state.settings.model.clone()
@@ -380,66 +387,6 @@ fn codex_alias_model(alias: &str, raw: &RawSettings, ctx: &CommandContext) -> Op
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
-fn codex_available_models(
-    selected_model: &str,
-    raw: &RawSettings,
-    ctx: &CommandContext,
-) -> Vec<String> {
-    let mut models = Vec::new();
-    push_unique_model(&mut models, selected_model);
-    for model in [
-        "SOTA",
-        "MOTA",
-        "FOTA",
-        "gpt-5.5",
-        "gpt-5.4",
-        "gpt-5.3-codex-spark",
-    ] {
-        push_unique_model(&mut models, model);
-        if let Some(resolved) = codex_alias_model(model, raw, ctx) {
-            push_unique_model(&mut models, &resolved);
-        }
-    }
-    if let Some(existing) = raw.available_models.as_deref() {
-        for model in existing {
-            if is_codex_model_choice(model) {
-                let resolved =
-                    codex_alias_model(model, raw, ctx).unwrap_or_else(|| model.trim().to_string());
-                push_unique_model(&mut models, &resolved);
-            }
-        }
-    }
-    if let Some(existing) = raw
-        .auth_profiles
-        .as_ref()
-        .and_then(|profiles| profiles.get("codex"))
-        .and_then(|profile| profile.available_models.as_deref())
-    {
-        for model in existing {
-            if is_codex_model_choice(model) {
-                let resolved =
-                    codex_alias_model(model, raw, ctx).unwrap_or_else(|| model.trim().to_string());
-                push_unique_model(&mut models, &resolved);
-            }
-        }
-    }
-    models
-}
-
-fn push_unique_model(models: &mut Vec<String>, model: &str) {
-    let trimmed = model.trim();
-    if trimmed.is_empty() {
-        return;
-    }
-    if models
-        .iter()
-        .any(|existing| existing.eq_ignore_ascii_case(trimmed))
-    {
-        return;
-    }
-    models.push(trimmed.to_string());
-}
-
 fn is_codex_model_choice(model: &str) -> bool {
     let trimmed = model.trim();
     if trimmed.is_empty() {
@@ -452,12 +399,9 @@ fn is_codex_model_choice(model: &str) -> bool {
         return true;
     }
 
-    let lower = trimmed.to_ascii_lowercase();
-    lower.starts_with("gpt-")
-        || lower.starts_with("o1")
-        || lower.starts_with("o3")
-        || lower.starts_with("o4")
-        || lower.contains("codex")
+    settings::codex_model_ids()
+        .iter()
+        .any(|model| model.eq_ignore_ascii_case(trimmed))
 }
 
 // ---------------------------------------------------------------------------

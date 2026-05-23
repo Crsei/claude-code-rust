@@ -14,9 +14,6 @@ use async_trait::async_trait;
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 
-/// Alternative model ID patterns that support fast mode.
-const FAST_MODE_MODEL_PREFIXES: &[&str] = &["gpt-5.5"];
-
 pub struct FastHandler;
 
 #[async_trait]
@@ -43,11 +40,24 @@ impl CommandHandler for FastHandler {
 }
 
 /// Check if the current model supports fast mode.
-fn model_supports_fast(model: &str) -> bool {
-    let lower = model.to_lowercase();
-    FAST_MODE_MODEL_PREFIXES
-        .iter()
-        .any(|prefix| lower.starts_with(prefix))
+fn model_supports_fast(ctx: &CommandContext, model: &str) -> bool {
+    ctx.app_state
+        .settings
+        .model_capabilities
+        .get(model)
+        .map(|capability| capability.supports_fast_mode)
+        .or_else(|| {
+            let active = ctx.app_state.settings.active_auth_profile.as_deref()?;
+            ctx.app_state
+                .settings
+                .auth_profiles
+                .get(active)?
+                .model_capabilities
+                .as_ref()?
+                .get(model)
+                .map(|capability| capability.supports_fast_mode)
+        })
+        .unwrap_or(false)
 }
 
 /// Toggle fast mode on/off.
@@ -70,23 +80,16 @@ fn enable_fast_mode(ctx: &mut CommandContext) -> Result<CommandResult> {
     let previous_model = ctx.app_state.main_loop_model.clone();
     let mut switched_model = false;
 
-    let fast_model = ctx
-        .app_state
-        .settings
-        .fast_model
-        .as_deref()
-        .map(|model| {
-            crate::model::resolve_model_alias_with_settings(model, &ctx.app_state.settings)
-        })
-        .unwrap_or_else(|| {
-            crate::model::resolve_model_alias_with_settings(
-                cc_models::DEFAULT_FAST_MODEL_ALIAS,
-                &ctx.app_state.settings,
-            )
-        });
+    let fast_model = resolve_fast_model(ctx);
 
     // Auto-switch if current model doesn't support fast mode.
-    if !model_supports_fast(&ctx.app_state.main_loop_model) {
+    if !model_supports_fast(ctx, &ctx.app_state.main_loop_model) {
+        if !model_supports_fast(ctx, &fast_model) {
+            return Ok(CommandResult::Output(format!(
+                "Fast mode is not supported by the active profile for model '{}'.",
+                ctx.app_state.main_loop_model
+            )));
+        }
         ctx.app_state.main_loop_model = fast_model.clone();
         ctx.app_state.settings.model = Some(fast_model.clone());
         switched_model = true;
@@ -108,6 +111,33 @@ fn enable_fast_mode(ctx: &mut CommandContext) -> Result<CommandResult> {
     //   - anthropic-beta: fast-mode-2026-02-01 header
 
     Ok(CommandResult::Output(msg))
+}
+
+fn resolve_fast_model(ctx: &CommandContext) -> String {
+    if let Some(model) = ctx.app_state.settings.fast_model.as_deref() {
+        return crate::model::resolve_model_alias_with_settings(model, &ctx.app_state.settings);
+    }
+    if let Some(model) = ctx
+        .app_state
+        .settings
+        .available_models
+        .iter()
+        .find(|model| model_supports_fast(ctx, model))
+    {
+        return model.clone();
+    }
+    ctx.app_state
+        .settings
+        .model_capabilities
+        .iter()
+        .find(|(_, capability)| capability.supports_fast_mode)
+        .map(|(model, _)| model.clone())
+        .unwrap_or_else(|| {
+            crate::model::resolve_model_alias_with_settings(
+                cc_models::DEFAULT_FAST_MODEL_ALIAS,
+                &ctx.app_state.settings,
+            )
+        })
 }
 
 /// Disable fast mode (keeps the current model).
@@ -132,7 +162,7 @@ fn show_status(ctx: &CommandContext) -> Result<CommandResult> {
         "disabled"
     };
     let model = &ctx.app_state.main_loop_model;
-    let compatible = model_supports_fast(model);
+    let compatible = model_supports_fast(ctx, model);
 
     Ok(CommandResult::Output(format!(
         "Fast mode: {}\n\
@@ -162,17 +192,38 @@ mod tests {
         }
     }
 
+    fn add_codex_capabilities(ctx: &mut CommandContext) {
+        let mut profile = cc_config::settings::ProviderProfileSettings {
+            backend: Some("codex".to_string()),
+            api_provider: Some("openai-codex".to_string()),
+            available_models: Some(cc_config::settings::codex_model_ids()),
+            model_capabilities: Some(cc_config::settings::codex_model_capabilities()),
+            ..Default::default()
+        };
+        profile.model = Some("gpt-5.5".to_string());
+        ctx.app_state.settings.active_auth_profile = Some("codex".to_string());
+        ctx.app_state
+            .settings
+            .auth_profiles
+            .insert("codex".to_string(), profile);
+        ctx.app_state.settings.available_models = cc_config::settings::codex_model_ids();
+        ctx.app_state.settings.model_capabilities = cc_config::settings::codex_model_capabilities();
+    }
+
     #[test]
     fn test_model_supports_fast() {
-        assert!(model_supports_fast("gpt-5.5"));
-        assert!(!model_supports_fast("claude-sonnet-4-20250514"));
-        assert!(!model_supports_fast("claude-haiku-4-5"));
+        let mut ctx = test_ctx();
+        add_codex_capabilities(&mut ctx);
+        assert!(model_supports_fast(&ctx, "gpt-5.5"));
+        assert!(!model_supports_fast(&ctx, "gpt-5.4-mini"));
+        assert!(!model_supports_fast(&ctx, "claude-haiku-4-5"));
     }
 
     #[tokio::test]
     async fn test_toggle_enables_fast_mode() {
         let handler = FastHandler;
         let mut ctx = test_ctx();
+        add_codex_capabilities(&mut ctx);
         assert!(!ctx.app_state.fast_mode);
 
         let result = handler.execute("", &mut ctx).await.unwrap();
@@ -187,6 +238,7 @@ mod tests {
     async fn test_toggle_disables_fast_mode() {
         let handler = FastHandler;
         let mut ctx = test_ctx();
+        add_codex_capabilities(&mut ctx);
         ctx.app_state.fast_mode = true;
 
         let result = handler.execute("", &mut ctx).await.unwrap();
@@ -201,16 +253,17 @@ mod tests {
     async fn test_enable_auto_switches_model() {
         let handler = FastHandler;
         let mut ctx = test_ctx();
+        add_codex_capabilities(&mut ctx);
         ctx.app_state.main_loop_model = "legacy-non-fast-model".to_string();
-        assert!(!model_supports_fast(&ctx.app_state.main_loop_model));
+        assert!(!model_supports_fast(&ctx, &ctx.app_state.main_loop_model));
 
         let result = handler.execute("on", &mut ctx).await.unwrap();
         assert!(ctx.app_state.fast_mode);
-        assert_eq!(ctx.app_state.main_loop_model, cc_models::MOTA_MODEL_ID);
+        assert_eq!(ctx.app_state.main_loop_model, "gpt-5.5");
         match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("switched"));
-                assert!(text.contains(cc_models::MOTA_MODEL_ID));
+                assert!(text.contains("gpt-5.5"));
             }
             _ => panic!("Expected Output"),
         }
@@ -220,6 +273,7 @@ mod tests {
     async fn test_enable_already_enabled() {
         let handler = FastHandler;
         let mut ctx = test_ctx();
+        add_codex_capabilities(&mut ctx);
         ctx.app_state.fast_mode = true;
 
         let result = handler.execute("on", &mut ctx).await.unwrap();
@@ -233,6 +287,7 @@ mod tests {
     async fn test_status_command() {
         let handler = FastHandler;
         let mut ctx = test_ctx();
+        add_codex_capabilities(&mut ctx);
 
         let result = handler.execute("status", &mut ctx).await.unwrap();
         match result {
@@ -248,6 +303,7 @@ mod tests {
     async fn test_disable_already_disabled() {
         let handler = FastHandler;
         let mut ctx = test_ctx();
+        add_codex_capabilities(&mut ctx);
 
         let result = handler.execute("off", &mut ctx).await.unwrap();
         match result {
@@ -260,6 +316,7 @@ mod tests {
     async fn test_unknown_argument() {
         let handler = FastHandler;
         let mut ctx = test_ctx();
+        add_codex_capabilities(&mut ctx);
 
         let result = handler.execute("turbo", &mut ctx).await.unwrap();
         match result {

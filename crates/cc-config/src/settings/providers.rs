@@ -32,6 +32,8 @@ pub struct ProviderProfileSettings {
     pub api_provider: Option<String>,
     pub model: Option<String>,
     pub available_models: Option<Vec<String>>,
+    pub model_capabilities: Option<HashMap<String, ModelCapabilitySettings>>,
+    pub model_reasoning_effort: Option<String>,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
     pub env: Option<HashMap<String, String>>,
@@ -49,11 +51,43 @@ impl ProviderProfileSettings {
                 .available_models
                 .as_ref()
                 .is_none_or(|models| models.is_empty())
+            && self
+                .model_capabilities
+                .as_ref()
+                .is_none_or(HashMap::is_empty)
+            && self.model_reasoning_effort.is_none()
             && self.base_url.is_none()
             && self.api_key.is_none()
             && self.env.as_ref().is_none_or(HashMap::is_empty)
             && self.auth_source.is_none()
             && self.extra.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ModelCapabilitySettings {
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub default_reasoning_level: Option<String>,
+    pub supported_reasoning_levels: Vec<String>,
+    pub context_window: Option<u64>,
+    pub max_context_window: Option<u64>,
+    pub effective_context_window_percent: Option<u8>,
+    pub supports_fast_mode: bool,
+    pub supports_reasoning_summaries: bool,
+    pub support_verbosity: bool,
+    pub supports_parallel_tool_calls: bool,
+    pub supports_image_detail_original: bool,
+    pub supports_search_tool: bool,
+    pub supported_in_api: bool,
+    pub input_modalities: Vec<String>,
+    pub service_tiers: Vec<String>,
+}
+
+impl ModelCapabilitySettings {
+    pub fn display_name_or<'a>(&'a self, model: &'a str) -> &'a str {
+        self.display_name.as_deref().unwrap_or(model)
     }
 }
 
@@ -72,6 +106,12 @@ pub(crate) fn merge_provider_profile(
     }
     if over.available_models.is_some() {
         base.available_models = over.available_models;
+    }
+    if over.model_capabilities.is_some() {
+        base.model_capabilities = over.model_capabilities;
+    }
+    if over.model_reasoning_effort.is_some() {
+        base.model_reasoning_effort = over.model_reasoning_effort;
     }
     if over.base_url.is_some() {
         base.base_url = over.base_url;
@@ -92,6 +132,157 @@ pub(crate) fn merge_provider_profile(
     for (k, v) in over.extra {
         base.extra.insert(k, v);
     }
+}
+
+pub fn codex_model_ids() -> Vec<String> {
+    [
+        "gpt-5.5",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-spark",
+        "gpt-5.2",
+    ]
+    .into_iter()
+    .map(ToOwned::to_owned)
+    .collect()
+}
+
+pub fn codex_model_capabilities() -> HashMap<String, ModelCapabilitySettings> {
+    codex_capability_entries()
+        .into_iter()
+        .map(|(id, capability)| (id.to_string(), capability))
+        .collect()
+}
+
+fn common_codex_capability(
+    display_name: &str,
+    description: &str,
+    default_reasoning_level: &str,
+    context_window: u64,
+    max_context_window: u64,
+    supports_fast_mode: bool,
+    supports_image_detail_original: bool,
+    supported_in_api: bool,
+    input_modalities: &[&str],
+) -> ModelCapabilitySettings {
+    ModelCapabilitySettings {
+        display_name: Some(display_name.to_string()),
+        description: Some(description.to_string()),
+        default_reasoning_level: Some(default_reasoning_level.to_string()),
+        supported_reasoning_levels: ["low", "medium", "high", "xhigh"]
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect(),
+        context_window: Some(context_window),
+        max_context_window: Some(max_context_window),
+        effective_context_window_percent: Some(95),
+        supports_fast_mode,
+        supports_reasoning_summaries: true,
+        support_verbosity: true,
+        supports_parallel_tool_calls: true,
+        supports_image_detail_original,
+        supports_search_tool: true,
+        supported_in_api,
+        input_modalities: input_modalities
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        service_tiers: if supports_fast_mode {
+            vec!["priority".to_string()]
+        } else {
+            Vec::new()
+        },
+    }
+}
+
+fn codex_capability_entries() -> Vec<(&'static str, ModelCapabilitySettings)> {
+    vec![
+        (
+            "gpt-5.5",
+            common_codex_capability(
+                "GPT-5.5",
+                "Frontier model for complex coding, research, and real-world work.",
+                "medium",
+                272_000,
+                272_000,
+                true,
+                true,
+                true,
+                &["text", "image"],
+            ),
+        ),
+        (
+            "gpt-5.4",
+            common_codex_capability(
+                "gpt-5.4",
+                "Strong model for everyday coding.",
+                "medium",
+                272_000,
+                1_000_000,
+                true,
+                true,
+                true,
+                &["text", "image"],
+            ),
+        ),
+        (
+            "gpt-5.4-mini",
+            common_codex_capability(
+                "GPT-5.4-Mini",
+                "Small, fast, and cost-efficient model for simpler coding tasks.",
+                "medium",
+                272_000,
+                272_000,
+                false,
+                true,
+                true,
+                &["text", "image"],
+            ),
+        ),
+        (
+            "gpt-5.3-codex",
+            common_codex_capability(
+                "gpt-5.3-codex",
+                "Coding-optimized model.",
+                "medium",
+                272_000,
+                272_000,
+                false,
+                true,
+                true,
+                &["text", "image"],
+            ),
+        ),
+        (
+            "gpt-5.3-codex-spark",
+            common_codex_capability(
+                "GPT-5.3-Codex-Spark",
+                "Ultra-fast coding model.",
+                "high",
+                128_000,
+                128_000,
+                false,
+                false,
+                false,
+                &["text"],
+            ),
+        ),
+        (
+            "gpt-5.2",
+            common_codex_capability(
+                "gpt-5.2",
+                "Optimized for professional work and long-running agents.",
+                "medium",
+                272_000,
+                272_000,
+                false,
+                false,
+                true,
+                &["text", "image"],
+            ),
+        ),
+    ]
 }
 
 pub fn upsert_auth_profile(

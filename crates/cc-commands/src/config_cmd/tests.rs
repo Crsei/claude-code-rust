@@ -35,7 +35,7 @@ async fn test_config_show() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn test_config_set_model_in_memory() {
+async fn test_config_set_model_is_read_only() {
     // Use a tempdir as CC_RUST_HOME so we don't clobber the real user file.
     let dir = tempfile::tempdir().unwrap();
     let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
@@ -47,24 +47,23 @@ async fn test_config_set_model_in_memory() {
         .unwrap();
     match result {
         CommandResult::Output(text) => {
-            assert!(text.contains("claude-opus"));
-            assert!(text.contains("persisted"));
+            assert!(text.contains("read-only"));
+            assert!(text.contains("/model"));
         }
         _ => panic!("Expected Output result"),
     }
-    assert_eq!(ctx.app_state.main_loop_model, "claude-opus");
-    assert!(dir.path().join("settings.json").exists());
+    assert_ne!(ctx.app_state.main_loop_model, "claude-opus");
+    assert!(!dir.path().join("settings.json").exists());
 }
 
 #[tokio::test]
-async fn test_config_set_model_rejects_removed_legacy_alias() {
+async fn test_config_set_model_rejects_write_entry() {
     let handler = ConfigHandler;
     let mut ctx = test_ctx();
-    let result = handler.execute("set model sonnet", &mut ctx).await;
-
+    let result = handler.execute("set model sonnet", &mut ctx).await.unwrap();
     match result {
-        Ok(_) => panic!("legacy alias should be rejected"),
-        Err(err) => assert!(err.to_string().contains("Legacy model alias")),
+        CommandResult::Output(text) => assert!(text.contains("read-only")),
+        _ => panic!("Expected Output result"),
     }
     assert_ne!(ctx.app_state.main_loop_model, "sonnet");
 }
@@ -83,16 +82,10 @@ async fn test_config_set_model_reasoning_effort() {
     let CommandResult::Output(text) = result else {
         panic!("expected output")
     };
-    assert!(text.contains("Codex reasoning effort set to: xhigh"));
-    assert_eq!(
-        ctx.app_state.settings.model_reasoning_effort.as_deref(),
-        Some("xhigh")
-    );
-
-    let settings: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(dir.path().join("settings.json")).unwrap())
-            .unwrap();
-    assert_eq!(settings["model_reasoning_effort"], "xhigh");
+    assert!(text.contains("read-only"));
+    assert!(text.contains("/effort"));
+    assert!(ctx.app_state.settings.model_reasoning_effort.is_none());
+    assert!(!dir.path().join("settings.json").exists());
 }
 
 #[tokio::test]
