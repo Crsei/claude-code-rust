@@ -1,11 +1,12 @@
 ---
 source: crates/claude-code-rs/src/ui/command_palette/tests.rs
+assertion_line: 275
 expression: "render_palette_snapshot(\"/\", &cwd, 100, 12, &[KeyCode::PageDown])"
 ---
 "┌ Commands ────────────────────────────────────────────────────────────────────────────────────────┐"
 "│Commands                          Command details                                                 │"
 "│  ─ Builtin ─                                                                                     │"
-"│/daemon                           View/control daemon process                                     │"
+"│/debug                            Export or inspect debug information                             │"
 "│/diff                             Show git diff of current changes                                │"
 "│/doctor(diagnostics, diag)        Aggregated diagnostics (install, auth, sett...                  │"
 "│                                                                                                  │"

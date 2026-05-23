@@ -210,6 +210,7 @@ fn slash_command_surfaces_open_only_for_empty_interactive_commands() {
         "agents",
         "config",
         "diff",
+        "effort",
         "hooks",
         "login",
         "mcp",
@@ -460,11 +461,28 @@ fn config_surface_uses_tab_navigation_and_selection() {
 
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
-        CommandSurfaceOutcome::Submit("/config schema".to_string())
+        CommandSurfaceOutcome::FillPrompt("/config set theme ".to_string())
     );
     assert_eq!(
         surface.handle_key(key(KeyCode::Esc)),
         CommandSurfaceOutcome::Close
+    );
+}
+
+#[test]
+fn effort_command_opens_thinking_picker() {
+    let mut state = AppState::default();
+    state.effort_value = Some("high".into());
+    let cwd = std::env::current_dir().expect("current dir");
+    let mut surface =
+        CommandSurface::for_slash_command("effort", "", &state, &cwd).expect("surface");
+
+    let rendered = surface.render();
+    assert!(rendered.contains("Effort"));
+    assert!(rendered.contains("High - deeper thinking budget"));
+    assert_eq!(
+        surface.handle_key(key(KeyCode::Enter)),
+        CommandSurfaceOutcome::Submit("/config set effortLevel high".to_string())
     );
 }
 

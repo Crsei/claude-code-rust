@@ -379,6 +379,7 @@ fn test_sdk_to_agent_event_stream_message_start_returns_none() {
             usage: crate::types::message::Usage {
                 input_tokens: 0,
                 output_tokens: 0,
+                reasoning_output_tokens: 0,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
             },

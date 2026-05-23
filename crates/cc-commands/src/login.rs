@@ -611,6 +611,19 @@ fn persist_provider_selection(
             .sources
             .insert("backend".to_string(), settings::SettingsSource::User);
     }
+    let selected_model = if api_provider == settings::API_PROVIDER_OPENAI_CODEX {
+        let model = resolve_codex_default_model(ctx, &raw);
+        raw.model = Some(model.clone());
+        ctx.app_state.main_loop_model = model.clone();
+        ctx.app_state.settings.model = Some(model);
+        ctx.app_state
+            .settings
+            .sources
+            .insert("model".to_string(), settings::SettingsSource::User);
+        ctx.app_state.settings.model.clone()
+    } else {
+        None
+    };
     ctx.app_state.settings.api_provider = Some(api_provider.to_string());
     ctx.app_state
         .settings
@@ -619,10 +632,14 @@ fn persist_provider_selection(
 
     match settings::write_user_settings(&raw) {
         Ok(path) => Some(format!(
-            "Selected apiProvider={}{} (persisted to {}).",
+            "Selected apiProvider={}{}{} (persisted to {}).",
             api_provider,
             backend
                 .map(|value| format!(", backend={value}"))
+                .unwrap_or_default(),
+            selected_model
+                .as_deref()
+                .map(|value| format!(", model={value}"))
                 .unwrap_or_default(),
             path.display()
         )),
@@ -631,6 +648,32 @@ fn persist_provider_selection(
             error
         )),
     }
+}
+
+fn resolve_codex_default_model(ctx: &CommandContext, raw: &RawSettings) -> String {
+    std::env::var(cc_api::api::client::OPENAI_CODEX_MODEL_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            raw.env
+                .as_ref()
+                .and_then(|env| env.get(cc_api::api::client::OPENAI_CODEX_MODEL_ENV))
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .or_else(|| {
+            raw.model
+                .as_deref()
+                .or(ctx.app_state.settings.model.as_deref())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .or_else(|| {
+            cc_api::api::providers::get_provider(settings::API_PROVIDER_OPENAI_CODEX)
+                .map(|provider| provider.default_model.to_string())
+        })
+        .unwrap_or_else(cc_models::default_model_id)
 }
 
 fn mask_secret(value: &str) -> String {
@@ -811,5 +854,40 @@ mod tests {
             Some(v) => std::env::set_var("CODEX_HOME", v),
             None => std::env::remove_var("CODEX_HOME"),
         }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_codex_provider_selection_syncs_backend_and_model() {
+        let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let dir = tempfile::TempDir::new().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let _model = EnvGuard::set("OPENAI_CODEX_MODEL", Some("gpt-codex-test"));
+        let mut ctx = test_ctx();
+        ctx.app_state.main_loop_model = "deepseek-v4-pro".to_string();
+
+        let msg = persist_provider_selection(
+            settings::API_PROVIDER_OPENAI_CODEX,
+            Some("codex"),
+            &mut ctx,
+        )
+        .expect("message");
+
+        assert!(msg.contains("apiProvider=openai-codex"));
+        assert!(msg.contains("backend=codex"));
+        assert!(msg.contains("model=gpt-codex-test"));
+        assert_eq!(ctx.app_state.main_loop_backend, "codex");
+        assert_eq!(ctx.app_state.main_loop_model, "gpt-codex-test");
+
+        let raw: RawSettings = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            raw.api_provider.as_deref(),
+            Some(settings::API_PROVIDER_OPENAI_CODEX)
+        );
+        assert_eq!(raw.backend.as_deref(), Some("codex"));
+        assert_eq!(raw.model.as_deref(), Some("gpt-codex-test"));
     }
 }

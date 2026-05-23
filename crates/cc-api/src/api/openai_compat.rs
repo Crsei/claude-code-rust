@@ -27,6 +27,15 @@ use cc_types::message::{ContentBlock, MessageDelta, StreamEvent, Usage};
 // Message format conversion (Anthropic 鈫?OpenAI)
 // ---------------------------------------------------------------------------
 
+fn reasoning_output_tokens_from_usage(usage: &Value) -> u64 {
+    usage
+        .get("completion_tokens_details")
+        .or_else(|| usage.get("output_tokens_details"))
+        .and_then(|details| details.get("reasoning_tokens"))
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0)
+}
+
 /// Extract text from Anthropic system prompt blocks.
 ///
 /// System blocks look like: `[{"type": "text", "text": "Be helpful."}]`
@@ -850,11 +859,14 @@ where
                                     .and_then(|v| v.as_u64())
                                     .unwrap_or(0);
                                 if input > 0 || output > 0 {
+                                    let reasoning_output =
+                                        reasoning_output_tokens_from_usage(usage);
                                     yield StreamEvent::MessageDelta {
                                         delta: MessageDelta { stop_reason: None },
                                         usage: Some(Usage {
                                             input_tokens: input,
                                             output_tokens: output,
+                                            reasoning_output_tokens: reasoning_output,
                                             ..Usage::default()
                                         }),
                                     };
@@ -1049,11 +1061,13 @@ where
                         .and_then(|v| v.as_u64())
                         .unwrap_or(0);
                     if input > 0 || output > 0 {
+                        let reasoning_output = reasoning_output_tokens_from_usage(usage);
                         yield StreamEvent::MessageDelta {
                             delta: MessageDelta { stop_reason: None },
                             usage: Some(Usage {
                                 input_tokens: input,
                                 output_tokens: output,
+                                reasoning_output_tokens: reasoning_output,
                                 ..Usage::default()
                             }),
                         };
@@ -1458,6 +1472,9 @@ mod tests {
                         "usage": {
                             "input_tokens": 10,
                             "output_tokens": 5,
+                            "output_tokens_details": {
+                                "reasoning_tokens": 2
+                            }
                         }
                     }
                 })
@@ -1484,6 +1501,7 @@ mod tests {
         let usage = message.usage.expect("usage should be captured");
         assert_eq!(usage.input_tokens, 10);
         assert_eq!(usage.output_tokens, 5);
+        assert_eq!(usage.reasoning_output_tokens, 2);
     }
 
     #[tokio::test]

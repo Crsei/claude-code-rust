@@ -1,6 +1,6 @@
 ---
 source: crates/claude-code-rs/src/ui/command_surface/tests.rs
-assertion_line: 479
+assertion_line: 525
 expression: "rendered.join(\"\\n\\n\")"
 ---
 -- status --
@@ -81,8 +81,8 @@ expression: "rendered.join(\"\\n\\n\")"
 |   Usage                                    Set custom output style      fill prompt with /config set outputStyle                         |
 | > Output                                   Enable vim editor mode       current editorMode=normal                                        |
 |   Language                                 Use normal editor mode       current editorMode=normal                                        |
-|   Thinking                                 Enable terminal progress bar current terminalProgressBarEnabled=not set                       |
-|   Safety                                   Disable terminal progress bar current terminalProgressBarEnabled=not set                      |
+|   Thinking                                                                                                                               |
+|   Safety                                                                                                                                 |
 |   Config                                                                                                                                 |
 |------------------------------------------------------------------------------------------------------------------------------------------|
 | Left/Right section | Up/Down navigate | Enter select | Esc close                                                                         |
@@ -95,8 +95,8 @@ expression: "rendered.join(\"\\n\\n\")"
 |   Status                                 > Set response language        current language=English                                         |
 |   Model                                    Use English                  current language=English                                         |
 |   Theme                                    Use Chinese                  current language=English                                         |
-|   Usage                                    Enable voice input           current voiceEnabled=not set                                     |
-|   Output                                   Disable voice input          current voiceEnabled=not set                                     |
+|   Usage                                                                                                                                  |
+|   Output                                                                                                                                 |
 | > Language                                                                                                                               |
 |   Thinking                                                                                                                               |
 |   Safety                                                                                                                                 |
@@ -127,8 +127,8 @@ expression: "rendered.join(\"\\n\\n\")"
 |------------------------------------------------------------------------------------------------------------------------------------------|
 | Sections                                 Safety                                                                                          |
 |   Status                                 > Review setting sources       managed/user/project/local provenance                            |
-|   Model                                    Review raw layers            inspect managed/user/project/local JSON                          |
-|   Theme                                    Review settings schema       supported settings and validation shape                          |
+|   Model                                                                                                                                  |
+|   Theme                                                                                                                                  |
 |   Usage                                                                                                                                  |
 |   Output                                                                                                                                 |
 |   Language                                                                                                                               |

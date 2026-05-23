@@ -475,7 +475,6 @@ for event in streamed.events:
 
 | 命令 | 别名 | 说明 | 依赖 Feature |
 |------|------|------|-------------|
-| `/brief` | — | 切换 Brief 输出模式 (on/off/status) | `KAIROS_BRIEF` |
 | `/sleep` | — | 设置 proactive 休眠时长 (秒) | `PROACTIVE` |
 | `/assistant` | `/kairos` | 查看助手模式状态 | `KAIROS` |
 | `/daemon` | — | 查看/控制 daemon 进程 (status/stop) | `KAIROS` |

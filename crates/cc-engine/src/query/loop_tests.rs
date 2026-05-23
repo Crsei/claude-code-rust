@@ -459,6 +459,7 @@ fn make_text_response_with_stop_and_output_tokens(
             usage: Some(Usage {
                 input_tokens: 100,
                 output_tokens,
+                reasoning_output_tokens: 0,
                 cache_read_input_tokens: 0,
                 cache_creation_input_tokens: 0,
             }),
@@ -471,6 +472,7 @@ fn make_text_response_with_stop_and_output_tokens(
         usage: Usage {
             input_tokens: 100,
             output_tokens,
+            reasoning_output_tokens: 0,
             cache_read_input_tokens: 0,
             cache_creation_input_tokens: 0,
         },

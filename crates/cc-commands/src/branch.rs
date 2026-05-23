@@ -51,24 +51,19 @@ impl CommandHandler for BranchHandler {
             None,
         )?;
 
-        let short = short_id(outcome.new_session_id.as_str());
+        let parent_session_id = outcome.parent_session_id.clone();
+        let new_session_id_text = outcome.new_session_id.clone();
+        let binary = current_binary_name();
         let lines = [
-            format!("Forked session -> {}.", outcome.new_session_id),
-            format!("  parent:      {}", outcome.parent_session_id),
             format!(
-                "  fork point:  {}",
-                outcome
-                    .forked_at_uuid
-                    .as_deref()
-                    .unwrap_or("(none — empty conversation)")
+                "Branched conversation. You are now in the new branch (session {}).",
+                new_session_id_text
             ),
             format!(
-                "  copied:      {} transcript entries",
-                outcome.copied_entry_count
+                "Use /resume {} to return to the original conversation.",
+                parent_session_id
             ),
-            format!("  title:       {}", outcome.title),
-            String::new(),
-            format!("Switched to fork `{}`.", short),
+            format!("From a terminal, run: {} -r {}", binary, parent_session_id),
         ];
 
         ctx.session_id = new_session_id.clone();
@@ -81,10 +76,22 @@ impl CommandHandler for BranchHandler {
     }
 }
 
-/// Truncate a UUID-like session ID to its first 8 characters, which is enough
-/// to disambiguate forks in the user-facing resume hint.
+#[cfg(test)]
 fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
+}
+
+fn current_binary_name() -> String {
+    std::env::args()
+        .next()
+        .and_then(|arg| {
+            std::path::Path::new(&arg)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string)
+        })
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| "cc-rust".to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -182,8 +189,16 @@ mod tests {
             _ => panic!("expected SwitchSession"),
         };
 
-        assert!(text.starts_with("Forked session"), "got: {}", text);
-        assert!(text.contains("Switched to fork"));
+        assert!(text.starts_with("Branched conversation."), "got: {}", text);
+        assert!(text.contains("You are now in the new branch"));
+        assert!(
+            text.contains("-r"),
+            "terminal resume command missing: {text}"
+        );
+        assert!(
+            !text.contains("Forked session ->"),
+            "internal fork details leaked: {text}"
+        );
         assert!(text.contains(parent_id), "parent id missing: {}", text);
         assert_eq!(session_id, ctx.session_id);
         assert_eq!(messages.len(), ctx.messages.len());

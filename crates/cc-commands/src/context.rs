@@ -49,7 +49,7 @@ fn render_bar(percent: f32, width: usize) -> String {
 
 fn render_tui(report: &ContextAnalysis) -> String {
     let mut lines: Vec<String> = Vec::new();
-    lines.push("## Context Usage".into());
+    lines.push("## Estimated Conversation Context".into());
     lines.push(String::new());
     lines.push(format!("**Model:** {}", report.model));
     lines.push(format!(
@@ -92,12 +92,20 @@ fn render_tui(report: &ContextAnalysis) -> String {
         ));
     }
     lines.push(String::new());
+    if !report.unavailable_categories.is_empty() {
+        lines.push(format!(
+            "Unavailable in this command context: {}.",
+            report.unavailable_categories.join(", ")
+        ));
+    }
     lines.push(
-        "Note: token counts are estimated with the standard ~4-chars/token \
-         heuristic. Snip + microcompact are simulated; the async \
-         tool-result-budget pass is skipped."
+        "Note: estimated conversation context only. Snip + microcompact are \
+         simulated; the async tool-result-budget pass is skipped."
             .into(),
     );
+    for note in &report.estimation_notes {
+        lines.push(format!("Note: {note}"));
+    }
     lines.join("\n")
 }
 
@@ -106,7 +114,7 @@ impl CommandHandler for ContextHandler {
     async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
         let mode = args.trim().to_ascii_lowercase();
         let hook_results_str = if ctx.app_state.hooks.is_empty() {
-            None
+            Some(String::new())
         } else {
             serde_json::to_string(&ctx.app_state.hooks).ok()
         };
@@ -174,9 +182,10 @@ mod tests {
         let result = handler.execute("", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
-                assert!(text.contains("Context Usage"));
+                assert!(text.contains("Estimated Conversation Context"));
                 assert!(text.contains("Breakdown"));
                 assert!(text.contains("free"));
+                assert!(text.contains("Unavailable"));
             }
             _ => panic!("Expected Output result"),
         }
@@ -193,7 +202,7 @@ mod tests {
         let result = handler.execute("", &mut ctx).await.unwrap();
         match result {
             CommandResult::Output(text) => {
-                assert!(text.contains("Context Usage"));
+                assert!(text.contains("Estimated Conversation Context"));
                 assert!(text.contains("messages"));
                 assert!(text.contains(&ctx.app_state.main_loop_model));
             }
@@ -215,6 +224,8 @@ mod tests {
             serde_json::from_str(&text).expect("/context json must emit valid JSON");
         assert!(parsed.get("model").is_some());
         assert!(parsed.get("context_window").is_some());
+        assert!(parsed.get("estimation_notes").is_some());
+        assert!(parsed.get("unavailable_categories").is_some());
         let total_used = parsed.get("total_used").unwrap().as_u64().unwrap();
         assert!(total_used > 0);
         let total_pct = parsed.get("total_percent").unwrap().as_f64().unwrap();

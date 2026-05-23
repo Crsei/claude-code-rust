@@ -1805,6 +1805,7 @@ impl crate::api::stream_provider::StreamProvider for PartialThenErrorStreamProvi
                 usage: cc_types::message::Usage {
                     input_tokens: 11,
                     output_tokens: 0,
+                    reasoning_output_tokens: 0,
                     cache_read_input_tokens: 0,
                     cache_creation_input_tokens: 0,
                 },
@@ -1954,6 +1955,7 @@ async fn messages_collects_stream_events_into_assistant_message() {
                     usage: cc_types::message::Usage {
                         input_tokens: 11,
                         output_tokens: 0,
+                        reasoning_output_tokens: 0,
                         cache_read_input_tokens: 0,
                         cache_creation_input_tokens: 0,
                     },
@@ -1980,6 +1982,7 @@ async fn messages_collects_stream_events_into_assistant_message() {
                     usage: Some(cc_types::message::Usage {
                         input_tokens: 0,
                         output_tokens: 7,
+                        reasoning_output_tokens: 0,
                         cache_read_input_tokens: 0,
                         cache_creation_input_tokens: 0,
                     }),

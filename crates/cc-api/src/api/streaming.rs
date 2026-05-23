@@ -336,6 +336,9 @@ impl StreamAccumulator {
                     if u.output_tokens > 0 {
                         self.usage.output_tokens = u.output_tokens;
                     }
+                    if u.reasoning_output_tokens > 0 {
+                        self.usage.reasoning_output_tokens = u.reasoning_output_tokens;
+                    }
                 }
             }
             _ => {}
@@ -711,6 +714,7 @@ mod tests {
             usage: Usage {
                 input_tokens: 42,
                 output_tokens: 0,
+                reasoning_output_tokens: 0,
                 cache_read_input_tokens: 3,
                 cache_creation_input_tokens: 2,
             },
@@ -774,6 +778,7 @@ mod tests {
             usage: Some(Usage {
                 input_tokens: 0,
                 output_tokens: 9,
+                reasoning_output_tokens: 0,
                 cache_read_input_tokens: 0,
                 cache_creation_input_tokens: 0,
             }),

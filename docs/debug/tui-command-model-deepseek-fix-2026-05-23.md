@@ -1,0 +1,136 @@
+# TUI 命令显示、模型切换与 DeepSeek 兼容修复记录
+
+日期：2026-05-23
+
+## 背景
+
+本轮修复集中处理 Rust TUI 中若干命令显示、配置同步和 Anthropic-compatible 网关兼容问题：
+
+- `/branch` 成功后展示内部 fork 细节，用户不容易知道如何回到父会话。
+- `/effort` 无参数只打印帮助，无法像交互面板一样选择 thinking effort。
+- `/cost` token 汇总不够紧凑，且没有展示 OpenAI/Codex/compatible provider 返回的 reasoning token。
+- `/login codex` 或 Codex CLI import 后，live backend 已切到 Codex，但 footer、`/model` 和下一次请求模型仍可能沿用旧的 `deepseek-v4-pro`。
+- DeepSeek Anthropic-compatible 网关会因历史 assistant thinking block 回放返回 `content[].thinking must be passed back`。
+- `/context` 把缺失的 system prompt/tools schema 显示成 0，容易被理解成真实 API view。
+- `/config` surface 中存在当前无真实运行价值或容易误导的项。
+- `/brief` 仍作为可发现命令暴露，但本阶段暂时不希望用户入口使用它。
+
+## 修复内容
+
+### `/branch`
+
+- 成功提示改为面向用户的文案：
+  `Branched conversation. You are now in the new branch (session <new>).`
+- 提示中包含 `/resume <parent>` 和当前二进制 `-r <parent>` 的恢复方式。
+- 不再展示 `Forked session ->`、copied transcript entries、title 等内部 fork 信息。
+- 保持原有 `SwitchSession` 行为，fork 后后续消息进入新 session。
+
+### `/effort`
+
+- TUI 中输入 `/effort` 无参数会打开 Thinking/Effort picker。
+- `/effort <low|medium|high|auto|max|number>` 会同步更新：
+  - live `AppState.effort_value`
+  - live `settings.effortLevel`
+  - user settings 文件中的 `effortLevel`
+- `/config` Thinking picker 仍提交 `/config set effortLevel <id>`，并在描述中标明当前值和选择后立即生效。
+
+### `/cost`
+
+- 首行改为紧凑格式：
+  `Token usage: total=<input+output> input=<input> (+ <cached> cached) output=<output>`
+- 保留 API calls、cache read、cache creation、estimated cost 等明细行。
+- `cc_types::message::Usage` 新增 `reasoning_output_tokens`，默认 0。
+- OpenAI/Codex/compatible SSE usage 中的 `completion_tokens_details.reasoning_tokens` 或 `output_tokens_details.reasoning_tokens` 会被解析并在 `/cost` 中显示。
+
+### Codex 登录与模型同步
+
+- `/login codex`、Codex CLI import、OpenAI Codex OAuth 完成后同步设置：
+  - `apiProvider=openai-codex`
+  - `backend=codex`
+  - live `main_loop_model`
+  - persisted `model`
+- Codex 默认模型优先级：
+  1. 进程环境 `OPENAI_CODEX_MODEL`
+  2. user settings `env.OPENAI_CODEX_MODEL`
+  3. settings 中已有 `model`
+  4. Codex provider 默认模型
+
+### DeepSeek Anthropic-compatible thinking 回放
+
+- 非官方 Anthropic-compatible 请求继续清理：
+  - top-level `thinking`
+  - `context_management`
+  - prompt-cache 扩展字段
+  - assistant `thinking` / `redacted_thinking` content blocks
+- 这覆盖 TUI streaming 产生的空 thinking block，避免 DeepSeek 网关在后续 `/anthropic` 请求中报 `content[].thinking must be passed back`。
+- 官方 Anthropic 请求路径不改变，仍保留 signed thinking 回传能力。
+
+### `/context`
+
+- 文案改成 `Estimated Conversation Context`。
+- 默认输出不再把缺失的 system prompt/tools schema 显示为真实 0。
+- JSON 输出新增：
+  - `unavailable_categories`
+  - `estimation_notes`
+- 分类中使用 `cached input`、`hook results`、`free` 等估算口径。
+
+### `/config`
+
+- 隐藏以下 surface 项：
+  - voice 开关
+  - terminal progress bar
+  - raw/schema 重复入口
+- 保留：
+  - Status
+  - Model
+  - Theme
+  - Thinking
+  - Usage
+  - Output style
+  - Language
+  - Safety sources
+
+### `/brief`
+
+- 从默认 command registry 移除 `/brief`，因此 slash completion、command palette、help/CLI reference 不再暴露它。
+- 保留 `brief.rs` 和 runtime adapter，避免破坏 Kairos/历史内部能力。
+
+## 主要文件
+
+- `crates/cc-commands/src/branch.rs`
+- `crates/cc-commands/src/effort.rs`
+- `crates/cc-commands/src/cost.rs`
+- `crates/cc-commands/src/context.rs`
+- `crates/cc-commands/src/login.rs`
+- `crates/cc-commands/src/login_code.rs`
+- `crates/cc-commands/src/lib.rs`
+- `crates/cc-types/src/message.rs`
+- `crates/cc-api/src/api/openai_compat.rs`
+- `crates/cc-api/src/api/streaming.rs`
+- `crates/cc-compact/src/context_analysis.rs`
+- `crates/claude-code-rs/src/ui/command_surface/`
+- `crates/claude-code-rs/src/ui/command_palette/`
+- `docs/USAGE_GUIDE.md`
+
+## 验证
+
+已通过：
+
+```bash
+cargo fmt --all --check
+git diff --check
+cargo test -p cc-commands branch
+cargo test -p cc-commands effort
+cargo test -p cc-commands cost
+cargo test -p cc-commands context
+cargo test -p cc-commands login
+cargo test -p cc-api compatible_anthropic
+cargo test -p cc-api test_parse_codex_responses_text_stream
+cargo test -p claude-code-rs command_surface
+cargo test -p claude-code-rs command_palette
+cargo test -p cc-compact context_analysis
+cargo test -p cc-engine --no-run
+cargo build --workspace --release
+```
+
+未执行真实 DeepSeek 手动 smoke；该项需要可用的 DeepSeek Anthropic-compatible 凭据和运行时配置。

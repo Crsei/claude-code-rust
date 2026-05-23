@@ -1,18 +1,18 @@
 ---
 source: crates/claude-code-rs/src/ui/command_surface/tests.rs
-assertion_line: 341
+assertion_line: 385
 expression: "rendered.join(\"\\n\\n\")"
 ---
 -- tool-selected --
 [2 tasks, 0 pending, 2 running, 0 succeeded, 0 failed, 0 canceled] Enter to view
 
 Background tasks (2)
-> cargo test         shell     running     3.2s [█████     ] running tests
-  builder (ui-port)  teammate  running      0ms [          ] implementing task panel
+> ● cargo test         shell     running   worked for   3.2s [█████     ] running tests
+  ● builder (ui-port)  teammate  running   worked for    0ms [          ] implementing task panel
 Enter details | k/s stop | d delete tool | r refresh | Esc close
 
-[running] | 3.2s | cargo test(shell) | 1/2 [█████     ] | running tests
-[running] | 0ms | builder (ui-port)(teammate) | implementing task panel
+  ● cargo test(shell) | [running] | worked for 3.2s | 1/2 [█████     ] | running tests
+  ● builder (ui-port)(teammate) | [running] | worked for 0ms | implementing task panel
 
 o/Right details | Enter show | k/s stop | d delete tool | r refresh | Esc close
 
@@ -20,11 +20,11 @@ o/Right details | Enter show | k/s stop | d delete tool | r refresh | Esc close
 [2 tasks, 0 pending, 2 running, 0 succeeded, 0 failed, 0 canceled] Enter to view
 
 Background tasks (2)
-  cargo test         shell     running     3.2s [█████     ] running tests
-> builder (ui-port)  teammate  running      0ms [          ] implementing task panel
+  ● cargo test         shell     running   worked for   3.2s [█████     ] running tests
+> ● builder (ui-port)  teammate  running   worked for    0ms [          ] implementing task panel
 Enter details | k/s stop | d delete tool | r refresh | Esc close
 
-[running] | 3.2s | cargo test(shell) | 1/2 [█████     ] | running tests
-[running] | 0ms | builder (ui-port)(teammate) | implementing task panel
+  ● cargo test(shell) | [running] | worked for 3.2s | 1/2 [█████     ] | running tests
+  ● builder (ui-port)(teammate) | [running] | worked for 0ms | implementing task panel
 
 o/Right details | Enter show | k/s stop | d delete tool | r refresh | Esc close

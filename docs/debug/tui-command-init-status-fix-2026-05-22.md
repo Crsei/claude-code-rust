@@ -239,6 +239,18 @@ cargo test -p cc-tools coordinator_policy_is_lead_only -- --nocapture
 
 ## 注意事项
 
+### 2026-05-23 回归修复：TUI 命令显示、模型切换与 DeepSeek thinking 回放
+
+- `/branch` 成功提示改为面向用户的 branch/resume 文案，不再暴露 `Forked session ->`、copied entries、title 等内部 fork 细节；提示中包含新 session、`/resume <parent>` 和当前二进制的 `-r <parent>` 终端恢复命令。
+- `/effort` 无参数在 Rust TUI 中打开 Thinking/Effort picker；带参数会同步 live `effort_value`、`settings.effortLevel` 并写入 user settings。
+- `/cost` 首行改为紧凑 token usage 汇总，并补充 OpenAI/Codex/compatible usage 中的 `reasoning_tokens` 解析与显示。
+- `/login codex`、Codex CLI import 与 OpenAI Codex OAuth 完成后，会同步 `apiProvider=openai-codex`、`backend=codex` 和 live model；模型优先级为 `OPENAI_CODEX_MODEL`、user settings `env.OPENAI_CODEX_MODEL`、settings `model`、Codex provider 默认模型。
+- 非官方 Anthropic-compatible 请求继续剥离 top-level thinking/cache/context-management 扩展，并剥离 assistant `thinking`/`redacted_thinking` blocks，包括 TUI streaming 产生的空 thinking block，避免 DeepSeek 网关报 `content[].thinking must be passed back`。
+- `/context` 文案改为 estimated conversation context，不再把缺失的 system prompt/tools schema 显示成真实 0；JSON 输出新增 `unavailable_categories` 和 `estimation_notes`。
+- `/config` surface 隐藏 voice 开关、terminal progress bar、raw/schema 重复入口，保留 Status、Model、Theme、Thinking、Usage、Output style、Language、Safety sources。
+- `/brief` 暂时从默认命令 registry、slash completion、command palette 和 CLI reference 中隐藏；底层 `brief.rs` 与 runtime adapter 保留，避免破坏 Kairos/历史内部能力。
+- 本轮更新 snapshot：command palette argument help/page-down、config surface、task surface（同步现有任务 bullet/耗时渲染）。
+
 - `/advisor` 只是从可见命令发现入口隐藏，不应删除 handler 或破坏直接执行。
 - 已有 `CLAUDE.md` 内容必须保留。
 - 状态栏里的“模型、工作区”按完整模型 ID 和完整工作区路径处理。

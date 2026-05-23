@@ -235,6 +235,7 @@ mod tests {
             usage: Some(Usage {
                 input_tokens,
                 output_tokens,
+                reasoning_output_tokens: 0,
                 cache_read_input_tokens: cache_read,
                 cache_creation_input_tokens: cache_create,
             }),

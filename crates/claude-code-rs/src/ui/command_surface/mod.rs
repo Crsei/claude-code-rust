@@ -73,6 +73,7 @@ impl CommandSurface {
             "agents" => Some(Self::Agents(AgentsSurface::new(cwd))),
             "config" => Some(Self::Config(ConfigSurface::new(state))),
             "diff" => Some(Self::Diff(DiffSurface::new(cwd))),
+            "effort" => Some(Self::Config(ConfigSurface::new_thinking_picker(state))),
             "hooks" => Some(Self::Hooks(HooksSurface::new(&state.hooks))),
             "login" => Some(Self::Login(LoginSurface::new())),
             "mcp" => Some(Self::Mcp(McpSurface::new(cwd))),

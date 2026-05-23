@@ -335,6 +335,7 @@ fn test_usage_tracking() {
     let api_usage = Usage {
         input_tokens: 100,
         output_tokens: 50,
+        reasoning_output_tokens: 0,
         cache_read_input_tokens: 10,
         cache_creation_input_tokens: 5,
     };

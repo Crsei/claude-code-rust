@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use cc_config::settings::{self, RawSettings};
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 use cc_engine::effort::{
@@ -64,10 +65,47 @@ impl CommandHandler for EffortHandler {
         };
 
         ctx.app_state.effort_value = Some(stored.clone());
+        ctx.app_state.settings.effort_level = Some(stored.clone());
+        ctx.app_state
+            .settings
+            .sources
+            .insert("effortLevel".to_string(), settings::SettingsSource::User);
+
+        let persist_msg = persist_user_effort_level(&stored);
         Ok(CommandResult::Output(format!(
-            "Effort set to: {}",
-            budget_summary(Some(&stored))
+            "Effort set to: {}\n{}",
+            budget_summary(Some(&stored)),
+            persist_msg
         )))
+    }
+}
+
+fn persist_user_effort_level(value: &str) -> String {
+    let path = settings::user_settings_path();
+    let mut raw = if path.exists() {
+        match std::fs::read_to_string(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|txt| serde_json::from_str::<RawSettings>(&txt).map_err(anyhow::Error::from))
+        {
+            Ok(raw) => raw,
+            Err(error) => {
+                return format!(
+                    "Effort updated for this session, but user settings were not updated: {}",
+                    error
+                );
+            }
+        }
+    } else {
+        RawSettings::default()
+    };
+
+    raw.effort_level = Some(value.to_string());
+    match settings::write_user_settings(&raw) {
+        Ok(path) => format!("-> persisted effortLevel={} to {}", value, path.display()),
+        Err(error) => format!(
+            "Effort updated for this session, but user settings were not updated: {}",
+            error
+        ),
     }
 }
 
@@ -77,6 +115,28 @@ mod tests {
     use cc_bootstrap::SessionId;
     use cc_engine::types::app_state::AppState;
     use std::path::PathBuf;
+
+    struct HomeGuard {
+        previous: Option<String>,
+    }
+
+    impl HomeGuard {
+        fn temp() -> (tempfile::TempDir, Self) {
+            let dir = tempfile::tempdir().unwrap();
+            let previous = std::env::var("CC_RUST_HOME").ok();
+            std::env::set_var("CC_RUST_HOME", dir.path());
+            (dir, Self { previous })
+        }
+    }
+
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("CC_RUST_HOME", value),
+                None => std::env::remove_var("CC_RUST_HOME"),
+            }
+        }
+    }
 
     fn test_ctx() -> CommandContext {
         CommandContext {
@@ -105,7 +165,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_effort_set_numeric_override() {
+        let (_dir, _guard) = HomeGuard::temp();
         let handler = EffortHandler;
         let mut ctx = test_ctx();
         let result = handler.execute("12000", &mut ctx).await.unwrap();
@@ -132,7 +194,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_effort_set_valid_level() {
+        let (dir, _guard) = HomeGuard::temp();
         let handler = EffortHandler;
         let mut ctx = test_ctx();
         let result = handler.execute("high", &mut ctx).await.unwrap();
@@ -141,10 +205,17 @@ mod tests {
             _ => panic!("Expected Output"),
         }
         assert_eq!(ctx.app_state.effort_value.as_deref(), Some("high"));
+        let settings: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(settings["effortLevel"], "high");
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_effort_set_auto() {
+        let (_dir, _guard) = HomeGuard::temp();
         let handler = EffortHandler;
         let mut ctx = test_ctx();
         let result = handler.execute("auto", &mut ctx).await.unwrap();
@@ -159,7 +230,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_effort_set_max() {
+        let (_dir, _guard) = HomeGuard::temp();
         let handler = EffortHandler;
         let mut ctx = test_ctx();
         let result = handler.execute("MAX", &mut ctx).await.unwrap();
@@ -189,7 +262,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_effort_case_insensitive() {
+        let (_dir, _guard) = HomeGuard::temp();
         let handler = EffortHandler;
         let mut ctx = test_ctx();
         let _ = handler.execute("HIGH", &mut ctx).await.unwrap();

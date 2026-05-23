@@ -29,6 +29,8 @@ pub struct ContextAnalysis {
     pub messages_in: usize,
     pub messages_out: usize,
     pub categories: Vec<ContextCategory>,
+    pub unavailable_categories: Vec<String>,
+    pub estimation_notes: Vec<String>,
 }
 
 #[derive(Debug, Default)]
@@ -85,12 +87,23 @@ pub fn analyze_context_usage(input: ContextAnalysisInput<'_>) -> ContextAnalysis
 
     let mut rows: Vec<ContextCategory> = vec![
         row("messages", messages_tokens, context_window),
-        row("system prompt", system_tokens, context_window),
-        row("skills", skills_tokens, context_window),
-        row("files cached", files_tokens, context_window),
-        row("tools schema", tools_tokens, context_window),
+        row("cached input", files_tokens, context_window),
         row("hook results", hooks_tokens, context_window),
     ];
+    let mut unavailable_categories = Vec::new();
+    if input.system_prompt.is_some() {
+        rows.push(row("system prompt", system_tokens, context_window));
+    } else {
+        unavailable_categories.push("system prompt".to_string());
+    }
+    if input.skills_manifest.is_some() {
+        rows.push(row("skills", skills_tokens, context_window));
+    }
+    if input.tools_schema.is_some() {
+        rows.push(row("tools schema", tools_tokens, context_window));
+    } else {
+        unavailable_categories.push("tools schema".to_string());
+    }
     rows.sort_by(|a, b| b.tokens.cmp(&a.tokens));
     rows.push(row("free", free, context_window));
 
@@ -105,6 +118,14 @@ pub fn analyze_context_usage(input: ContextAnalysisInput<'_>) -> ContextAnalysis
         messages_in,
         messages_out,
         categories: rows,
+        unavailable_categories,
+        estimation_notes: vec![
+            "Token counts are estimated with the standard ~4-chars/token heuristic.".to_string(),
+            "This is an estimated conversation context view, not an exact provider API accounting."
+                .to_string(),
+            "System prompt and tools schema are only shown when the command context provides real values."
+                .to_string(),
+        ],
     }
 }
 
@@ -165,7 +186,13 @@ mod tests {
         assert_eq!(report.total_used, 0);
         assert_eq!(report.total_percent, 0.0);
         assert_eq!(report.context_window, 200_000);
-        assert_eq!(report.categories.len(), 7);
+        assert_eq!(report.categories.len(), 4);
+        assert!(report
+            .unavailable_categories
+            .contains(&"system prompt".to_string()));
+        assert!(report
+            .unavailable_categories
+            .contains(&"tools schema".to_string()));
         let free = report.categories.last().unwrap();
         assert_eq!(free.label, "free");
         assert_eq!(free.tokens, 200_000);
@@ -188,7 +215,7 @@ mod tests {
             "messages",
             "system prompt",
             "skills",
-            "files cached",
+            "cached input",
             "tools schema",
             "hook results",
             "free",
@@ -198,7 +225,7 @@ mod tests {
         let files = report
             .categories
             .iter()
-            .find(|c| c.label == "files cached")
+            .find(|c| c.label == "cached input")
             .unwrap();
         assert_eq!(files.tokens, 100);
         let non_free: u64 = report
@@ -291,6 +318,8 @@ mod tests {
             "compacted",
             "messages_in",
             "messages_out",
+            "unavailable_categories",
+            "estimation_notes",
         ] {
             assert!(json.get(k).is_some());
         }

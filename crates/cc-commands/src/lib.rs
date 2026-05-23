@@ -877,12 +877,6 @@ pub fn get_all_commands() -> Vec<Command> {
             model_add::ModelAddHandler,
         ),
         command(
-            "brief",
-            &[],
-            "Toggle Brief output mode (KAIROS)",
-            brief::BriefHandler,
-        ),
-        command(
             "sleep",
             &[],
             "Set proactive sleep duration",

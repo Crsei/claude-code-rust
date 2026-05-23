@@ -1,6 +1,6 @@
 ---
-source: crates/claude-code-rs/src/ui/components/command_palette/tests.rs
-assertion_line: 237
+source: crates/claude-code-rs/src/ui/command_palette/tests.rs
+assertion_line: 313
 expression: normalize_snapshot_text(rendered)
 ---
 ## /init
@@ -41,15 +41,9 @@ expression: normalize_snapshot_text(rendered)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /branch
 ┌ /branch arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /branch [title]                                                                                      │
+│Usage: /branch                                                                                              │
 │Example: /branch                                                                                            │
 │About: Fork the current conversation into a new branch                                                      │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-## /brief
-┌ /brief arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /brief [on|off|status]                                                                               │
-│Example: /brief on                                                                                          │
-│About: Toggle Brief output mode (KAIROS)                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /btw
 ┌ /btw arguments ────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -126,6 +120,12 @@ expression: normalize_snapshot_text(rendered)
 │Example: /daemon status                                                                                     │
 │About: View/control daemon process                                                                          │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+## /debug
+┌ /debug arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
+│Usage: /debug snapshot                                                                                      │
+│Example: /debug snapshot                                                                                    │
+│About: Export or inspect debug information                                                                  │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /diff
 ┌ /diff arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
 │Usage: /diff                                                                                                │
@@ -146,8 +146,8 @@ expression: normalize_snapshot_text(rendered)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /effort
 ┌ /effort arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /effort <low|medium|high>                                                                            │
-│Example: /effort medium                                                                                     │
+│Usage: /effort <low|medium|high|auto|max|token-count>                                                       │
+│Example: /effort                                                                                            │
 │About: Set the thinking effort level (low/medium/high)                                                      │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /exit

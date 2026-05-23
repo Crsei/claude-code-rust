@@ -100,8 +100,6 @@ impl ConfigSurface {
             .editor_mode
             .clone()
             .unwrap_or_else(|| "normal".to_string());
-        let voice = bool_setting_label(state.settings.voice_enabled);
-        let progress = bool_setting_label(state.settings.terminal_progress_bar_enabled);
         let fast_mode = if state.fast_mode {
             "true".to_string()
         } else {
@@ -162,14 +160,6 @@ impl ConfigSurface {
                                 .with_description(format!("current editorMode={editor}")),
                             FormOption::new("editor-normal", "Use normal editor mode")
                                 .with_description(format!("current editorMode={editor}")),
-                            FormOption::new("progress-on", "Enable terminal progress bar")
-                                .with_description(format!(
-                                    "current terminalProgressBarEnabled={progress}"
-                                )),
-                            FormOption::new("progress-off", "Disable terminal progress bar")
-                                .with_description(format!(
-                                    "current terminalProgressBarEnabled={progress}"
-                                )),
                         ],
                     ),
                     FormTab::new(
@@ -182,39 +172,32 @@ impl ConfigSurface {
                                 .with_description(format!("current language={language}")),
                             FormOption::new("language-zh", "Use Chinese")
                                 .with_description(format!("current language={language}")),
-                            FormOption::new("voice-on", "Enable voice input")
-                                .with_description(format!("current voiceEnabled={voice}")),
-                            FormOption::new("voice-off", "Disable voice input")
-                                .with_description(format!("current voiceEnabled={voice}")),
                         ],
                     ),
                     FormTab::new(
                         "thinking",
                         "Thinking",
                         vec![FormOption::new("picker", "Effort picker")
-                            .with_description(format!("thinking={thinking}; fastMode={fast_mode}"))
+                            .with_description(format!(
+                                "current effort={}; thinking={thinking}; fastMode={fast_mode}; selection applies immediately",
+                                state
+                                    .effort_value
+                                    .as_deref()
+                                    .or(state.settings.effort_level.as_deref())
+                                    .unwrap_or("auto")
+                            ))
                             .disabled()],
                     ),
                     FormTab::new(
                         "safety",
                         "Safety",
-                        vec![
-                            FormOption::new("sources", "Review setting sources")
-                                .with_description("managed/user/project/local provenance"),
-                            FormOption::new("raw", "Review raw layers")
-                                .with_description("inspect managed/user/project/local JSON"),
-                            FormOption::new("schema", "Review settings schema")
-                                .with_description("supported settings and validation shape"),
-                        ],
+                        vec![FormOption::new("sources", "Review setting sources")
+                            .with_description("managed/user/project/local provenance")],
                     ),
                     FormTab::new(
                         "config",
                         "Config",
                         vec![
-                            FormOption::new("raw", "Show raw layers")
-                                .with_description("managed/user/project/local settings"),
-                            FormOption::new("schema", "Show schema")
-                                .with_description("JSON schema for settings.json"),
                             FormOption::new("set-model", "Set custom model")
                                 .with_description("fill prompt with /config set model"),
                             FormOption::new("set-theme", "Set custom theme")
@@ -227,6 +210,19 @@ impl ConfigSurface {
             theme_picker: build_theme_picker(state),
             effort_picker: build_effort_picker(state),
         }
+    }
+
+    pub(crate) fn new_thinking_picker(state: &AppState) -> Self {
+        let mut surface = Self::new(state);
+        if let Some(index) = surface
+            .state
+            .tabs
+            .iter()
+            .position(|tab| tab.id == "thinking")
+        {
+            surface.state.active_tab = index;
+        }
+        surface
     }
 
     pub(crate) fn render(&self) -> String {

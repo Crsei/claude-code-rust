@@ -16,6 +16,7 @@ pub struct CostHandler;
 struct UsageStats {
     input_tokens: u64,
     output_tokens: u64,
+    reasoning_output_tokens: u64,
     cache_read_tokens: u64,
     cache_creation_tokens: u64,
     total_cost_usd: f64,
@@ -27,6 +28,7 @@ fn gather_usage(messages: &[Message]) -> UsageStats {
     let mut stats = UsageStats {
         input_tokens: 0,
         output_tokens: 0,
+        reasoning_output_tokens: 0,
         cache_read_tokens: 0,
         cache_creation_tokens: 0,
         total_cost_usd: 0.0,
@@ -41,6 +43,7 @@ fn gather_usage(messages: &[Message]) -> UsageStats {
             if let Some(ref usage) = a.usage {
                 stats.input_tokens += usage.input_tokens;
                 stats.output_tokens += usage.output_tokens;
+                stats.reasoning_output_tokens += usage.reasoning_output_tokens;
                 stats.cache_read_tokens += usage.cache_read_input_tokens;
                 stats.cache_creation_tokens += usage.cache_creation_input_tokens;
             }
@@ -88,8 +91,24 @@ impl CommandHandler for CostHandler {
 
         let total_tokens = stats.input_tokens + stats.output_tokens;
 
+        let cached_input = stats.cache_read_tokens + stats.cache_creation_tokens;
+
         let mut lines = Vec::new();
-        lines.push("Session usage:".into());
+        lines.push(format!(
+            "Token usage: total={} input={} (+ {} cached) output={}{}",
+            format_tokens(total_tokens),
+            format_tokens(stats.input_tokens),
+            format_tokens(cached_input),
+            format_tokens(stats.output_tokens),
+            if stats.reasoning_output_tokens > 0 {
+                format!(
+                    " (reasoning {})",
+                    format_tokens(stats.reasoning_output_tokens)
+                )
+            } else {
+                String::new()
+            },
+        ));
         lines.push(String::new());
         lines.push(format!("  API calls:       {}", stats.api_calls));
         lines.push(format!(
@@ -97,8 +116,16 @@ impl CommandHandler for CostHandler {
             format_tokens(stats.input_tokens)
         ));
         lines.push(format!(
-            "  Output tokens:   {}",
-            format_tokens(stats.output_tokens)
+            "  Output tokens:   {}{}",
+            format_tokens(stats.output_tokens),
+            if stats.reasoning_output_tokens > 0 {
+                format!(
+                    " (reasoning {})",
+                    format_tokens(stats.reasoning_output_tokens)
+                )
+            } else {
+                String::new()
+            },
         ));
 
         if stats.cache_read_tokens > 0 || stats.cache_creation_tokens > 0 {
@@ -112,10 +139,6 @@ impl CommandHandler for CostHandler {
             ));
         }
 
-        lines.push(format!(
-            "  Total tokens:    {}",
-            format_tokens(total_tokens)
-        ));
         lines.push(format!(
             "  Estimated cost:  {}",
             format_cost(stats.total_cost_usd)
@@ -142,6 +165,7 @@ mod tests {
             usage: Some(Usage {
                 input_tokens,
                 output_tokens,
+                reasoning_output_tokens: 0,
                 cache_read_input_tokens: 0,
                 cache_creation_input_tokens: 0,
             }),

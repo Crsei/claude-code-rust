@@ -34,11 +34,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         ),
         "assistant" => simple_meta("/assistant", &["/assistant"]),
         "audit-export" => simple_meta("/audit-export", &["/audit-export"]),
-        "branch" => simple_meta(
-            "/branch [title]",
-            &["/branch", "/branch try alternate approach"],
-        ),
-        "brief" => simple_meta("/brief [on|off|status]", &["/brief on"]),
+        "branch" => simple_meta("/branch", &["/branch"]),
         "btw" => simple_meta("/btw <question>", &["/btw explain the last error"]),
         "channels" => simple_meta("/channels [list|status]", &["/channels status"]),
         "chrome" => simple_meta("/chrome [status|reconnect|help]", &["/chrome reconnect"]),
@@ -53,7 +49,10 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "diff" => simple_meta("/diff", &["/diff"]),
         "doctor" => simple_meta("/doctor [summary|raw]", &["/doctor summary"]),
         "dream" => simple_meta("/dream [--days N]", &["/dream --days 7", "/logs"]),
-        "effort" => simple_meta("/effort <low|medium|high>", &["/effort medium"]),
+        "effort" => simple_meta(
+            "/effort <low|medium|high|auto|max|token-count>",
+            &["/effort", "/effort medium"],
+        ),
         "exit" => simple_meta("/exit", &["/exit", "/quit"]),
         "export" => simple_meta(
             "/export [list|path|session-id]",
