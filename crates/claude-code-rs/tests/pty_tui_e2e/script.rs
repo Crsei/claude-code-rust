@@ -65,6 +65,8 @@ pub enum TestStep {
     LoginSwitch(String),
     /// 断言输出中无 "panicked"。
     AssertNoPanic,
+    /// 批准权限对话框（发送 'y' 键，仅在屏幕上有权限文本时生效）。
+    ApproveDialog,
 }
 
 /// 可发送的快捷键。
@@ -157,6 +159,12 @@ pub struct TestCase {
     pub exit: ExitMethod,
     /// 全局超时。
     pub timeout: Duration,
+    /// 覆盖工作区目录（默认使用 `workspace()`）。
+    pub workspace: Option<String>,
+    /// 覆盖权限模式（默认 "bypass"）。
+    pub permission_mode: Option<String>,
+    /// 覆盖日志根目录（默认使用 `logs_dir()`）。
+    pub log_root: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -170,6 +178,9 @@ impl TestCase {
             steps: Vec::new(),
             exit: ExitMethod::default(),
             timeout: Duration::from_secs(120),
+            workspace: None,
+            permission_mode: None,
+            log_root: None,
         }
     }
 
@@ -200,6 +211,21 @@ impl TestCase {
 
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    pub fn workspace(mut self, ws: impl Into<String>) -> Self {
+        self.workspace = Some(ws.into());
+        self
+    }
+
+    pub fn permission_mode(mut self, mode: impl Into<String>) -> Self {
+        self.permission_mode = Some(mode.into());
+        self
+    }
+
+    pub fn log_root(mut self, root: impl Into<String>) -> Self {
+        self.log_root = Some(root.into());
         self
     }
 }
@@ -333,14 +359,23 @@ impl TestRunner {
 
     /// 执行测试用例，返回报告。
     pub fn run(&self, case: &TestCase) -> TestReport {
-        let output_dir = test_subdir(&case.name);
+        let output_dir = match &case.log_root {
+            Some(root) => {
+                let dir = PathBuf::from(root).join(&case.name);
+                std::fs::create_dir_all(&dir).expect("create output dir");
+                dir
+            }
+            None => test_subdir(&case.name),
+        };
         eprintln!("[runner] {} → {}", case.name, output_dir.display());
 
         // 启动 PTY 会话（始终使用真实 API key）
         let env_refs: Vec<(&str, &str)> = case.env.iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
-        let args = default_args();
+        let ws = case.workspace.as_deref().unwrap_or(workspace());
+        let mode = case.permission_mode.as_deref().unwrap_or("bypass");
+        let args: Vec<&str> = vec!["-C", ws, "--permission-mode", mode];
         let session = PtySession::spawn_with_env(
             &args,
             case.cols,
@@ -607,6 +642,20 @@ impl TestRunner {
                     Ok(None)
                 }
             }
+
+            TestStep::ApproveDialog => {
+                std::thread::sleep(Duration::from_millis(500));
+                let screen = session.current_screen();
+                if screen.contains("Permission")
+                    || screen.contains("permission")
+                    || screen.contains("Allow")
+                    || screen.contains("allow")
+                {
+                    session.send_raw(b"y");
+                    std::thread::sleep(Duration::from_secs(2));
+                }
+                Ok(None)
+            }
         }
     }
 }
@@ -637,6 +686,7 @@ impl TestStep {
             TestStep::SetPermission(s) => format!("perm '{}'", s),
             TestStep::LoginSwitch(s) => format!("login '{}'", s),
             TestStep::AssertNoPanic => "no panic".into(),
+            TestStep::ApproveDialog => "approve dialog".into(),
         }
     }
 }
@@ -664,12 +714,18 @@ mod tests {
     use super::*;
     use crate::model_flow::read_settings;
 
+    const SCRIPTS_LOG_ROOT: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/logs/pty_tui_e2e_scripts"
+    );
+
     /// 基础对话验证：读取 settings.json 中的 activeAuthProfile，验证模型回复。
     #[test]
     #[ignore = "requires real API key"]
     fn script_conversation_verify() {
         let settings = read_settings();
         let case = TestCase::new(format!("conv_verify_{}", settings.active_auth_profile))
+            .log_root(SCRIPTS_LOG_ROOT)
             .step(TestStep::SkipTrustGate)
             .step(TestStep::Wait(Duration::from_secs(2)))
             .step(TestStep::Snapshot("initial".into()))
@@ -692,6 +748,7 @@ mod tests {
     #[ignore = "requires real API key"]
     fn script_switch_auth_profile() {
         let case = TestCase::new("switch_to_claude_code")
+            .log_root(SCRIPTS_LOG_ROOT)
             .step(TestStep::SkipTrustGate)
             .step(TestStep::Wait(Duration::from_secs(2)))
             .step(TestStep::Snapshot("before_switch".into()))
@@ -714,6 +771,7 @@ mod tests {
     #[ignore = "requires real API key"]
     fn script_set_permissions() {
         let case = TestCase::new("permissions_full_access")
+            .log_root(SCRIPTS_LOG_ROOT)
             .step(TestStep::SkipTrustGate)
             .step(TestStep::Wait(Duration::from_secs(2)))
             .step(TestStep::SetPermission("full access".into()))
@@ -734,6 +792,7 @@ mod tests {
     #[ignore = "requires real API key"]
     fn script_abort_and_recover() {
         let case = TestCase::new("abort_recover")
+            .log_root(SCRIPTS_LOG_ROOT)
             .step(TestStep::SkipTrustGate)
             .step(TestStep::Input("Write a 2000-word essay about computing.".into()))
             .step(TestStep::Wait(Duration::from_secs(3)))
@@ -761,6 +820,7 @@ mod tests {
             "gpt-5.4"
         };
         let case = TestCase::new(format!("model_switch_{}", new_model.replace('.', "_")))
+            .log_root(SCRIPTS_LOG_ROOT)
             .step(TestStep::SkipTrustGate)
             .step(TestStep::Wait(Duration::from_secs(2)))
             .step(TestStep::Snapshot("before_switch".into()))
@@ -781,6 +841,7 @@ mod tests {
     #[test]
     fn script_command_palette() {
         let case = TestCase::new("command_palette_flow")
+            .log_root(SCRIPTS_LOG_ROOT)
             .step(TestStep::SkipTrustGate)
             .step(TestStep::Wait(Duration::from_millis(500)))
             .step(TestStep::OpenPalette)
@@ -788,6 +849,95 @@ mod tests {
             .step(TestStep::AssertScreenContains("Commands".into()))
             .step(TestStep::ClosePalette)
             .step(TestStep::AssertNoPanic);
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
+
+    /// 测试 1: `/login claude_code` 登录后询问项目结构，检查权限对话框是否弹出，批准后验证正常运行。
+    ///
+    /// 流程：启动 TUI（default 权限模式）→ /login claude_code → 输入问题 →
+    ///       等待权限对话框或响应 → 批准对话框 → 验证输出 → 关闭
+    #[test]
+    fn script_login_structure_with_permissions() {
+        let ws = "/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/claude-code-bun";
+        let case = TestCase::new("login_structure_with_permissions")
+            .log_root(SCRIPTS_LOG_ROOT)
+            .workspace(ws)
+            .permission_mode("default")
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Wait(Duration::from_secs(2)))
+            .step(TestStep::Snapshot("initial".into()))
+            .step(TestStep::LoginSwitch("claude_code".into()))
+            .step(TestStep::Wait(Duration::from_secs(3)))
+            .step(TestStep::Snapshot("after_login".into()))
+            .step(TestStep::Input(
+                "List the files and directories in this workspace. Use Bash to run: ls".into(),
+            ))
+            .step(TestStep::WaitForAny(
+                vec![
+                    "Permission".into(),
+                    "permission".into(),
+                    "Cargo.toml".into(),
+                    "src/".into(),
+                ],
+                Duration::from_secs(30),
+            ))
+            .step(TestStep::Snapshot("dialog_or_response".into()))
+            .step(TestStep::ApproveDialog)
+            .step(TestStep::Wait(Duration::from_secs(3)))
+            .step(TestStep::Snapshot("after_approve".into()))
+            .step(TestStep::WaitForAny(
+                vec![
+                    "Cargo.toml".into(),
+                    "src/".into(),
+                    "package.json".into(),
+                    "index.ts".into(),
+                ],
+                API_TIMEOUT,
+            ))
+            .step(TestStep::Snapshot("structure_result".into()))
+            .step(TestStep::AssertNoPanic)
+            .step(TestStep::Key(TestKey::CtrlC))
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::Key(TestKey::CtrlC));
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
+
+    /// 测试 2: 先设置 `/permissions full access`，再询问相同项目结构，验证无需对话框即可正常运行。
+    ///
+    /// 流程：启动 TUI（default 权限模式）→ /permissions full access → 输入相同问题 →
+    ///       验证直接运行（无权限对话框）→ 中止
+    #[test]
+    fn script_full_access_structure_no_dialog() {
+        let ws = "/data2-HDD-SATA-20T/Digital_avatar/haoweiyao/claude-code-bun";
+        let case = TestCase::new("full_access_structure_no_dialog")
+            .log_root(SCRIPTS_LOG_ROOT)
+            .workspace(ws)
+            .permission_mode("default")
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Wait(Duration::from_secs(2)))
+            .step(TestStep::Snapshot("initial".into()))
+            .step(TestStep::SetPermission("full access".into()))
+            .step(TestStep::Wait(Duration::from_secs(2)))
+            .step(TestStep::Snapshot("after_permission".into()))
+            .step(TestStep::Input(
+                "List the files and directories in this workspace. Use Bash to run: ls".into(),
+            ))
+            .step(TestStep::WaitForAny(
+                vec![
+                    "Cargo.toml".into(),
+                    "src/".into(),
+                    "package.json".into(),
+                    "index.ts".into(),
+                ],
+                API_TIMEOUT,
+            ))
+            .step(TestStep::Snapshot("structure_result".into()))
+            .step(TestStep::AssertNoPanic)
+            .step(TestStep::Key(TestKey::CtrlC))
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::Key(TestKey::CtrlC));
 
         TestRunner::new().run(&case).assert_no_errors();
     }
