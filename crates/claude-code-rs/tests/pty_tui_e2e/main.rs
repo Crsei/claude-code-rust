@@ -51,4 +51,5 @@ mod permissions;
 mod screenshot;
 mod script;
 mod status;
+mod tests;
 mod welcome;

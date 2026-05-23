@@ -9,12 +9,15 @@ Usage:
 Options:
   -m, --message <text>   Commit message. Required unless COMMIT_MESSAGE is set.
   -b, --branch <name>    Branch to push. Defaults to the current branch.
+  -A, --all               Stage all changes in the current workspace (including new/removed files).
       --no-build         Skip cargo build --workspace --release.
       --skip-push        Create the commit but do not push.
   -h, --help             Show this help.
 
-The script stages only the file paths passed on the command line. This avoids
-accidentally committing unrelated local changes in a shared worktree.
+By default, the script stages only the file paths passed on the command line.
+Use --all (-A) to stage all workspace changes at once. This avoids
+accidentally committing unrelated local changes in a shared worktree unless
+explicitly requested.
 USAGE
 }
 
@@ -22,6 +25,7 @@ commit_message="${COMMIT_MESSAGE:-}"
 branch=""
 run_build=1
 push_after_commit=1
+stage_all=0
 paths=()
 
 while [[ $# -gt 0 ]]; do
@@ -41,6 +45,10 @@ while [[ $# -gt 0 ]]; do
       fi
       branch="$2"
       shift 2
+      ;;
+    -A|--all)
+      stage_all=1
+      shift
       ;;
     --no-build)
       run_build=0
@@ -101,13 +109,17 @@ if [[ "$run_build" -eq 1 ]]; then
   cargo build --workspace --release
 fi
 
-if [[ "${#paths[@]}" -eq 0 ]]; then
+if [[ "$stage_all" -eq 0 && "${#paths[@]}" -eq 0 ]]; then
   echo "error: no files provided to stage" >&2
   echo "Pass the exact files to commit, or stage files manually and use git directly." >&2
   exit 2
 fi
 
-git add -- "${paths[@]}"
+if [[ "$stage_all" -eq 1 ]]; then
+  git add -A
+else
+  git add -A -- "${paths[@]}"
+fi
 
 if git diff --cached --quiet; then
   echo "error: no staged changes to commit" >&2
