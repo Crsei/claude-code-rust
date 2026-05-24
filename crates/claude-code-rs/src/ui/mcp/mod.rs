@@ -182,7 +182,7 @@ mod tests {
                         },
                     ],
                     selected_index: 1,
-                    target_scope: "~/.cc-rust/settings.json".to_string(),
+                    target_scope: "~/.allthecodes/settings.json".to_string(),
                 }),
             ),
             section(
@@ -193,7 +193,7 @@ mod tests {
                 "settings",
                 render_mcp_settings(&McpSettingsSummary {
                     enabled: true,
-                    config_path: "~/.cc-rust/mcp.json".to_string(),
+                    config_path: "~/.allthecodes/mcp.json".to_string(),
                     server_count: 3,
                     warning_count: 1,
                 }),

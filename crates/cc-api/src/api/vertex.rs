@@ -13,7 +13,7 @@
 //! # Authentication
 //!
 //! Access token resolved from first of:
-//! 1. `CLAUDE_CODE_VERTEX_ACCESS_TOKEN` (explicit override, highest priority)
+//! 1. `ALLTHECODES_VERTEX_ACCESS_TOKEN` (explicit override, highest priority)
 //! 2. `GOOGLE_OAUTH_ACCESS_TOKEN`
 //! 3. `GOOGLE_APPLICATION_CREDENTIALS` service-account JSON via JWT bearer exchange
 //! 4. `gcloud auth application-default print-access-token` subprocess
@@ -80,7 +80,7 @@ impl VertexAccessToken {
     ///
     /// Returns `None` if no source succeeds.
     pub fn from_env_or_gcloud() -> Option<Self> {
-        if let Ok(t) = std::env::var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN") {
+        if let Ok(t) = std::env::var("ALLTHECODES_VERTEX_ACCESS_TOKEN") {
             if !t.is_empty() {
                 return Some(Self(t));
             }
@@ -888,21 +888,21 @@ aM0cnYVle4nyuGi3M6aECuC6ggfLfXOQ3yGAmE3DKg2bgcmJag2cOT6fTRZemThD
 
     #[test]
     fn access_token_env_var_priority() {
-        let saved_cc = std::env::var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN").ok();
+        let saved_cc = std::env::var("ALLTHECODES_VERTEX_ACCESS_TOKEN").ok();
         let saved_go = std::env::var("GOOGLE_OAUTH_ACCESS_TOKEN").ok();
-        std::env::set_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", "cc-token");
+        std::env::set_var("ALLTHECODES_VERTEX_ACCESS_TOKEN", "cc-token");
         std::env::set_var("GOOGLE_OAUTH_ACCESS_TOKEN", "go-token");
 
         let t = VertexAccessToken::from_env_or_gcloud().unwrap();
         assert_eq!(t.0, "cc-token");
 
-        std::env::remove_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN");
+        std::env::remove_var("ALLTHECODES_VERTEX_ACCESS_TOKEN");
         let t = VertexAccessToken::from_env_or_gcloud().unwrap();
         assert_eq!(t.0, "go-token");
 
         std::env::remove_var("GOOGLE_OAUTH_ACCESS_TOKEN");
         if let Some(v) = saved_cc {
-            std::env::set_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", v);
+            std::env::set_var("ALLTHECODES_VERTEX_ACCESS_TOKEN", v);
         }
         if let Some(v) = saved_go {
             std::env::set_var("GOOGLE_OAUTH_ACCESS_TOKEN", v);

@@ -286,7 +286,7 @@ fn format_agent_section(active: &[AgentNode]) -> String {
 
 fn format_team_section() -> String {
     let mut section = String::from("## Teams\n");
-    section.push_str("Team status requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS feature.\n");
+    section.push_str("Team status requires ALLTHECODES_EXPERIMENTAL_AGENT_TEAMS feature.\n");
     section
 }
 

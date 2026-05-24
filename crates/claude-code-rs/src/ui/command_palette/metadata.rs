@@ -237,7 +237,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
             examples: vec!["/skills".to_string()],
             edit_targets: vec![
                 EditTarget::new("user", cc_config::paths::skills_dir_global(), cwd, ""),
-                EditTarget::new("project", cwd.join(".cc-rust").join("skills"), cwd, ""),
+                EditTarget::new("project", cwd.join(".allthecodes").join("skills"), cwd, ""),
             ],
         },
         "sleep" => simple_meta("/sleep <seconds>", &["/sleep 60"]),

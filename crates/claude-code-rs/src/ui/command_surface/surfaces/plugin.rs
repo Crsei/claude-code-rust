@@ -86,7 +86,7 @@ fn build_plugin_picker() -> SelectionSurface {
             enabled: false,
             disabled_reason: Some("no plugins found".to_string()),
             preview_lines: vec![
-                "Plugin metadata is loaded from ~/.cc-rust/plugins/installed_plugins.json."
+                "Plugin metadata is loaded from ~/.allthecodes/plugins/installed_plugins.json."
                     .to_string(),
                 "Press r to reload after installing or editing plugin files.".to_string(),
             ],

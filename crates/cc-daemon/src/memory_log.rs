@@ -7,7 +7,7 @@ use chrono::Local;
 use tracing::{debug, error};
 
 pub fn today_log_path() -> PathBuf {
-    cc_config::paths::daily_log_path(Local::now())
+    crate::process_state::daily_log_path(Local::now())
 }
 
 pub fn read_today_log() -> String {

@@ -12,7 +12,7 @@ use serial_test::serial;
 
 #[tokio::test]
 #[serial]
-async fn local_marketplace_plugin_installs_contributes_and_uninstalls_under_cc_rust_home() {
+async fn local_marketplace_plugin_installs_contributes_and_uninstalls_under_allthecodes_home() {
     let lab = CapabilityLab::new();
     let (_home, _cc_home) = lab.set_env();
     cc_plugins::clear_plugins();
@@ -57,7 +57,7 @@ async fn local_marketplace_plugin_installs_contributes_and_uninstalls_under_cc_r
     .expect("install local plugin fixture");
 
     assert_eq!(result.plugin.id, "capability-plugin@local");
-    assert!(cc_plugins::installed_plugins_path().starts_with(&lab.cc_rust_home));
+    assert!(cc_plugins::installed_plugins_path().starts_with(&lab.allthecodes_home));
     assert!(cc_plugins::installed_plugins_path().is_file());
 
     cc_plugins::init_plugins();

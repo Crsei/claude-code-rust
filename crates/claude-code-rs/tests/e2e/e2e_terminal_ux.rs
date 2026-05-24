@@ -2,7 +2,7 @@
 //!
 //! Black-box checks:
 //!
-//! - CLI `--init-only` accepts the `CLAUDE_CODE_*` terminal env toggles
+//! - CLI `--init-only` accepts the `ALLTHECODES_*` terminal env toggles
 //!   without crashing (NO_FLICKER, ENABLE_MOUSE_CAPTURE, DISABLE_MOUSE,
 //!   SCROLL_SPEED).
 //! - Garbage values still boot cleanly (parser falls back to defaults).
@@ -27,7 +27,7 @@ where
     let dir = tempfile::tempdir().expect("tempdir");
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -44,7 +44,7 @@ where
 fn cli_init_only_accepts_no_flicker_env() {
     for value in ["0", "1", "true", "false"] {
         run_init_only(|cmd| {
-            cmd.env("CLAUDE_CODE_NO_FLICKER", value);
+            cmd.env("ALLTHECODES_NO_FLICKER", value);
         });
     }
 }
@@ -53,7 +53,7 @@ fn cli_init_only_accepts_no_flicker_env() {
 #[serial]
 fn cli_init_only_accepts_disable_mouse_env() {
     run_init_only(|cmd| {
-        cmd.env("CLAUDE_CODE_DISABLE_MOUSE", "1");
+        cmd.env("ALLTHECODES_DISABLE_MOUSE", "1");
     });
 }
 
@@ -61,7 +61,7 @@ fn cli_init_only_accepts_disable_mouse_env() {
 #[serial]
 fn cli_init_only_accepts_enable_mouse_capture_env() {
     run_init_only(|cmd| {
-        cmd.env("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1");
+        cmd.env("ALLTHECODES_ENABLE_MOUSE_CAPTURE", "1");
     });
 }
 
@@ -70,7 +70,7 @@ fn cli_init_only_accepts_enable_mouse_capture_env() {
 fn cli_init_only_accepts_scroll_speed_env() {
     for value in ["3", "15", "50"] {
         run_init_only(|cmd| {
-            cmd.env("CLAUDE_CODE_SCROLL_SPEED", value);
+            cmd.env("ALLTHECODES_SCROLL_SPEED", value);
         });
     }
 }
@@ -80,10 +80,10 @@ fn cli_init_only_accepts_scroll_speed_env() {
 #[serial]
 fn cli_init_only_tolerates_bogus_terminal_env_values() {
     run_init_only(|cmd| {
-        cmd.env("CLAUDE_CODE_NO_FLICKER", "maybe-later");
-        cmd.env("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "not-today");
-        cmd.env("CLAUDE_CODE_DISABLE_MOUSE", "???");
-        cmd.env("CLAUDE_CODE_SCROLL_SPEED", "banana");
+        cmd.env("ALLTHECODES_NO_FLICKER", "maybe-later");
+        cmd.env("ALLTHECODES_ENABLE_MOUSE_CAPTURE", "not-today");
+        cmd.env("ALLTHECODES_DISABLE_MOUSE", "???");
+        cmd.env("ALLTHECODES_SCROLL_SPEED", "banana");
     });
 }
 
@@ -92,10 +92,10 @@ fn cli_init_only_tolerates_bogus_terminal_env_values() {
 #[serial]
 fn cli_init_only_accepts_terminal_env_toggles_together() {
     run_init_only(|cmd| {
-        cmd.env("CLAUDE_CODE_NO_FLICKER", "1")
-            .env("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1")
-            .env("CLAUDE_CODE_DISABLE_MOUSE", "0")
-            .env("CLAUDE_CODE_SCROLL_SPEED", "8");
+        cmd.env("ALLTHECODES_NO_FLICKER", "1")
+            .env("ALLTHECODES_ENABLE_MOUSE_CAPTURE", "1")
+            .env("ALLTHECODES_DISABLE_MOUSE", "0")
+            .env("ALLTHECODES_SCROLL_SPEED", "8");
     });
 }
 

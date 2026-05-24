@@ -2,7 +2,7 @@
 //!
 //! Provides reading, writing, and listing of memory entries stored alongside
 //! session data. Memories are key-value pairs persisted as individual files
-//! under `~/.cc-rust/memory/` (global) or `.cc-rust/memory/` (project-local).
+//! under `~/.allthecodes/memory/` (global) or `.allthecodes/memory/` (project-local).
 //!
 //! Corresponds to TypeScript: memdir/ (8 files)
 
@@ -141,7 +141,7 @@ impl MemoryType {
 pub enum MemoryScope {
     /// Global memories: `{data_root}/memory/`
     Global,
-    /// Project-local memories: `.cc-rust/memory/` relative to cwd
+    /// Project-local memories: `.allthecodes/memory/` relative to cwd
     Project,
     /// Team-shared memories: `{data_root}/projects/{sanitized_cwd}/memory/team/`.
     /// Gated by `FEATURE_TEAMMEM`; the directory itself is readable/writable
@@ -183,7 +183,7 @@ impl MemoryScope {
 pub fn memory_dir(scope: MemoryScope, cwd: &Path) -> Result<PathBuf> {
     match scope {
         MemoryScope::Global => Ok(cc_config::paths::memory_dir_global()),
-        MemoryScope::Project => Ok(cwd.join(".cc-rust").join("memory")),
+        MemoryScope::Project => Ok(cc_config::paths::project_allthecodes_dir(cwd).join("memory")),
         MemoryScope::Team => Ok(cc_config::paths::team_memory_dir(cwd)),
         MemoryScope::Auto => Ok(cc_config::paths::auto_memory_dir()),
     }
@@ -290,7 +290,7 @@ fn truncate_memory_index_content(content: &str) -> String {
 }
 
 fn append_memory_index_warning(mut output: String) -> String {
-    let warning = "- [truncated] MEMORY.md exceeded cc-rust index limits.";
+    let warning = "- [truncated] MEMORY.md exceeded allthecodes index limits.";
     let separator_len = usize::from(!output.is_empty());
     let line_count = output.lines().count();
 
@@ -1541,14 +1541,14 @@ mod tests {
     }
 
     /// Every `MemoryScope` variant resolves to a concrete path.
-    /// Uses a `CC_RUST_HOME` override so tests don't touch real
-    /// `~/.cc-rust/`.
+    /// Uses a `ALLTHECODES_HOME` override so tests don't touch real
+    /// `~/.allthecodes/`.
     #[test]
     #[serial_test::serial]
     fn test_memory_dir_resolves_all_scopes() {
         let root = make_temp_dir();
-        let previous = std::env::var("CC_RUST_HOME").ok();
-        std::env::set_var("CC_RUST_HOME", &root);
+        let previous = std::env::var("ALLTHECODES_HOME").ok();
+        std::env::set_var("ALLTHECODES_HOME", &root);
 
         let cwd = root.join("my_project");
         std::fs::create_dir_all(&cwd).unwrap();
@@ -1557,7 +1557,7 @@ mod tests {
         assert_eq!(global, root.join("memory"));
 
         let project = memory_dir(MemoryScope::Project, &cwd).unwrap();
-        assert_eq!(project, cwd.join(".cc-rust").join("memory"));
+        assert_eq!(project, cwd.join(".allthecodes").join("memory"));
 
         let team = memory_dir(MemoryScope::Team, &cwd).unwrap();
         let s = team.to_string_lossy().replace('\\', "/");
@@ -1571,20 +1571,20 @@ mod tests {
         assert_eq!(auto, root.join("auto_memory"));
 
         match previous {
-            Some(v) => std::env::set_var("CC_RUST_HOME", v),
-            None => std::env::remove_var("CC_RUST_HOME"),
+            Some(v) => std::env::set_var("ALLTHECODES_HOME", v),
+            None => std::env::remove_var("ALLTHECODES_HOME"),
         }
         cleanup(&root);
     }
 
     /// Auto scope round-trip write/list/delete under a sandboxed
-    /// `CC_RUST_HOME` so the real auto_memory/ is untouched.
+    /// `ALLTHECODES_HOME` so the real auto_memory/ is untouched.
     #[test]
     #[serial_test::serial]
     fn test_auto_scope_roundtrip() {
         let root = make_temp_dir();
-        let previous = std::env::var("CC_RUST_HOME").ok();
-        std::env::set_var("CC_RUST_HOME", &root);
+        let previous = std::env::var("ALLTHECODES_HOME").ok();
+        std::env::set_var("ALLTHECODES_HOME", &root);
 
         let cwd = root.join("scratch");
         std::fs::create_dir_all(&cwd).unwrap();
@@ -1596,8 +1596,8 @@ mod tests {
         assert!(delete_memory("auto-key", MemoryScope::Auto, &cwd).unwrap());
 
         match previous {
-            Some(v) => std::env::set_var("CC_RUST_HOME", v),
-            None => std::env::remove_var("CC_RUST_HOME"),
+            Some(v) => std::env::set_var("ALLTHECODES_HOME", v),
+            None => std::env::remove_var("ALLTHECODES_HOME"),
         }
         cleanup(&root);
     }

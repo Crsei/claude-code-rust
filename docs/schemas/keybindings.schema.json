@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cc-rust/keybindings.schema.json",
-  "title": "cc-rust keybindings",
+  "$id": "https://allthecodes/keybindings.schema.json",
+  "title": "allthecodes keybindings",
   "description": "On-disk shape of keybindings.json (issue #10). Mirrors the Claude Code spec at docs/claude-code-configuration/customize-keyboard-shortcuts.md.",
   "type": "object",
   "additionalProperties": true,

@@ -99,7 +99,7 @@ pub struct SkillFrontmatter {
     pub effort: Option<String>,
     /// Package version string.
     pub version: Option<String>,
-    /// Compatible cc-rust app version requirement.
+    /// Compatible allthecodes app version requirement.
     pub compatible_app_version: Option<String>,
     /// Package dependencies.
     pub dependencies: Vec<SkillDependency>,
@@ -1125,10 +1125,10 @@ mod tests {
     #[test]
     fn test_expand_prompt_skill_dir() {
         let mut skill = make_skill("test");
-        skill.base_dir = Some(PathBuf::from("/home/user/.cc-rust/skills/test"));
+        skill.base_dir = Some(PathBuf::from("/home/user/.allthecodes/skills/test"));
         skill.prompt_body = "Dir: ${CLAUDE_SKILL_DIR}".to_string();
         let result = skill.expand_prompt("", None);
-        assert_eq!(result, "Dir: /home/user/.cc-rust/skills/test");
+        assert_eq!(result, "Dir: /home/user/.allthecodes/skills/test");
     }
 
     #[test]
@@ -1144,7 +1144,7 @@ mod tests {
     }
 
     #[test]
-    fn reload_loads_project_skills_from_cc_rust_project_dir() {
+    fn reload_loads_project_skills_from_allthecodes_project_dir() {
         clear_skills();
         let tmp = tempfile::tempdir().unwrap();
         let user_dir = tmp.path().join("user-skills");

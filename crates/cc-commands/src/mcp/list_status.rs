@@ -17,7 +17,7 @@ pub(super) async fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
     if entries.is_empty() {
         return Ok(CommandResult::Output(
             "No MCP servers discovered.\n\n\
-             Add servers to ~/.cc-rust/settings.json or .cc-rust/settings.json, or run:\n  \
+             Add servers to ~/.allthecodes/settings.json or .allthecodes/settings.json, or run:\n  \
                /mcp add <name> --command=<cmd> [--arg=<arg> …]"
                 .to_string(),
         ));

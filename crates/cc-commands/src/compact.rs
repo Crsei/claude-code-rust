@@ -135,7 +135,7 @@ fn execute_partial_compact(
 
     if !cc_compact::gates::CompactionFeatureGates::from_env().partial_compact {
         return CommandResult::Output(
-            "Partial compact is disabled by CC_RUST_PARTIAL_COMPACT.".into(),
+            "Partial compact is disabled by ALLTHECODES_PARTIAL_COMPACT.".into(),
         );
     }
 

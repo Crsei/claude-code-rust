@@ -75,7 +75,7 @@ pub struct SchedulerStore {
 }
 
 impl SchedulerStore {
-    /// Default on-disk location under the cc-rust data root.
+    /// Default on-disk location under the allthecodes data root.
     pub fn default_path() -> PathBuf {
         cc_config::paths::data_root().join("scheduled_tasks.json")
     }

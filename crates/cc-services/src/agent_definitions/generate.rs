@@ -109,8 +109,10 @@ async fn run_generation(user_prompt: String, existing_names: Vec<String>) {
         top_k: None,
         context_management: None,
         thinking: None,
+        output_config: None,
         tool_choice: None,
         advisor_model: None,
+        reasoning_effort: None,
     };
 
     let result = tokio::time::timeout(Duration::from_secs(120), client.messages(request)).await;

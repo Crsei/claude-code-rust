@@ -513,7 +513,7 @@ mod output_style {
     fn candidate_paths(name: &str, cwd: &Path) -> Vec<PathBuf> {
         let safe_name = sanitize_name(name);
         vec![
-            cwd.join(".cc-rust/output-styles")
+            cwd.join(".allthecodes/output-styles")
                 .join(format!("{}.md", safe_name)),
             data_root()
                 .join("output-styles")

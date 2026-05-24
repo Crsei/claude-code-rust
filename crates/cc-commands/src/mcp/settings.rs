@@ -115,7 +115,7 @@ pub(super) fn persist_mcpjson_decision(
     approve: bool,
     all_project: bool,
 ) -> Result<String> {
-    let path = cwd.join(".cc-rust").join("settings.json");
+    let path = cwd.join(".allthecodes").join("settings.json");
     let mut value = read_settings_value(&path)?;
     let obj = match value.as_object_mut() {
         Some(obj) => obj,

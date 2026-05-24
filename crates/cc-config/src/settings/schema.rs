@@ -12,8 +12,8 @@ use serde_json::{json, Value};
 pub fn settings_schema() -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://cc-rust/settings.schema.json",
-        "title": "cc-rust settings",
+        "$id": "https://allthecodes/settings.schema.json",
+        "title": "allthecodes settings",
         "description": "On-disk shape of settings.json (managed/user/project/local).",
         "type": "object",
         "additionalProperties": true,

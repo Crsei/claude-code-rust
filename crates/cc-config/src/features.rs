@@ -1,7 +1,7 @@
 //! Feature gate system for KAIROS and related features.
 //!
 //! Each feature is controlled by an environment variable (`FEATURE_*`), with
-//! Agent Teams also honoring the upstream `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`.
+//! Agent Teams also honoring `ALLTHECODES_EXPERIMENTAL_AGENT_TEAMS`.
 //! Dependency rules enforce that child features require their parent:
 //! - `kairos_brief`, `kairos_channels`, `kairos_push_notification`,
 //!   `kairos_github_webhooks` all require `kairos`.
@@ -90,13 +90,13 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
     },
     FeatureDescriptor {
         feature: Feature::AgentTeams,
-        env_var: "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+        env_var: "ALLTHECODES_EXPERIMENTAL_AGENT_TEAMS",
         label: "agent_teams",
         description: "experimental Agent Teams slash command/tooling",
     },
     FeatureDescriptor {
         feature: Feature::Coordinator,
-        env_var: "CLAUDE_CODE_COORDINATOR_MODE",
+        env_var: "ALLTHECODES_COORDINATOR_MODE",
         label: "coordinator",
         description: "coordinator mode prompt and orchestration gate",
     },
@@ -150,8 +150,8 @@ impl FeatureFlags {
         let team_memory = read("FEATURE_TEAMMEM");
         let subagent_dashboard = read("FEATURE_SUBAGENT_DASHBOARD");
         let agent_teams =
-            read("FEATURE_AGENT_TEAMS") || read("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
-        let coordinator = read("CLAUDE_CODE_COORDINATOR_MODE");
+            read("FEATURE_AGENT_TEAMS") || read("ALLTHECODES_EXPERIMENTAL_AGENT_TEAMS");
+        let coordinator = read("ALLTHECODES_COORDINATOR_MODE");
         let mut kairos_brief = read("FEATURE_KAIROS_BRIEF");
         let mut kairos_channels = read("FEATURE_KAIROS_CHANNELS");
         let mut kairos_push_notification = read("FEATURE_KAIROS_PUSH_NOTIFICATION");
@@ -390,15 +390,15 @@ mod tests {
     }
 
     #[test]
-    fn agent_teams_reads_upstream_env_var() {
-        let f = flags(&[("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "yes")]);
+    fn agent_teams_reads_new_env_var() {
+        let f = flags(&[("ALLTHECODES_EXPERIMENTAL_AGENT_TEAMS", "yes")]);
         assert!(f.agent_teams);
         assert!(f.is_enabled(Feature::AgentTeams));
     }
 
     #[test]
-    fn coordinator_reads_upstream_env_var() {
-        let f = flags(&[("CLAUDE_CODE_COORDINATOR_MODE", "true")]);
+    fn coordinator_reads_new_env_var() {
+        let f = flags(&[("ALLTHECODES_COORDINATOR_MODE", "true")]);
         assert!(f.coordinator);
         assert!(f.is_enabled(Feature::Coordinator));
     }

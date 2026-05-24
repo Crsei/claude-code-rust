@@ -75,7 +75,7 @@ fn coordinator_team_tasks_and_mailbox_lifecycle_are_wired() {
     let (mut child, mut stdin, mut stdout) = spawn_headless_with_env(
         &["-C", &workspace_arg, "--permission-mode", "bypass"],
         true,
-        &[("CC_RUST_HOME", &home_arg)],
+        &[("ALLTHECODES_HOME", &home_arg)],
     );
 
     let ready = read_line_json(&mut stdout, LINE_TIMEOUT);

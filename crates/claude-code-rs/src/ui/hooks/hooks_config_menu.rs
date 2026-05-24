@@ -23,7 +23,8 @@ pub fn render_hooks_config_menu(items: &[HookConfigSummary], selected_index: usi
         ));
     }
     lines.push(
-        "Read-only. Edit .cc-rust/settings.json or .cc-rust/settings.local.json.".to_string(),
+        "Read-only. Edit .allthecodes/settings.json or .allthecodes/settings.local.json."
+            .to_string(),
     );
     lines.join("\n")
 }

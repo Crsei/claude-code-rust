@@ -2,7 +2,7 @@
 //!
 //! Wraps the plugin reload runtime adapter. The root runtime owns the actual
 //! registry refresh: it clears the in-memory registry, repopulates from
-//! `~/.cc-rust/plugins/installed_plugins.json`, then emits
+//! `~/.allthecodes/plugins/installed_plugins.json`, then emits
 //! `PluginEvent::Reloaded` on the subsystem event bus.
 //!
 //! # Session re-wiring
@@ -317,7 +317,7 @@ mod tests {
             error_count: 1,
             errors: vec![],
             global_errors: vec![
-                "/tmp/.cc-rust/plugins/installed_plugins.json: Failed to parse installed_plugins.json"
+                "/tmp/.allthecodes/plugins/installed_plugins.json: Failed to parse installed_plugins.json"
                     .into(),
             ],
             duration_ms: 5,
@@ -326,7 +326,7 @@ mod tests {
 
         assert!(out.starts_with("Reloaded 0 plugin(s) in 5ms."));
         assert!(out.contains(
-            "  - plugin metadata/cache: /tmp/.cc-rust/plugins/installed_plugins.json: Failed to parse installed_plugins.json"
+            "  - plugin metadata/cache: /tmp/.allthecodes/plugins/installed_plugins.json: Failed to parse installed_plugins.json"
         ));
         assert!(out.contains("1 plugin metadata/cache diagnostic(s)."));
         assert!(out.contains("Reloaded 0 skill package(s) at revision 0."));

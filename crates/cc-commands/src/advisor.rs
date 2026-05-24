@@ -185,7 +185,7 @@ fn persist_advisor(_cwd: &std::path::Path, new_value: Option<&str>) -> Result<st
 /// Test-only: persist to an explicit path instead of the user-level file.
 ///
 /// Keeps the on-disk round-trip covered without racing on the shared
-/// `CC_RUST_HOME` env var (which other modules' tests also mutate).
+/// `ALLTHECODES_HOME` env var (which other modules' tests also mutate).
 #[cfg(test)]
 fn persist_advisor_to_path(
     path: &std::path::Path,

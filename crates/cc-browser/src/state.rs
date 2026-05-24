@@ -101,7 +101,7 @@ impl Default for ChromeState {
 // A process-wide state lives behind a RwLock. The alternative — threading a
 // handle through every caller — balloons the API surface for a feature that
 // genuinely is process-singleton (there's at most one Chrome session per
-// cc-rust run).
+// allthecodes run).
 
 static CHROME_STATE: OnceLock<RwLock<ChromeState>> = OnceLock::new();
 

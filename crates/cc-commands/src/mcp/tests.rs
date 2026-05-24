@@ -80,7 +80,7 @@ async fn mcp_no_args_shows_help() {
 async fn mcp_list_no_servers_suggests_add() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
     let handler = McpHandler;
     let mut ctx = test_ctx(cwd.path().to_path_buf());
@@ -102,7 +102,7 @@ async fn mcp_list_no_servers_suggests_add() {
 async fn mcp_add_persists_user_scope() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
     let handler = McpHandler;
     let mut ctx = test_ctx(cwd.path().to_path_buf());
@@ -135,7 +135,7 @@ async fn mcp_add_persists_user_scope() {
 async fn mcp_add_persists_oauth_metadata_without_tokens() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
     let handler = McpHandler;
     let mut ctx = test_ctx(cwd.path().to_path_buf());
@@ -143,7 +143,7 @@ async fn mcp_add_persists_oauth_metadata_without_tokens() {
             .execute(
                 "add remote --transport=sse --url=https://mcp.example.com/sse \
                  --oauth-auth-server-metadata-url=https://auth.example.com/.well-known/oauth-authorization-server \
-                 --oauth-client-id=cc-rust-test --oauth-callback-port=18888 --oauth-scope=tools.read",
+                 --oauth-client-id=allthecodes-test --oauth-callback-port=18888 --oauth-scope=tools.read",
                 &mut ctx,
             )
             .await
@@ -153,7 +153,7 @@ async fn mcp_add_persists_oauth_metadata_without_tokens() {
     let disk: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
     let oauth = &disk["mcpServers"]["remote"]["oauth"];
-    assert_eq!(oauth["clientId"], "cc-rust-test");
+    assert_eq!(oauth["clientId"], "allthecodes-test");
     assert_eq!(oauth["callbackPort"], 18888);
     assert_eq!(oauth["scopes"][0], "tools.read");
     assert!(oauth.get("accessToken").is_none());
@@ -165,7 +165,7 @@ async fn mcp_add_persists_oauth_metadata_without_tokens() {
 async fn mcp_edit_updates_command() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
     let handler = McpHandler;
     let mut ctx = test_ctx(cwd.path().to_path_buf());
@@ -198,7 +198,7 @@ async fn mcp_edit_updates_command() {
 async fn mcp_remove_deletes_from_user_scope() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
     let handler = McpHandler;
     let mut ctx = test_ctx(cwd.path().to_path_buf());
@@ -231,7 +231,7 @@ async fn mcp_remove_deletes_from_user_scope() {
 async fn mcp_remove_ambiguous_requires_scope() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
     let handler = McpHandler;
     let mut ctx = test_ctx(cwd.path().to_path_buf());
     // Create both user and project rows with the same name.
@@ -260,8 +260,8 @@ async fn mcp_remove_ambiguous_requires_scope() {
 async fn mcp_approve_project_mcp_json_servers_records_enabled() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
-    let project_settings = cwd.path().join(".cc-rust").join("settings.json");
+    let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
+    let project_settings = cwd.path().join(".allthecodes").join("settings.json");
     std::fs::create_dir_all(project_settings.parent().unwrap()).unwrap();
     std::fs::write(
         &project_settings,
@@ -299,7 +299,7 @@ async fn mcp_approve_project_mcp_json_servers_records_enabled() {
     assert_eq!(disk["enableAllProjectMcpServers"], true);
     assert!(
         !home.path().join("settings.json").exists(),
-        "approval must stay in project .cc-rust settings"
+        "approval must stay in project .allthecodes settings"
     );
 }
 
@@ -308,8 +308,8 @@ async fn mcp_approve_project_mcp_json_servers_records_enabled() {
 async fn mcp_reject_project_mcp_json_servers_records_disabled() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
-    let project_settings = cwd.path().join(".cc-rust").join("settings.json");
+    let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
+    let project_settings = cwd.path().join(".allthecodes").join("settings.json");
     std::fs::create_dir_all(project_settings.parent().unwrap()).unwrap();
     std::fs::write(
         &project_settings,
@@ -344,7 +344,7 @@ async fn mcp_reject_project_mcp_json_servers_records_disabled() {
     assert_eq!(disk["disabledMcpjsonServers"][2], "sentry");
     assert!(
         !home.path().join("settings.json").exists(),
-        "rejection must stay in project .cc-rust settings"
+        "rejection must stay in project .allthecodes settings"
     );
 }
 
@@ -405,7 +405,7 @@ async fn mcp_connect_requires_name() {
 async fn mcp_reconnect_uses_runtime_manager() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
     let manager = std::sync::Arc::new(tokio::sync::Mutex::new(cc_mcp::manager::McpManager::new()));
     let _runtime = RuntimeMcpGuard::install(manager.clone());
     std::fs::write(

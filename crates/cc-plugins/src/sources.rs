@@ -100,7 +100,7 @@ async fn resolve_github_source(
     );
 
     let client = reqwest::Client::builder()
-        .user_agent("cc-rust-plugin-manager/0.1")
+        .user_agent("allthecodes-plugin-manager/0.1")
         .build()
         .context("Failed to build HTTP client")?;
 

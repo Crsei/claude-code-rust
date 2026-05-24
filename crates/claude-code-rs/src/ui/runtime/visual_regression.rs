@@ -326,17 +326,17 @@ fn normalize_snapshot_text(mut text: String) -> String {
         text = text.replace(&home.replace(' ', "%20"), "<HOME>");
     }
 
-    normalize_cc_rust_home_width(text)
+    normalize_allthecodes_home_width(text)
 }
 
-fn normalize_cc_rust_home_width(text: String) -> String {
-    if !text.contains("$CC_RUST_HOME") {
+fn normalize_allthecodes_home_width(text: String) -> String {
+    if !text.contains("$ALLTHECODES_HOME") {
         return text;
     }
     text.lines()
         .map(|line| {
             let width = line.chars().count();
-            let mut normalized = line.replace("$CC_RUST_HOME", "~/.cc-rust");
+            let mut normalized = line.replace("$ALLTHECODES_HOME", "~/.allthecodes");
             let new_width = normalized.chars().count();
             if new_width < width && normalized.ends_with('│') {
                 let pad = " ".repeat(width - new_width);

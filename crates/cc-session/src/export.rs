@@ -21,7 +21,7 @@ use cc_types::message::{ContentBlock, Message, MessageContent};
 
 /// Export a session (by ID) to a Markdown file.
 ///
-/// If `output_path` is None, writes to `~/.cc-rust/exports/<session_id>.md`.
+/// If `output_path` is None, writes to `~/.allthecodes/exports/<session_id>.md`.
 /// Returns the path of the written file.
 pub fn export_session_markdown(session_id: &str, output_path: Option<&Path>) -> Result<PathBuf> {
     let session_file = load_session_file_raw(session_id)?;

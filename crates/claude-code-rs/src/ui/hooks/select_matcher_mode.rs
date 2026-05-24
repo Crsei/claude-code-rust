@@ -52,7 +52,7 @@ pub fn render_select_matcher_mode(
     lines.push(String::new());
     if matchers.is_empty() {
         lines.push("No hooks configured for this event.".to_string());
-        lines.push("To add hooks, edit .cc-rust/settings.json or ask Claude.".to_string());
+        lines.push("To add hooks, edit .allthecodes/settings.json or ask Claude.".to_string());
         return lines.join("\n");
     }
     for (idx, matcher) in matchers.iter().enumerate() {

@@ -234,7 +234,7 @@ mod tests {
     #[serial_test::serial]
     async fn test_resume_empty_session_is_friendly() {
         let home = tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", home.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", home.path());
         let workspace = home.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();
         storage::save_session("empty-session", &[], workspace.to_str().unwrap()).unwrap();
@@ -257,7 +257,7 @@ mod tests {
     #[serial_test::serial]
     async fn test_resume_nonempty_session_switches_runtime_session() {
         let home = tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", home.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", home.path());
         let workspace = home.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();
         storage::save_session(

@@ -232,25 +232,25 @@ fn openai_api_status_text() -> Option<String> {
 }
 
 fn cloud_auth_status_text() -> Option<String> {
-    if cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_FOUNDRY") {
+    if cc_api::api::client::is_env_truthy("ALLTHECODES_USE_FOUNDRY") {
         return Some(foundry_status_text());
     }
-    if cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
+    if cc_api::api::client::is_env_truthy("ALLTHECODES_USE_BEDROCK") {
         return Some(bedrock_status_text());
     }
-    if cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX") {
+    if cc_api::api::client::is_env_truthy("ALLTHECODES_USE_VERTEX") {
         return Some(vertex_status_text());
     }
     None
 }
 
 fn enable_bedrock_session() -> String {
-    std::env::set_var("CLAUDE_CODE_USE_BEDROCK", "1");
-    std::env::remove_var("CLAUDE_CODE_USE_VERTEX");
-    std::env::remove_var("CLAUDE_CODE_USE_FOUNDRY");
+    std::env::set_var("ALLTHECODES_USE_BEDROCK", "1");
+    std::env::remove_var("ALLTHECODES_USE_VERTEX");
+    std::env::remove_var("ALLTHECODES_USE_FOUNDRY");
 
     let mut lines = vec![
-        "AWS Bedrock provider enabled for this cc-rust session.".to_string(),
+        "AWS Bedrock provider enabled for this allthecodes session.".to_string(),
         "Next non-command prompt will use Bedrock because API clients are rebuilt per turn."
             .to_string(),
         String::new(),
@@ -262,7 +262,7 @@ fn enable_bedrock_session() -> String {
     } else {
         lines.push(String::new());
         lines.push(
-            "For future sessions, set CLAUDE_CODE_USE_BEDROCK=1 before launching cc-rust."
+            "For future sessions, set ALLTHECODES_USE_BEDROCK=1 before launching allthecodes."
                 .to_string(),
         );
     }
@@ -270,12 +270,12 @@ fn enable_bedrock_session() -> String {
 }
 
 fn enable_vertex_session() -> String {
-    std::env::set_var("CLAUDE_CODE_USE_VERTEX", "1");
-    std::env::remove_var("CLAUDE_CODE_USE_BEDROCK");
-    std::env::remove_var("CLAUDE_CODE_USE_FOUNDRY");
+    std::env::set_var("ALLTHECODES_USE_VERTEX", "1");
+    std::env::remove_var("ALLTHECODES_USE_BEDROCK");
+    std::env::remove_var("ALLTHECODES_USE_FOUNDRY");
 
     let mut lines = vec![
-        "GCP Vertex AI provider enabled for this cc-rust session.".to_string(),
+        "GCP Vertex AI provider enabled for this allthecodes session.".to_string(),
         "Next non-command prompt will use Vertex because API clients are rebuilt per turn."
             .to_string(),
         String::new(),
@@ -289,7 +289,7 @@ fn enable_vertex_session() -> String {
     } else {
         lines.push(String::new());
         lines.push(
-            "For future sessions, set CLAUDE_CODE_USE_VERTEX=1 before launching cc-rust."
+            "For future sessions, set ALLTHECODES_USE_VERTEX=1 before launching allthecodes."
                 .to_string(),
         );
     }
@@ -335,7 +335,7 @@ fn bedrock_status_text() -> String {
          Auth: {}\n\
          Model: {}\n\
          Base URL: {}",
-        cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_BEDROCK"),
+        cc_api::api::client::is_env_truthy("ALLTHECODES_USE_BEDROCK"),
         region,
         auth,
         model,
@@ -362,7 +362,7 @@ fn vertex_status_text() -> String {
          Region: {}\n\
          Auth: {}\n\
          Model: {}",
-        cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX"),
+        cc_api::api::client::is_env_truthy("ALLTHECODES_USE_VERTEX"),
         project_id,
         region,
         token_source,
@@ -371,11 +371,11 @@ fn vertex_status_text() -> String {
 }
 
 fn vertex_token_source() -> String {
-    if std::env::var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN")
+    if std::env::var("ALLTHECODES_VERTEX_ACCESS_TOKEN")
         .map(|v| !v.trim().is_empty())
         .unwrap_or(false)
     {
-        return "CLAUDE_CODE_VERTEX_ACCESS_TOKEN".to_string();
+        return "ALLTHECODES_VERTEX_ACCESS_TOKEN".to_string();
     }
     if std::env::var("GOOGLE_OAUTH_ACCESS_TOKEN")
         .map(|v| !v.trim().is_empty())
@@ -386,7 +386,7 @@ fn vertex_token_source() -> String {
     if cc_api::api::vertex::VertexAccessToken::from_env_or_gcloud().is_some() {
         return "gcloud application-default access token".to_string();
     }
-    "missing (set CLAUDE_CODE_VERTEX_ACCESS_TOKEN or run gcloud auth application-default login)"
+    "missing (set ALLTHECODES_VERTEX_ACCESS_TOKEN or run gcloud auth application-default login)"
         .to_string()
 }
 
@@ -402,7 +402,7 @@ fn foundry_status_text() -> String {
          Enabled: true\n\
          Status: unsupported\n\
          Diagnostic: {}\n\
-         Action: unset CLAUDE_CODE_USE_FOUNDRY or choose /login bedrock or /login vertex.",
+         Action: unset ALLTHECODES_USE_FOUNDRY or choose /login bedrock or /login vertex.",
         diagnostic
     )
 }
@@ -415,7 +415,7 @@ fn codex_auth_status_text() -> Option<String> {
         return Some("Authenticated: OpenAI Codex OAuth (env OPENAI_CODEX_AUTH_TOKEN)".to_string());
     }
 
-    // Check cc-rust's own credentials.json
+    // Check allthecodes's own credentials.json
     if let Ok(Some(stored)) = auth::token::load_token() {
         let method = stored.oauth_method.as_deref().unwrap_or_default();
         if method.eq_ignore_ascii_case("openai_codex") {
@@ -466,7 +466,7 @@ fn cloud_setup_text() -> String {
 
 fn bedrock_setup_text() -> String {
     "AWS Bedrock setup:\n\
-     1. Set CLAUDE_CODE_USE_BEDROCK=1.\n\
+     1. Set ALLTHECODES_USE_BEDROCK=1.\n\
      2. Set AWS_REGION or AWS_DEFAULT_REGION (default: us-east-1).\n\
      3. Use one auth mode:\n\
         - AWS_BEARER_TOKEN_BEDROCK=<bedrock-api-key>\n\
@@ -478,10 +478,10 @@ fn bedrock_setup_text() -> String {
 
 fn vertex_setup_text() -> String {
     "GCP Vertex AI setup:\n\
-     1. Set CLAUDE_CODE_USE_VERTEX=1.\n\
+     1. Set ALLTHECODES_USE_VERTEX=1.\n\
      2. Set ANTHROPIC_VERTEX_PROJECT_ID (or GOOGLE_CLOUD_PROJECT / GCLOUD_PROJECT).\n\
      3. Set CLOUD_ML_REGION (default: us-east5) or per-model VERTEX_REGION_* overrides.\n\
-     4. Provide auth with CLAUDE_CODE_VERTEX_ACCESS_TOKEN, GOOGLE_OAUTH_ACCESS_TOKEN,\n\
+     4. Provide auth with ALLTHECODES_VERTEX_ACCESS_TOKEN, GOOGLE_OAUTH_ACCESS_TOKEN,\n\
         or `gcloud auth application-default login`.\n\
      5. Optional: ANTHROPIC_MODEL.\n\
      Current session shortcut: /login vertex"
@@ -497,9 +497,9 @@ fn foundry_setup_text() -> String {
         .unwrap_or(cc_api::api::providers::FOUNDRY_UNSUPPORTED_REASON);
     format!(
         "Microsoft Foundry setup:\n\
-         Status: unsupported in this cc-rust build.\n\
+         Status: unsupported in this allthecodes build.\n\
          Diagnostic: {}\n\
-         Do not set CLAUDE_CODE_USE_FOUNDRY for this release.",
+         Do not set ALLTHECODES_USE_FOUNDRY for this release.",
         diagnostic
     )
 }
@@ -628,7 +628,7 @@ fn check_codex_cli(ctx: &mut CommandContext) -> String {
 
     if !auth::codex_cli::is_credential_expired(&cred) {
         let mut msg = "Codex CLI credentials detected and valid. \
-                cc-rust will use them automatically."
+                allthecodes will use them automatically."
             .to_string();
         if let Some(provider_msg) =
             persist_provider_selection(settings::API_PROVIDER_OPENAI_CODEX, Some("codex"), ctx)
@@ -643,7 +643,7 @@ fn check_codex_cli(ctx: &mut CommandContext) -> String {
     match auth::try_resolve_codex_auth_token() {
         Ok(Some(_)) => {
             let mut msg = "Codex CLI token was expired but has been refreshed successfully. \
-                 cc-rust will use it automatically."
+                 allthecodes will use it automatically."
                 .to_string();
             if let Some(provider_msg) =
                 persist_provider_selection(settings::API_PROVIDER_OPENAI_CODEX, Some("codex"), ctx)
@@ -1040,7 +1040,7 @@ mod tests {
     async fn test_legacy_anthropic_alias_selects_claude_code_profile() {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
         let dir = tempfile::TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str());
         let mut ctx = test_ctx();
 
         let result = LoginHandler
@@ -1065,7 +1065,7 @@ mod tests {
     async fn test_named_codex_login_selects_profile_without_oauth() {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
         let dir = tempfile::TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str());
         let mut ctx = test_ctx();
 
         let result = LoginHandler
@@ -1108,22 +1108,22 @@ mod tests {
     #[test]
     fn test_enable_bedrock_session_sets_flag_and_reports_status() {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
-        let _bedrock = EnvGuard::set("CLAUDE_CODE_USE_BEDROCK", None);
-        let _vertex = EnvGuard::set("CLAUDE_CODE_USE_VERTEX", Some("1"));
-        let _foundry = EnvGuard::set("CLAUDE_CODE_USE_FOUNDRY", Some("1"));
+        let _bedrock = EnvGuard::set("ALLTHECODES_USE_BEDROCK", None);
+        let _vertex = EnvGuard::set("ALLTHECODES_USE_VERTEX", Some("1"));
+        let _foundry = EnvGuard::set("ALLTHECODES_USE_FOUNDRY", Some("1"));
         let _bearer = EnvGuard::set("AWS_BEARER_TOKEN_BEDROCK", Some("bedrock-token-1234"));
         let _region = EnvGuard::set("AWS_REGION", Some("us-west-2"));
 
         let text = enable_bedrock_session();
 
         assert!(cc_api::api::client::is_env_truthy(
-            "CLAUDE_CODE_USE_BEDROCK"
+            "ALLTHECODES_USE_BEDROCK"
         ));
         assert!(!cc_api::api::client::is_env_truthy(
-            "CLAUDE_CODE_USE_VERTEX"
+            "ALLTHECODES_USE_VERTEX"
         ));
         assert!(!cc_api::api::client::is_env_truthy(
-            "CLAUDE_CODE_USE_FOUNDRY"
+            "ALLTHECODES_USE_FOUNDRY"
         ));
         assert!(text.contains("AWS Bedrock provider enabled"));
         assert!(text.contains("Region: us-west-2"));
@@ -1133,34 +1133,34 @@ mod tests {
     #[test]
     fn test_enable_vertex_session_sets_flag_and_reports_status() {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
-        let _bedrock = EnvGuard::set("CLAUDE_CODE_USE_BEDROCK", Some("1"));
-        let _vertex = EnvGuard::set("CLAUDE_CODE_USE_VERTEX", None);
-        let _foundry = EnvGuard::set("CLAUDE_CODE_USE_FOUNDRY", Some("1"));
+        let _bedrock = EnvGuard::set("ALLTHECODES_USE_BEDROCK", Some("1"));
+        let _vertex = EnvGuard::set("ALLTHECODES_USE_VERTEX", None);
+        let _foundry = EnvGuard::set("ALLTHECODES_USE_FOUNDRY", Some("1"));
         let _project = EnvGuard::set("ANTHROPIC_VERTEX_PROJECT_ID", Some("proj-123"));
-        let _token = EnvGuard::set("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", Some("vertex-token"));
+        let _token = EnvGuard::set("ALLTHECODES_VERTEX_ACCESS_TOKEN", Some("vertex-token"));
         let _region = EnvGuard::set("CLOUD_ML_REGION", Some("europe-west4"));
 
         let text = enable_vertex_session();
 
-        assert!(cc_api::api::client::is_env_truthy("CLAUDE_CODE_USE_VERTEX"));
+        assert!(cc_api::api::client::is_env_truthy("ALLTHECODES_USE_VERTEX"));
         assert!(!cc_api::api::client::is_env_truthy(
-            "CLAUDE_CODE_USE_BEDROCK"
+            "ALLTHECODES_USE_BEDROCK"
         ));
         assert!(!cc_api::api::client::is_env_truthy(
-            "CLAUDE_CODE_USE_FOUNDRY"
+            "ALLTHECODES_USE_FOUNDRY"
         ));
         assert!(text.contains("GCP Vertex AI provider enabled"));
         assert!(text.contains("Project: proj-123"));
         assert!(text.contains("Region: europe-west4"));
-        assert!(text.contains("CLAUDE_CODE_VERTEX_ACCESS_TOKEN"));
+        assert!(text.contains("ALLTHECODES_VERTEX_ACCESS_TOKEN"));
     }
 
     #[test]
     fn test_foundry_status_surfaces_provider_validation_diagnostic() {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
-        let _foundry = EnvGuard::set("CLAUDE_CODE_USE_FOUNDRY", Some("1"));
-        let _bedrock = EnvGuard::set("CLAUDE_CODE_USE_BEDROCK", None);
-        let _vertex = EnvGuard::set("CLAUDE_CODE_USE_VERTEX", None);
+        let _foundry = EnvGuard::set("ALLTHECODES_USE_FOUNDRY", Some("1"));
+        let _bedrock = EnvGuard::set("ALLTHECODES_USE_BEDROCK", None);
+        let _vertex = EnvGuard::set("ALLTHECODES_USE_VERTEX", None);
 
         let text = auth_status_text();
 
@@ -1174,7 +1174,7 @@ mod tests {
     fn test_anthropic_provider_selection_persists_claude_code_profile() {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
         let dir = tempfile::TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str());
         let mut ctx = test_ctx();
 
         let msg =
@@ -1204,7 +1204,7 @@ mod tests {
     fn test_anthropic_provider_selection_copies_legacy_profile() {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
         let dir = tempfile::TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str());
         let legacy = settings::ProviderProfileSettings {
             backend: Some("native".to_string()),
             api_provider: Some(settings::API_PROVIDER_ANTHROPIC.to_string()),
@@ -1283,7 +1283,7 @@ mod tests {
     fn test_codex_provider_selection_syncs_backend_and_model() {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
         let dir = tempfile::TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str());
         let _model = EnvGuard::set("OPENAI_CODEX_MODEL", Some("gpt-5.5"));
         let mut ctx = test_ctx();
         ctx.app_state.main_loop_model = "deepseek-v4-pro".to_string();
@@ -1344,7 +1344,7 @@ mod tests {
     fn test_codex_provider_selection_replaces_deepseek_model_list() {
         let _lock = ENV_LOCK.lock().expect("env lock poisoned");
         let dir = tempfile::TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str());
         let _model = EnvGuard::set("OPENAI_CODEX_MODEL", None);
         let mut ctx = test_ctx();
         ctx.app_state.main_loop_model = "deepseek-v4-pro".to_string();

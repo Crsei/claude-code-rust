@@ -299,7 +299,7 @@ mod tests {
     #[serial]
     fn enter_plan_mode_sets_permission_and_persists_record_shape() {
         let tmp = tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let mut state = AppState::default();
 
         let record = enter_plan_mode_state(
@@ -338,7 +338,7 @@ mod tests {
         let mut state = AppState::default();
         let draft = PlanWorkflowRecord::new(
             tmp.path()
-                .join(".cc-rust")
+                .join(".allthecodes")
                 .join("current-plan.md")
                 .display()
                 .to_string(),
@@ -360,7 +360,7 @@ mod tests {
 
         let mut approved = PlanWorkflowRecord::new(
             tmp.path()
-                .join(".cc-rust")
+                .join(".allthecodes")
                 .join("current-plan.md")
                 .display()
                 .to_string(),

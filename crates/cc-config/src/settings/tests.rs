@@ -138,7 +138,7 @@ fn managed_permission_fields_override_user_project_local_and_env() {
     let home = temp.path().join("home");
     let project = temp.path().join("repo");
     std::fs::create_dir_all(home.join("plugins")).unwrap();
-    std::fs::create_dir_all(project.join(".cc-rust")).unwrap();
+    std::fs::create_dir_all(project.join(".allthecodes")).unwrap();
     let managed_path = temp.path().join("managed.json");
     std::fs::write(
         &managed_path,
@@ -157,18 +157,18 @@ fn managed_permission_fields_override_user_project_local_and_env() {
     )
     .unwrap();
     std::fs::write(
-        project.join(".cc-rust/settings.json"),
+        project.join(".allthecodes/settings.json"),
         r#"{"permissions":{"defaultMode":"auto","enableAutoMode":true,"enableBypassMode":true}}"#,
     )
     .unwrap();
     std::fs::write(
-        project.join(".cc-rust/settings.local.json"),
+        project.join(".allthecodes/settings.local.json"),
         r#"{"permissions":{"defaultMode":"bypass","enableAutoMode":true,"enableBypassMode":true}}"#,
     )
     .unwrap();
 
-    let _managed = EnvGuard::set_path("CC_RUST_MANAGED_SETTINGS", &managed_path);
-    let _home = EnvGuard::set_path("CC_RUST_HOME", &home);
+    let _managed = EnvGuard::set_path("ALLTHECODES_MANAGED_SETTINGS", &managed_path);
+    let _home = EnvGuard::set_path("ALLTHECODES_HOME", &home);
     let _env = EnvGuard::set_value("CLAUDE_PERMISSION_MODE", "bypass");
 
     let loaded = load_effective(&project).unwrap();
@@ -192,7 +192,7 @@ fn managed_only_sandbox_lists_ignore_lower_sources() {
     let home = temp.path().join("home");
     let project = temp.path().join("repo");
     std::fs::create_dir_all(&home).unwrap();
-    std::fs::create_dir_all(project.join(".cc-rust")).unwrap();
+    std::fs::create_dir_all(project.join(".allthecodes")).unwrap();
     let managed_path = temp.path().join("managed.json");
     std::fs::write(
         &managed_path,
@@ -217,7 +217,7 @@ fn managed_only_sandbox_lists_ignore_lower_sources() {
     )
     .unwrap();
     std::fs::write(
-        project.join(".cc-rust/settings.local.json"),
+        project.join(".allthecodes/settings.local.json"),
         r#"{
                 "sandbox": {
                     "filesystem": {"allowRead": ["/local/read"]},
@@ -227,8 +227,8 @@ fn managed_only_sandbox_lists_ignore_lower_sources() {
     )
     .unwrap();
 
-    let _managed = EnvGuard::set_path("CC_RUST_MANAGED_SETTINGS", &managed_path);
-    let _home = EnvGuard::set_path("CC_RUST_HOME", &home);
+    let _managed = EnvGuard::set_path("ALLTHECODES_MANAGED_SETTINGS", &managed_path);
+    let _home = EnvGuard::set_path("ALLTHECODES_HOME", &home);
     let _perm = EnvGuard::unset("CLAUDE_PERMISSION_MODE");
 
     let loaded = load_effective(&project).unwrap();
@@ -445,19 +445,19 @@ fn source_rank_matches_merge_precedence() {
 
 #[test]
 #[serial]
-fn legacy_loaders_sources_prompt_and_extra_remain_compatible() {
+fn loaders_sources_prompt_and_extra_use_allthecodes_paths() {
     let temp = tempfile::tempdir().expect("tempdir");
     let data_root = temp.path().join("home");
     let managed_path = temp.path().join("managed-settings.json");
     let project_root = temp.path().join("project");
     let nested = project_root.join("nested");
-    let project_config_dir = project_root.join(".cc-rust");
+    let project_config_dir = project_root.join(".allthecodes");
     std::fs::create_dir_all(&data_root).unwrap();
     std::fs::create_dir_all(&nested).unwrap();
     std::fs::create_dir_all(&project_config_dir).unwrap();
 
-    let _cc_home = EnvGuard::set_path("CC_RUST_HOME", &data_root);
-    let _managed = EnvGuard::set_path("CC_RUST_MANAGED_SETTINGS", &managed_path);
+    let _allthecodes_home = EnvGuard::set_path("ALLTHECODES_HOME", &data_root);
+    let _managed = EnvGuard::set_path("ALLTHECODES_MANAGED_SETTINGS", &managed_path);
     let _claude_model = EnvGuard::unset("CLAUDE_MODEL");
     let _cc_backend = EnvGuard::unset("CC_BACKEND");
     let _claude_backend = EnvGuard::unset("CLAUDE_BACKEND");
@@ -521,13 +521,10 @@ fn legacy_loaders_sources_prompt_and_extra_remain_compatible() {
     let managed = load_managed_config().unwrap();
     assert_eq!(managed.backend.as_deref(), Some("native"));
 
-    let legacy_merged = merge_configs(&global, &project);
-    assert_eq!(legacy_merged.model.as_deref(), Some("project-model"));
-    assert_eq!(
-        legacy_merged.system_prompt.as_deref(),
-        Some("project prompt")
-    );
-    assert_eq!(legacy_merged.allowed_tools, vec!["Bash".to_string()]);
+    let merged = merge_configs(&global, &project);
+    assert_eq!(merged.model.as_deref(), Some("project-model"));
+    assert_eq!(merged.system_prompt.as_deref(), Some("project prompt"));
+    assert_eq!(merged.allowed_tools, vec!["Bash".to_string()]);
 
     let loaded = load_effective(&nested).unwrap();
     assert_eq!(loaded.source_of("backend"), SettingsSource::Managed);
@@ -597,7 +594,7 @@ fn settings_env_layers_merge_in_settings_priority_order() {
     let project = temp.path().join("repo");
     let managed_path = temp.path().join("managed.json");
     std::fs::create_dir_all(&home).unwrap();
-    std::fs::create_dir_all(project.join(".cc-rust")).unwrap();
+    std::fs::create_dir_all(project.join(".allthecodes")).unwrap();
 
     std::fs::write(
         &managed_path,
@@ -610,18 +607,18 @@ fn settings_env_layers_merge_in_settings_priority_order() {
     )
     .unwrap();
     std::fs::write(
-        project.join(".cc-rust/settings.json"),
+        project.join(".allthecodes/settings.json"),
         r#"{"env":{"FROM_PROJECT":"project","SHARED":"project"}}"#,
     )
     .unwrap();
     std::fs::write(
-        project.join(".cc-rust/settings.local.json"),
+        project.join(".allthecodes/settings.local.json"),
         r#"{"env":{"FROM_LOCAL":"local","SHARED":"local"}}"#,
     )
     .unwrap();
 
-    let _managed = EnvGuard::set_path("CC_RUST_MANAGED_SETTINGS", &managed_path);
-    let _home = EnvGuard::set_path("CC_RUST_HOME", &home);
+    let _managed = EnvGuard::set_path("ALLTHECODES_MANAGED_SETTINGS", &managed_path);
+    let _home = EnvGuard::set_path("ALLTHECODES_HOME", &home);
 
     let loaded = load_effective(&project).unwrap();
     assert_eq!(
@@ -650,8 +647,8 @@ fn settings_env_layers_merge_in_settings_priority_order() {
 #[test]
 #[serial]
 fn apply_runtime_env_fills_missing_without_overwriting_process_env() {
-    const APPLIED: &str = "CC_RUST_TEST_SETTINGS_ENV_APPLIED";
-    const SKIPPED: &str = "CC_RUST_TEST_SETTINGS_ENV_SKIPPED";
+    const APPLIED: &str = "ALLTHECODES_TEST_SETTINGS_ENV_APPLIED";
+    const SKIPPED: &str = "ALLTHECODES_TEST_SETTINGS_ENV_SKIPPED";
     let _applied = EnvGuard::unset(APPLIED);
     let _skipped = EnvGuard::set_value(SKIPPED, "from-process");
     let env = HashMap::from([
@@ -670,7 +667,7 @@ fn apply_runtime_env_fills_missing_without_overwriting_process_env() {
 #[test]
 #[serial]
 fn apply_startup_runtime_env_overrides_provider_env_only() {
-    const GENERIC: &str = "CC_RUST_TEST_SETTINGS_ENV_GENERIC";
+    const GENERIC: &str = "ALLTHECODES_TEST_SETTINGS_ENV_GENERIC";
     let _model = EnvGuard::set_value("ANTHROPIC_MODEL", "claude-opus-4-20250514");
     let _base_url = EnvGuard::set_value("ANTHROPIC_BASE_URL", "https://old.example.com");
     let _generic = EnvGuard::set_value(GENERIC, "from-process");

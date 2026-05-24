@@ -1,7 +1,7 @@
 //! /audit-export command — export session as a verifiable audit record.
 //!
 //! Usage:
-//!   /audit-export                — export current session to ~/.cc-rust/audits/
+//!   /audit-export                — export current session to ~/.allthecodes/audits/
 //!   /audit-export list           — list all audit export files
 //!   /audit-export verify <path>  — verify integrity of an audit file
 //!   /audit-export <path>         — export current session to a specific file

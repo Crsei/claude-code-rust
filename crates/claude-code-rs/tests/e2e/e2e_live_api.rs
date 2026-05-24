@@ -78,9 +78,9 @@ const PROVIDER_ENV_KEYS: &[&str] = &[
     "SPARK_API_KEY",
     "CC_BACKEND",
     "CLAUDE_BACKEND",
-    "CLAUDE_CODE_USE_BEDROCK",
-    "CLAUDE_CODE_USE_VERTEX",
-    "CLAUDE_CODE_USE_FOUNDRY",
+    "ALLTHECODES_USE_BEDROCK",
+    "ALLTHECODES_USE_VERTEX",
+    "ALLTHECODES_USE_FOUNDRY",
 ];
 
 /// Build a command that inherits the real .env by running from the project dir.
@@ -100,7 +100,7 @@ fn tool_cli() -> Command {
 }
 
 fn live_settings_path() -> Option<PathBuf> {
-    std::env::var_os("CC_RUST_LIVE_SETTINGS_PATH")
+    std::env::var_os("ALLTHECODES_LIVE_SETTINGS_PATH")
         .map(PathBuf::from)
         .or_else(|| {
             let path = PathBuf::from(DEFAULT_LIVE_SETTINGS_PATH);
@@ -112,9 +112,9 @@ fn settings_env_live_cli(cc_home: &Path, cwd: &Path, timeout_secs: u64) -> Comma
     let mut cmd = Command::cargo_bin("claude-code-rs").expect("binary not found");
     cmd.current_dir(cwd)
         .timeout(Duration::from_secs(timeout_secs))
-        .env("CC_RUST_HOME", cc_home)
+        .env("ALLTHECODES_HOME", cc_home)
         .env(
-            "CC_RUST_MANAGED_SETTINGS",
+            "ALLTHECODES_MANAGED_SETTINGS",
             cc_home.join("missing-managed-settings.json"),
         );
     for key in PROVIDER_ENV_KEYS {
@@ -556,7 +556,7 @@ fn t2_multi_tool_write_read_edit() {
 fn t2_auto_code_edit_with_settings_env_credentials() {
     let Some(settings_path) = live_settings_path() else {
         eprintln!(
-            "skipping live auto-code test: set CC_RUST_LIVE_SETTINGS_PATH or create {}",
+            "skipping live auto-code test: set ALLTHECODES_LIVE_SETTINGS_PATH or create {}",
             DEFAULT_LIVE_SETTINGS_PATH
         );
         return;
@@ -564,7 +564,7 @@ fn t2_auto_code_edit_with_settings_env_credentials() {
 
     let cc_home = tempfile::tempdir().expect("cc home tempdir");
     std::fs::copy(&settings_path, cc_home.path().join("settings.json"))
-        .expect("copy live settings into isolated CC_RUST_HOME");
+        .expect("copy live settings into isolated ALLTHECODES_HOME");
 
     let project = tempfile::tempdir().expect("project tempdir");
     write_autocode_fixture(project.path());
@@ -630,7 +630,7 @@ fn t2_auto_code_edit_with_settings_env_credentials() {
 fn t2_capability_lab_mcp_skill_plugin_end_to_end_with_settings_env_credentials() {
     let Some(settings_path) = live_settings_path() else {
         eprintln!(
-            "skipping live capability-lab test: set CC_RUST_LIVE_SETTINGS_PATH or create {}",
+            "skipping live capability-lab test: set ALLTHECODES_LIVE_SETTINGS_PATH or create {}",
             DEFAULT_LIVE_SETTINGS_PATH
         );
         return;
@@ -638,8 +638,8 @@ fn t2_capability_lab_mcp_skill_plugin_end_to_end_with_settings_env_credentials()
 
     let lab = capability_lab_support::CapabilityLab::new();
     let (_home_guard, _cc_home_guard) = lab.set_env();
-    std::fs::copy(&settings_path, lab.cc_rust_home.join("settings.json"))
-        .expect("copy live settings into isolated CC_RUST_HOME");
+    std::fs::copy(&settings_path, lab.allthecodes_home.join("settings.json"))
+        .expect("copy live settings into isolated ALLTHECODES_HOME");
 
     lab.init_git();
     lab.write_project_mcp_settings(serde_json::json!({
@@ -683,7 +683,7 @@ fn t2_capability_lab_mcp_skill_plugin_end_to_end_with_settings_env_credentials()
 
     cc_skills::clear_skills();
     cc_skills::reload_skills_with_extra(
-        &lab.cc_rust_home.join("skills"),
+        &lab.allthecodes_home.join("skills"),
         Some(&lab.project_dir),
         Vec::new(),
         cc_skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
@@ -705,7 +705,7 @@ fn t2_capability_lab_mcp_skill_plugin_end_to_end_with_settings_env_credentials()
             &Default::default(),
         ))
         .expect("install capability plugin fixture");
-    assert!(cc_plugins::installed_plugins_path().starts_with(&lab.cc_rust_home));
+    assert!(cc_plugins::installed_plugins_path().starts_with(&lab.allthecodes_home));
     assert!(cc_plugins::installed_plugins_path().is_file());
     cc_plugins::init_plugins();
     assert!(cc_plugins::get_enabled_plugins()
@@ -728,7 +728,7 @@ fn t2_capability_lab_mcp_skill_plugin_end_to_end_with_settings_env_credentials()
     );
 
     let mut cmd =
-        settings_env_live_cli(&lab.cc_rust_home, &lab.project_dir, AUTO_CODE_TIMEOUT_SECS);
+        settings_env_live_cli(&lab.allthecodes_home, &lab.project_dir, AUTO_CODE_TIMEOUT_SECS);
     cmd.env("HOME", &lab.home_dir);
     let output = cmd
         .args([

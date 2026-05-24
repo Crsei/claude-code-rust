@@ -4,10 +4,8 @@
 //! through this module. The resolution chain is:
 //!
 //! 1. `ALLTHECODES_HOME` env var (trim non-empty) → use as-is.
-//! 2. Old `CC_RUST_HOME` env var (trim non-empty) → read and log migration hint.
-//! 3. `dirs::home_dir().join(".allthecodes")`.
-//! 4. Old `~/.cc-rust` dir exists → read and log migration hint.
-//! 5. `std::env::temp_dir().join("allthecodes")` (non-persistent, warns once).
+//! 2. `dirs::home_dir().join(".allthecodes")`.
+//! 3. `std::env::temp_dir().join("allthecodes")` (non-persistent, warns once).
 //!
 //! Functions return `PathBuf` unconditionally; they never fail. Creation of
 //! the directory is the caller's responsibility.
@@ -18,52 +16,19 @@ use std::path::PathBuf;
 use std::sync::Once;
 
 static TEMP_FALLBACK_WARN: Once = Once::new();
-static OLD_PATH_WARN: Once = Once::new();
 
 /// Return the allthecodes data root directory.
 ///
 /// See module-level docs for the resolution chain.
 pub fn data_root() -> PathBuf {
-    // 1. ALLTHECODES_HOME env var (new, preferred)
     if let Ok(override_dir) = std::env::var("ALLTHECODES_HOME") {
         if !override_dir.trim().is_empty() {
             return PathBuf::from(override_dir);
         }
     }
 
-    // 2. Old CC_RUST_HOME env var (fallback, with migration hint)
-    if let Ok(override_dir) = std::env::var("CC_RUST_HOME") {
-        if !override_dir.trim().is_empty() {
-            OLD_PATH_WARN.call_once(|| {
-                tracing::warn!(
-                    "CC_RUST_HOME is set but allthecodes now uses ALLTHECODES_HOME. \
-                     Please migrate to ALLTHECODES_HOME. Reading from: {}",
-                    override_dir
-                );
-            });
-            return PathBuf::from(override_dir);
-        }
-    }
-
     if let Some(home) = dirs::home_dir() {
-        let new_path = home.join(".allthecodes");
-        if new_path.exists() {
-            return new_path;
-        }
-        // 4. Old ~/.cc-rust exists → read it and hint migration
-        let old_path = home.join(".cc-rust");
-        if old_path.exists() {
-            OLD_PATH_WARN.call_once(|| {
-                tracing::warn!(
-                    "Using legacy data directory {}; please migrate to {} \
-                     by renaming or setting ALLTHECODES_HOME.",
-                    old_path.display(),
-                    new_path.display()
-                );
-            });
-            return old_path;
-        }
-        return new_path;
+        return home.join(".allthecodes");
     }
 
     let tmp = std::env::temp_dir().join("allthecodes");
@@ -229,22 +194,9 @@ pub fn team_memory_dir(cwd: &Path) -> PathBuf {
 // ----- Project-local paths (under cwd) -------------------------------------
 
 /// `{cwd}/.allthecodes/` — project-level settings / memory / skills root.
+///
 pub fn project_allthecodes_dir(cwd: &Path) -> PathBuf {
-    let new_path = cwd.join(".allthecodes");
-    if new_path.exists() {
-        return new_path;
-    }
-    let old_path = cwd.join(".cc-rust");
-    if old_path.exists() {
-        return old_path;
-    }
-    new_path
-}
-
-/// Deprecated alias — use [`project_allthecodes_dir`].
-#[deprecated(note = "Use project_allthecodes_dir instead")]
-pub fn project_cc_rust_dir(cwd: &Path) -> PathBuf {
-    project_allthecodes_dir(cwd)
+    cwd.join(".allthecodes")
 }
 
 /// `{cwd}/.allthecodes/skills/` — project-local skill packages.
@@ -311,21 +263,14 @@ fn has_project_plan_marker(candidate: &Path) -> bool {
         return true;
     }
 
-    // Check new directory first, then old
-    let new_marker = candidate.join(".allthecodes");
-    if new_marker.is_dir() && !is_global_data_dir(&new_marker) {
-        return true;
-    }
-    let old_marker = candidate.join(".cc-rust");
-    old_marker.is_dir() && !is_global_data_dir(&old_marker)
+    let marker = candidate.join(".allthecodes");
+    marker.is_dir() && !is_global_data_dir(&marker)
 }
 
 fn is_global_data_dir(path: &Path) -> bool {
     path == data_root()
         || dirs::home_dir()
-            .map(|home| {
-                path == home.join(".allthecodes") || path == home.join(".cc-rust")
-            })
+            .map(|home| path == home.join(".allthecodes"))
             .unwrap_or(false)
 }
 
@@ -365,18 +310,22 @@ mod tests {
 
     #[test]
     #[serial]
-    fn data_root_uses_env_override() {
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/cc-rust-test-override");
-        assert_eq!(data_root(), PathBuf::from("/tmp/cc-rust-test-override"));
+    fn data_root_prefers_allthecodes_home_env() {
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/allthecodes-test-override");
+        assert_eq!(data_root(), PathBuf::from("/tmp/allthecodes-test-override"));
     }
 
     #[test]
     #[serial]
     fn data_root_ignores_empty_env() {
-        let _g = EnvGuard::set("CC_RUST_HOME", "");
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "");
         let root = data_root();
         assert!(
-            root.ends_with(".cc-rust") || root.file_name().map(|n| n == "cc-rust").unwrap_or(false),
+            root.ends_with(".allthecodes")
+                || root
+                    .file_name()
+                    .map(|n| n == "allthecodes")
+                    .unwrap_or(false),
             "expected home fallback or temp fallback, got {}",
             root.display()
         );
@@ -385,10 +334,14 @@ mod tests {
     #[test]
     #[serial]
     fn data_root_ignores_whitespace_env() {
-        let _g = EnvGuard::set("CC_RUST_HOME", "   ");
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "   ");
         let root = data_root();
         assert!(
-            root.ends_with(".cc-rust") || root.file_name().map(|n| n == "cc-rust").unwrap_or(false),
+            root.ends_with(".allthecodes")
+                || root
+                    .file_name()
+                    .map(|n| n == "allthecodes")
+                    .unwrap_or(false),
             "expected home fallback or temp fallback, got {}",
             root.display()
         );
@@ -397,14 +350,14 @@ mod tests {
     #[test]
     #[serial]
     fn data_root_respects_env_with_whitespace_padding() {
-        let _g = EnvGuard::set("CC_RUST_HOME", " /tmp/padded ");
+        let _g = EnvGuard::set("ALLTHECODES_HOME", " /tmp/padded ");
         assert_eq!(data_root(), PathBuf::from(" /tmp/padded "));
     }
 
     #[test]
     #[serial]
     fn data_root_temp_fallback_best_effort() {
-        let _g1 = EnvGuard::unset("CC_RUST_HOME");
+        let _g = EnvGuard::unset("ALLTHECODES_HOME");
         if dirs::home_dir().is_some() {
             eprintln!("skipping: dirs::home_dir() still resolvable via OS APIs");
             return;
@@ -422,7 +375,7 @@ mod tests {
     fn ensure_data_root_creates_and_reports() {
         let tmp = tempfile::tempdir().unwrap();
         let fresh = tmp.path().join("fresh_root");
-        let _g = EnvGuard::set("CC_RUST_HOME", fresh.to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", fresh.to_str().unwrap());
         assert!(!data_root().exists());
         assert!(ensure_data_root().unwrap());
         assert!(data_root().exists());
@@ -434,8 +387,8 @@ mod tests {
     #[test]
     #[serial]
     fn partition_functions_all_root_under_data_root() {
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/cc-rust-partition-test");
-        let base = PathBuf::from("/tmp/cc-rust-partition-test");
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/allthecodes-partition-test");
+        let base = PathBuf::from("/tmp/allthecodes-partition-test");
         assert_eq!(sessions_dir(), base.join("sessions"));
         assert_eq!(logs_dir(), base.join("logs"));
         assert_eq!(credentials_path(), base.join("credentials.json"));
@@ -470,30 +423,30 @@ mod tests {
 
     #[test]
     #[serial]
-    fn gateway_paths_are_isolated_under_cc_rust_home() {
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/cc-rust-gateway-paths");
+    fn gateway_paths_are_isolated_under_allthecodes_home() {
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/allthecodes-gateway-paths");
         assert_eq!(
             gateway_dir(),
-            PathBuf::from("/tmp/cc-rust-gateway-paths/gateway")
+            PathBuf::from("/tmp/allthecodes-gateway-paths/gateway")
         );
         assert_eq!(
             gateway_runs_dir(),
-            PathBuf::from("/tmp/cc-rust-gateway-paths/gateway/runs")
+            PathBuf::from("/tmp/allthecodes-gateway-paths/gateway/runs")
         );
         assert_eq!(
             gateway_adapters_dir(),
-            PathBuf::from("/tmp/cc-rust-gateway-paths/gateway/adapters")
+            PathBuf::from("/tmp/allthecodes-gateway-paths/gateway/adapters")
         );
         assert_eq!(
             gateway_webhooks_dir(),
-            PathBuf::from("/tmp/cc-rust-gateway-paths/gateway/webhooks")
+            PathBuf::from("/tmp/allthecodes-gateway-paths/gateway/webhooks")
         );
     }
 
     #[test]
     #[serial]
     fn daily_log_path_builds_yyyy_mm_dd_layout() {
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/cc-rust-dlp");
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/allthecodes-dlp");
         let dt = Local.with_ymd_and_hms(2026, 4, 18, 10, 30, 0).unwrap();
         let p = daily_log_path(dt);
         let s = p.to_string_lossy().replace('\\', "/");
@@ -503,7 +456,7 @@ mod tests {
     #[test]
     #[serial]
     fn team_memory_dir_sanitizes_cwd() {
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/cc-rust-tmd");
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/allthecodes-tmd");
         let cwd = Path::new("/home/user/My Project/sub");
         let p = team_memory_dir(cwd);
         let s = p.to_string_lossy().replace('\\', "/");
@@ -517,34 +470,44 @@ mod tests {
 
     #[test]
     #[serial]
-    fn project_cc_rust_dir_is_cwd_relative() {
-        // Not affected by CC_RUST_HOME.
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/ignored");
+    fn project_allthecodes_dir_defaults_to_new_path() {
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/ignored");
         assert_eq!(
-            project_cc_rust_dir(Path::new("/foo/bar")),
-            PathBuf::from("/foo/bar/.cc-rust")
+            project_allthecodes_dir(Path::new("/foo/bar")),
+            PathBuf::from("/foo/bar/.allthecodes")
         );
     }
 
     #[test]
     #[serial]
-    fn phase3_required_paths_are_cc_rust_isolated() {
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/phase3-cc-rust-home");
+    fn project_allthecodes_dir_prefers_new_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".allthecodes")).unwrap();
+        assert_eq!(
+            project_allthecodes_dir(tmp.path()),
+            tmp.path().join(".allthecodes")
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn phase3_required_paths_are_allthecodes_isolated() {
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/phase3-allthecodes-home");
         let cwd = Path::new("/repo/worktree");
-        let data = PathBuf::from("/tmp/phase3-cc-rust-home");
+        let data = PathBuf::from("/tmp/phase3-allthecodes-home");
 
         assert_eq!(data_root(), data);
         assert_eq!(
             crate::settings::user_settings_path(),
-            PathBuf::from("/tmp/phase3-cc-rust-home/settings.json")
+            PathBuf::from("/tmp/phase3-allthecodes-home/settings.json")
         );
         assert_eq!(
             crate::settings::project_settings_path(cwd),
-            PathBuf::from("/repo/worktree/.cc-rust/settings.json")
+            PathBuf::from("/repo/worktree/.allthecodes/settings.json")
         );
         assert_eq!(
             project_skills_dir(cwd),
-            PathBuf::from("/repo/worktree/.cc-rust/skills")
+            PathBuf::from("/repo/worktree/.allthecodes/skills")
         );
         assert_eq!(credentials_path(), data.join("credentials.json"));
         assert_eq!(daemon_dir(), data.join("daemon"));
@@ -554,33 +517,33 @@ mod tests {
 
     #[test]
     #[serial]
-    fn plan_file_path_project_is_cwd_relative() {
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/ignored");
+    fn plan_file_path_project_defaults_to_allthecodes() {
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/ignored");
         assert_eq!(
             plan_file_path_project(Path::new("/foo/bar")),
-            PathBuf::from("/foo/bar/.cc-rust/plan.md")
+            PathBuf::from("/foo/bar/.allthecodes/plan.md")
         );
     }
 
     #[test]
     #[serial]
     fn plan_file_path_global_is_under_data_root() {
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/cc-plan-global");
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/allthecodes-plan-global");
         assert_eq!(
             plan_file_path_global(),
-            PathBuf::from("/tmp/cc-plan-global/plan.md")
+            PathBuf::from("/tmp/allthecodes-plan-global/plan.md")
         );
     }
 
     #[test]
     #[serial]
-    fn plan_workflow_path_follows_current_plan_scope() {
+    fn plan_workflow_path_follows_current_plan_scope_with_allthecodes() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(tmp.path().join(".cc-rust")).unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/ignored");
+        std::fs::create_dir_all(tmp.path().join(".allthecodes")).unwrap();
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/ignored");
         assert_eq!(
             current_plan_workflow_file_path(tmp.path()),
-            tmp.path().join(".cc-rust").join("plan-workflow.json")
+            tmp.path().join(".allthecodes").join("plan-workflow.json")
         );
     }
 
@@ -588,11 +551,11 @@ mod tests {
     #[serial]
     fn current_plan_prefers_project_when_markers_present() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(tmp.path().join(".cc-rust")).unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/should-not-be-used");
+        std::fs::create_dir_all(tmp.path().join(".allthecodes")).unwrap();
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/should-not-be-used");
         assert_eq!(
             current_plan_file_path(tmp.path()),
-            tmp.path().join(".cc-rust").join("plan.md")
+            tmp.path().join(".allthecodes").join("plan.md")
         );
     }
 
@@ -601,16 +564,16 @@ mod tests {
     fn current_plan_uses_workspace_root_from_nested_cwd() {
         let tmp = tempfile::tempdir().unwrap();
         let nested = tmp.path().join("a").join("b");
-        std::fs::create_dir_all(tmp.path().join(".cc-rust")).unwrap();
+        std::fs::create_dir_all(tmp.path().join(".allthecodes")).unwrap();
         std::fs::create_dir_all(&nested).unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/should-not-be-used");
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/should-not-be-used");
         assert_eq!(
             current_plan_file_path(&nested),
-            tmp.path().join(".cc-rust").join("plan.md")
+            tmp.path().join(".allthecodes").join("plan.md")
         );
         assert_eq!(
             current_plan_workflow_file_path(&nested),
-            tmp.path().join(".cc-rust").join("plan-workflow.json")
+            tmp.path().join(".allthecodes").join("plan-workflow.json")
         );
     }
 
@@ -621,7 +584,7 @@ mod tests {
         let nested = tmp.path().join("src").join("module");
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(tmp.path().join("AGENTS.md"), "# instructions\n").unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/should-not-be-used");
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/should-not-be-used");
         assert_eq!(
             current_plan_file_path(&nested),
             tmp.path().join(".allthecodes").join("plan.md")
@@ -633,7 +596,7 @@ mod tests {
     fn current_plan_falls_back_to_global_without_markers() {
         let tmp = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
         assert_eq!(
             current_plan_file_path(tmp.path()),
             home.path().join("plan.md")
@@ -644,11 +607,11 @@ mod tests {
     #[serial]
     fn current_plan_is_idempotent_once_plan_exists() {
         let tmp = tempfile::tempdir().unwrap();
-        let plan = tmp.path().join(".cc-rust").join("plan.md");
+        let plan = tmp.path().join(".allthecodes").join("plan.md");
         std::fs::create_dir_all(plan.parent().unwrap()).unwrap();
         std::fs::write(&plan, "# Plan\n").unwrap();
         // Even without other markers, an existing plan.md sticks.
-        let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/unused");
+        let _g = EnvGuard::set("ALLTHECODES_HOME", "/tmp/unused");
         assert_eq!(current_plan_file_path(tmp.path()), plan);
     }
 }

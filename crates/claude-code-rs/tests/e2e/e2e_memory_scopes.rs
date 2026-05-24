@@ -3,12 +3,12 @@
 //! Exercises `cc_session::memdir` + `cc_config::paths` + the `/memory`
 //! command surface together:
 //! - All four scopes (Global, Project, Team, Auto) resolve to
-//!   well-defined paths under a sandboxed `CC_RUST_HOME`.
+//!   well-defined paths under a sandboxed `ALLTHECODES_HOME`.
 //! - Writes/reads round-trip correctly across every scope.
 //! - The layered settings loader persists `autoMemoryEnabled`.
 //!
-//! These tests are hermetic: each sets `CC_RUST_HOME` to a tempdir so
-//! they never touch `~/.cc-rust/`.
+//! These tests are hermetic: each sets `ALLTHECODES_HOME` to a tempdir so
+//! they never touch `~/.allthecodes/`.
 //!
 //! Run with: `cargo test --test e2e_memory_scopes`
 
@@ -26,8 +26,8 @@ struct CcRustHomeGuard {
 
 impl CcRustHomeGuard {
     fn set(path: &std::path::Path) -> Self {
-        let previous = std::env::var("CC_RUST_HOME").ok();
-        std::env::set_var("CC_RUST_HOME", path);
+        let previous = std::env::var("ALLTHECODES_HOME").ok();
+        std::env::set_var("ALLTHECODES_HOME", path);
         Self { previous }
     }
 }
@@ -35,8 +35,8 @@ impl CcRustHomeGuard {
 impl Drop for CcRustHomeGuard {
     fn drop(&mut self) {
         match &self.previous {
-            Some(v) => std::env::set_var("CC_RUST_HOME", v),
-            None => std::env::remove_var("CC_RUST_HOME"),
+            Some(v) => std::env::set_var("ALLTHECODES_HOME", v),
+            None => std::env::remove_var("ALLTHECODES_HOME"),
         }
     }
 }
@@ -56,7 +56,7 @@ fn memory_dir_resolves_every_scope_under_data_root() {
     );
     assert_eq!(
         memory_dir(MemoryScope::Project, &cwd).unwrap(),
-        cwd.join(".cc-rust").join("memory")
+        cwd.join(".allthecodes").join("memory")
     );
 
     // The team dir is rooted under data_root/projects/<sanitized>/memory/team

@@ -364,10 +364,10 @@ mod tests {
     #[test]
     fn shorten_path_strips_home_prefix() {
         if let Some(home) = dirs::home_dir() {
-            let inside = home.join(".cc-rust/settings.json");
+            let inside = home.join(".allthecodes/settings.json");
             let short = shorten_path(&inside);
             assert!(short.starts_with("~/"));
-            assert!(short.contains(".cc-rust"));
+            assert!(short.contains(".allthecodes"));
         }
     }
 }

@@ -15,7 +15,7 @@
 //!   /statusline padding <n>         set padding (left spaces)
 //! ```
 //!
-//! Persisted edits go to `~/.cc-rust/settings.json` (user scope). The next
+//! Persisted edits go to `~/.allthecodes/settings.json` (user scope). The next
 //! TUI startup picks them up; within the current session the in-memory
 //! `AppState.settings.status_line` snapshot is also updated so the runner
 //! honours the change immediately.

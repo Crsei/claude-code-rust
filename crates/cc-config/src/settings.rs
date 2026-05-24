@@ -6,13 +6,13 @@
 //! priority (higher overrides lower):
 //!
 //! 1. `Managed` — policy-level settings. Windows prefers
-//!    `%ProgramData%\cc-rust\settings.json`; other platforms use
-//!    `/etc/cc-rust/managed-settings.json`. Overridable with
-//!    `CC_RUST_MANAGED_SETTINGS`.
-//! 2. `User` — `{data_root}/settings.json` (i.e. `~/.cc-rust/settings.json`
-//!    or `$CC_RUST_HOME/settings.json`).
-//! 3. `Project` — `.cc-rust/settings.json` in CWD or any ancestor directory.
-//! 4. `Local` — `.cc-rust/settings.local.json` next to the project settings
+//!    `%ProgramData%\allthecodes\settings.json`; other platforms use
+//!    `/etc/allthecodes/managed-settings.json`. Overridable with
+//!    `ALLTHECODES_MANAGED_SETTINGS`.
+//! 2. `User` — `{data_root}/settings.json` (i.e. `~/.allthecodes/settings.json`
+//!    or `$ALLTHECODES_HOME/settings.json`).
+//! 3. `Project` — `.allthecodes/settings.json` in CWD or any ancestor directory.
+//! 4. `Local` — `.allthecodes/settings.local.json` next to the project settings
 //!    (intended for gitignored per-machine overrides).
 //! 5. `Env` — a handful of CLAUDE_* / CC_* environment variables.
 //! 6. `Cli` — command-line flags (applied by the caller, not this module).

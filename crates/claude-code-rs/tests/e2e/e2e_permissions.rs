@@ -5,7 +5,7 @@
 //! the cross-cutting behaviour you can only test by running the CLI
 //! binary against a real settings file:
 //!
-//! 1. Permission rules from `~/.cc-rust/settings.json` actually flow into
+//! 1. Permission rules from `~/.allthecodes/settings.json` actually flow into
 //!    the runtime `ToolPermissionContext`.
 //! 2. The schema published in `docs/schemas/settings.schema.json`
 //!    describes the `permissions` object the way the loader expects.
@@ -37,7 +37,7 @@ fn permissions_from_user_settings_round_trip() {
     let project = tempfile::tempdir().expect("project tmpdir");
 
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")

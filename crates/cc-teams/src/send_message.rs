@@ -501,7 +501,7 @@ mod tests {
     #[serial_test::serial]
     fn single_message_writes_to_target_mailbox() {
         let tmp = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let team_name = create_team_with_members(vec![team_member("worker", true)]);
 
         let result = handle_single_message(
@@ -527,7 +527,7 @@ mod tests {
     #[serial_test::serial]
     fn broadcast_skips_sender_and_inactive_members() {
         let tmp = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let team_name = create_team_with_members(vec![
             team_member("worker", true),
             team_member("reviewer", true),
@@ -571,7 +571,7 @@ mod tests {
     #[serial_test::serial]
     fn plan_approval_request_marks_teammate_pending_and_forwards_to_leader() {
         let tmp = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         InProcessBackend::clear_registry();
         register_test_teammate(false, PermissionMode::Plan);
 
@@ -579,7 +579,7 @@ mod tests {
             "type": "plan_approval_request",
             "from": "worker",
             "timestamp": "2026-05-05T00:00:00Z",
-            "planFilePath": ".cc-rust/current-plan.md",
+            "planFilePath": ".allthecodes/current-plan.md",
             "planContent": "Implement in two steps",
             "requestId": "plan_approval-worker-1",
         })
@@ -609,7 +609,7 @@ mod tests {
     #[serial_test::serial]
     fn plan_approval_response_clears_pending_and_updates_permission_mode() {
         let tmp = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         InProcessBackend::clear_registry();
         register_test_teammate(true, PermissionMode::Plan);
 
@@ -695,6 +695,7 @@ mod tests {
             agent_type: None,
             query_tracking: None,
             permission_callback: None,
+            permission_event_callback: None,
             ask_user_callback: None,
             bg_agent_tx: None,
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),

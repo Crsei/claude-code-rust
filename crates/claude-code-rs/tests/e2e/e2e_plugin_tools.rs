@@ -29,19 +29,19 @@ fn strip_api_keys(cmd: &mut Command) -> &mut Command {
 }
 
 fn configure_fake_home<'a>(cmd: &'a mut Command, home: &TempDir) -> &'a mut Command {
-    let cc_rust_home = home.path().join(".cc-rust");
-    let cc_rust_home = cc_rust_home.to_string_lossy().to_string();
-    cmd.env("CC_RUST_HOME", &cc_rust_home);
+    let allthecodes_home = home.path().join(".allthecodes");
+    let allthecodes_home = allthecodes_home.to_string_lossy().to_string();
+    cmd.env("ALLTHECODES_HOME", &allthecodes_home);
     cmd
 }
 
 fn write_plugin_fixture(home: &TempDir) {
-    fs::create_dir_all(home.path().join(".cc-rust").join("logs"))
+    fs::create_dir_all(home.path().join(".allthecodes").join("logs"))
         .expect("create fake global log directory");
 
     let plugin_dir = home
         .path()
-        .join(".cc-rust")
+        .join(".allthecodes")
         .join("plugins")
         .join("cache")
         .join("local")
@@ -108,7 +108,7 @@ fn write_plugin_fixture(home: &TempDir) {
 
     let installed_path = home
         .path()
-        .join(".cc-rust")
+        .join(".allthecodes")
         .join("plugins")
         .join("installed_plugins.json");
     fs::create_dir_all(

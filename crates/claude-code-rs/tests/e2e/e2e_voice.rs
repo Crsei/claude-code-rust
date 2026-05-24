@@ -25,13 +25,13 @@ where
     let dir = tempfile::tempdir().expect("tempdir");
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
         .env_remove("ANTHROPIC_AUTH_TOKEN")
-        .env_remove("CC_RUST_REMOTE")
-        .env_remove("CLAUDE_CODE_REMOTE")
+        .env_remove("ALLTHECODES_REMOTE")
+        .env_remove("ALLTHECODES_REMOTE")
         .arg("--init-only")
         .arg("--cwd")
         .arg(project.path());
@@ -53,13 +53,13 @@ fn cli_init_only_accepts_voice_enabled_setting_for_compatibility() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", tmp.path())
+    cmd.env("ALLTHECODES_HOME", tmp.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
         .env_remove("ANTHROPIC_AUTH_TOKEN")
-        .env_remove("CC_RUST_REMOTE")
-        .env_remove("CLAUDE_CODE_REMOTE")
+        .env_remove("ALLTHECODES_REMOTE")
+        .env_remove("ALLTHECODES_REMOTE")
         .arg("--init-only")
         .arg("--cwd")
         .arg(project.path());
@@ -88,13 +88,13 @@ fn cli_init_only_accepts_explicitly_disabled_voice_enabled_flag() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", tmp.path())
+    cmd.env("ALLTHECODES_HOME", tmp.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
         .env_remove("ANTHROPIC_AUTH_TOKEN")
-        .env_remove("CC_RUST_REMOTE")
-        .env_remove("CLAUDE_CODE_REMOTE")
+        .env_remove("ALLTHECODES_REMOTE")
+        .env_remove("ALLTHECODES_REMOTE")
         .arg("--init-only")
         .arg("--cwd")
         .arg(project.path());
@@ -123,13 +123,13 @@ fn cli_init_only_accepts_remapped_push_to_talk_keybinding() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", tmp.path())
+    cmd.env("ALLTHECODES_HOME", tmp.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
         .env_remove("ANTHROPIC_AUTH_TOKEN")
-        .env_remove("CC_RUST_REMOTE")
-        .env_remove("CLAUDE_CODE_REMOTE")
+        .env_remove("ALLTHECODES_REMOTE")
+        .env_remove("ALLTHECODES_REMOTE")
         .arg("--init-only")
         .arg("--cwd")
         .arg(project.path());
@@ -149,13 +149,13 @@ fn cli_init_only_tolerates_unsupported_dictation_language() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", tmp.path())
+    cmd.env("ALLTHECODES_HOME", tmp.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
         .env_remove("ANTHROPIC_AUTH_TOKEN")
-        .env_remove("CC_RUST_REMOTE")
-        .env_remove("CLAUDE_CODE_REMOTE")
+        .env_remove("ALLTHECODES_REMOTE")
+        .env_remove("ALLTHECODES_REMOTE")
         .arg("--init-only")
         .arg("--cwd")
         .arg(project.path());

@@ -273,7 +273,7 @@ mod tests {
     #[serial]
     fn remote_surface_new_uses_nonblocking_placeholder_snapshot() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         let store =
             gateway::GatewayStore::default_with_policy(gateway::SessionKeyPolicy::default());
         store.create_run(request()).unwrap();

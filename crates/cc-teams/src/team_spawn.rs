@@ -44,7 +44,7 @@ struct TeamSpawnInput {
     /// Optional description for an implicitly-created team.
     #[serde(default)]
     description: Option<String>,
-    /// Optional backend. cc-rust supports only in-process.
+    /// Optional backend. allthecodes supports only in-process.
     #[serde(default)]
     backend: Option<BackendType>,
     /// Optional permission mode for the teammate. `plan` requires plan approval.
@@ -444,6 +444,7 @@ mod tests {
             agent_type: None,
             query_tracking: None,
             permission_callback: None,
+            permission_event_callback: None,
             ask_user_callback: None,
             bg_agent_tx: None,
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),

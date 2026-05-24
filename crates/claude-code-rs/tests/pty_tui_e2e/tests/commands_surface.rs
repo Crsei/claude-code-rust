@@ -9,7 +9,7 @@
 //! 3. `Key(Enter)` 从 prompt 提交命令（对已直接执行的无副作用）
 //! 4. 等待面板渲染、截图、断言
 
-use crate::script::{TestCase, TestRunner, TestStep, TestKey};
+use crate::script::{TestCase, TestKey, TestRunner, TestStep};
 use crate::tests::SCRIPTS_LOG_ROOT;
 use std::time::Duration;
 
@@ -82,7 +82,11 @@ fn surface_hooks() {
 #[test]
 fn surface_login() {
     TestRunner::new()
-        .run(&surface_test("surface_login", "login", "+ Login / Claude Code "))
+        .run(&surface_test(
+            "surface_login",
+            "login",
+            "+ Login / Claude Code ",
+        ))
         .assert_no_errors();
 }
 
@@ -134,7 +138,11 @@ fn surface_plugin() {
 #[test]
 fn surface_remote() {
     TestRunner::new()
-        .run(&surface_test("surface_remote", "remote", "Remote control gateway"))
+        .run(&surface_test(
+            "surface_remote",
+            "remote",
+            "Remote control gateway",
+        ))
         .assert_no_errors();
 }
 

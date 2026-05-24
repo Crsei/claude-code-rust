@@ -183,7 +183,7 @@ fn append_skills(out: &mut String) {
     if skills.is_empty() {
         out.push_str(
             "No user-invocable skills are currently registered. Skills live \
-             under `{data_root}/skills/` or `.cc-rust/skills/`; drop a \
+             under `{data_root}/skills/` or `.allthecodes/skills/`; drop a \
              `SKILL.md` in either to make one available here.\n\n",
         );
         return;
@@ -290,15 +290,15 @@ fn append_risk_areas(out: &mut String, cwd: &Path, onboarding: &OnboardingState)
         );
     }
 
-    if cwd.join(".cc-rust").is_dir() {
+    if cwd.join(".allthecodes").is_dir() {
         bullets.push(
-            "This project has a `.cc-rust/` directory — prefer project-level \
+            "This project has a `.allthecodes/` directory — prefer project-level \
              settings over global ones when they conflict."
                 .into(),
         );
     } else {
         bullets.push(
-            "No `.cc-rust/` directory in this cwd. `/init` creates one when \
+            "No `.allthecodes/` directory in this cwd. `/init` creates one when \
              you're ready to pin project-level settings."
                 .into(),
         );

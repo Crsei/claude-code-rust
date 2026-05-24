@@ -78,7 +78,8 @@ fn render_status() -> String {
             lines.push(String::new());
             lines.push("  Onboarding:".into());
             lines.push(
-                "    1. Start cc-rust with `--chrome` or set `CLAUDE_CODE_ENABLE_CFC=1`.".into(),
+                "    1. Start allthecodes with `--chrome` or set `ALLTHECODES_ENABLE_CFC=1`."
+                    .into(),
             );
             lines.push(format!(
                 "    2. Install the Chrome extension: {}",
@@ -136,8 +137,8 @@ fn render_help() -> String {
            claude --chrome      -- enable Chrome subsystem\n  \
            claude --no-chrome   -- explicitly disable Chrome subsystem\n\n\
          Environment:\n  \
-           CLAUDE_CODE_ENABLE_CFC=1   -- enable by default\n  \
-           CLAUDE_CODE_ENABLE_CFC=0   -- disable by default\n\n\
+           ALLTHECODES_ENABLE_CFC=1   -- enable by default\n  \
+           ALLTHECODES_ENABLE_CFC=0   -- disable by default\n\n\
          Install the Chrome extension:  {install}\n\
          Manage per-site permissions:   {perms}\n\
          Troubleshoot disconnects:      {reconnect}",
@@ -150,7 +151,7 @@ fn render_help() -> String {
 fn handle_reconnect() -> String {
     let snap = state::snapshot();
     if matches!(snap.connection, ChromeConnectionState::Disabled) {
-        return "Chrome subsystem is disabled. Start cc-rust with --chrome first.".into();
+        return "Chrome subsystem is disabled. Start allthecodes with --chrome first.".into();
     }
 
     // Re-run setup (detection + manifest install). #5 will additionally
@@ -258,7 +259,7 @@ mod tests {
             CommandResult::Output(t) => {
                 assert!(t.contains("--chrome"));
                 assert!(t.contains("--no-chrome"));
-                assert!(t.contains("CLAUDE_CODE_ENABLE_CFC"));
+                assert!(t.contains("ALLTHECODES_ENABLE_CFC"));
             }
             _ => panic!("expected Output"),
         }

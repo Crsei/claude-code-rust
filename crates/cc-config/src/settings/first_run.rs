@@ -1,4 +1,4 @@
-//! First-run initialization — seeds `~/.cc-rust/settings.json` from an
+//! First-run initialization — seeds `~/.allthecodes/settings.json` from an
 //! embedded template when no global config exists yet.
 
 use anyhow::{Context, Result};
@@ -111,7 +111,7 @@ mod tests {
     fn fresh_install_creates_settings_json() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("fresh");
-        let _g = EnvGuard::set("CC_RUST_HOME", root.to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", root.to_str().unwrap());
         assert!(!data_root().exists());
 
         let created = initialize_first_run().unwrap();
@@ -134,7 +134,7 @@ mod tests {
     fn existing_settings_is_not_overwritten() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("existing");
-        let _g = EnvGuard::set("CC_RUST_HOME", root.to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", root.to_str().unwrap());
         ensure_data_root().unwrap();
         let custom = r#"{"model":"claude-opus-4-7"}"#;
         std::fs::write(root.join("settings.json"), custom).unwrap();
@@ -192,7 +192,7 @@ mod tests {
     fn template_round_trips_through_write_and_load() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("roundtrip");
-        let _g = EnvGuard::set("CC_RUST_HOME", root.to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", root.to_str().unwrap());
         ensure_data_root().unwrap();
 
         let raw: RawSettings = serde_json::from_str(SETTINGS_TEMPLATE).unwrap();

@@ -108,10 +108,10 @@ impl PromptCachePolicy {
         }
         Self {
             enabled: true,
-            ttl_1h: capability.ttl_1h && is_env_value("CC_RUST_PROMPT_CACHE_TTL", "1h"),
+            ttl_1h: capability.ttl_1h && is_env_value("ALLTHECODES_PROMPT_CACHE_TTL", "1h"),
             global_scope: capability.global_scope
                 && capability.direct_official_anthropic
-                && is_env_truthy("CC_RUST_PROMPT_CACHE_GLOBAL"),
+                && is_env_truthy("ALLTHECODES_PROMPT_CACHE_GLOBAL"),
         }
     }
 
@@ -1224,9 +1224,9 @@ impl ApiClient {
     /// Auto-detect provider from environment variables and construct an `ApiClient`.
     ///
     /// Priority:
-    /// 1. `CLAUDE_CODE_USE_FOUNDRY=1` -> fail early; Foundry has no adapter yet
-    /// 2. `CLAUDE_CODE_USE_BEDROCK=1` -> AWS Bedrock (Claude)
-    /// 3. `CLAUDE_CODE_USE_VERTEX=1`  -> GCP Vertex AI (Claude)
+    /// 1. `ALLTHECODES_USE_FOUNDRY=1` -> fail early; Foundry has no adapter yet
+    /// 2. `ALLTHECODES_USE_BEDROCK=1` -> AWS Bedrock (Claude)
+    /// 3. `ALLTHECODES_USE_VERTEX=1`  -> GCP Vertex AI (Claude)
     /// 4. First of the registered API-key providers (Anthropic, Azure, OpenAI, ...)
     ///    that has its env var set.
     ///
@@ -1238,7 +1238,7 @@ impl ApiClient {
         // Env-flag cloud providers are checked BEFORE API-key providers,
         // matching claude-code-bun. Foundry is recognized but intentionally
         // unsupported until a request/auth adapter exists.
-        if is_env_truthy("CLAUDE_CODE_USE_FOUNDRY") {
+        if is_env_truthy("ALLTHECODES_USE_FOUNDRY") {
             let validation = crate::api::providers::validate_provider_name("azure-foundry");
             let reason = validation
                 .diagnostics
@@ -1247,10 +1247,10 @@ impl ApiClient {
                 .unwrap_or(crate::api::providers::FOUNDRY_UNSUPPORTED_REASON);
             bail!("{reason}");
         }
-        if is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
+        if is_env_truthy("ALLTHECODES_USE_BEDROCK") {
             return Self::from_bedrock_env_result().map(Some);
         }
-        if is_env_truthy("CLAUDE_CODE_USE_VERTEX") {
+        if is_env_truthy("ALLTHECODES_USE_VERTEX") {
             return Self::from_vertex_env_result().map(Some);
         }
 
@@ -1354,7 +1354,7 @@ impl ApiClient {
     pub fn from_bedrock_env_result() -> Result<Self> {
         let auth = crate::api::bedrock::BedrockAuth::from_env().ok_or_else(|| {
             anyhow::anyhow!(
-                "Bedrock provider was requested with CLAUDE_CODE_USE_BEDROCK, but no Bedrock auth was found. Set AWS_BEARER_TOKEN_BEDROCK or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY."
+                "Bedrock provider was requested with ALLTHECODES_USE_BEDROCK, but no Bedrock auth was found. Set AWS_BEARER_TOKEN_BEDROCK or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY."
             )
         })?;
         let region = crate::api::bedrock::resolve_region();
@@ -1384,7 +1384,7 @@ impl ApiClient {
     /// Honors:
     /// - `CLOUD_ML_REGION` 鈥?region (default: `us-east5`)
     /// - `ANTHROPIC_VERTEX_PROJECT_ID` / `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT` 鈥?project ID
-    /// - `CLAUDE_CODE_VERTEX_ACCESS_TOKEN` / `GOOGLE_OAUTH_ACCESS_TOKEN` 鈥?access token
+    /// - `ALLTHECODES_VERTEX_ACCESS_TOKEN` / `GOOGLE_OAUTH_ACCESS_TOKEN` 鈥?access token
     /// - `GOOGLE_APPLICATION_CREDENTIALS` service-account JSON
     ///   (falls back to `gcloud auth application-default print-access-token` subprocess)
     ///
@@ -1392,13 +1392,13 @@ impl ApiClient {
     pub fn from_vertex_env_result() -> Result<Self> {
         let project_id = crate::api::vertex::resolve_project_id().ok_or_else(|| {
             anyhow::anyhow!(
-                "Vertex provider was requested with CLAUDE_CODE_USE_VERTEX, but no project id was found. Set ANTHROPIC_VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, or GCLOUD_PROJECT."
+                "Vertex provider was requested with ALLTHECODES_USE_VERTEX, but no project id was found. Set ANTHROPIC_VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, or GCLOUD_PROJECT."
             )
         })?;
         let region = crate::api::vertex::resolve_region();
         let access_token = crate::api::vertex::VertexAccessToken::from_env_or_gcloud().ok_or_else(|| {
             anyhow::anyhow!(
-                "Vertex provider was requested with CLAUDE_CODE_USE_VERTEX, but no OAuth access token was found. Set CLAUDE_CODE_VERTEX_ACCESS_TOKEN, GOOGLE_OAUTH_ACCESS_TOKEN, or GOOGLE_APPLICATION_CREDENTIALS, or run `gcloud auth application-default login`."
+                "Vertex provider was requested with ALLTHECODES_USE_VERTEX, but no OAuth access token was found. Set ALLTHECODES_VERTEX_ACCESS_TOKEN, GOOGLE_OAUTH_ACCESS_TOKEN, or GOOGLE_APPLICATION_CREDENTIALS, or run `gcloud auth application-default login`."
             )
         })?;
         let default_model = std::env::var("ANTHROPIC_MODEL")
@@ -1472,7 +1472,7 @@ impl ApiClient {
     }
 
     /// Construct an OpenAI-compatible client from the provider-scoped OpenAI
-    /// Platform API key stored in cc-rust's keychain.
+    /// Platform API key stored in allthecodes's keychain.
     pub fn from_openai_api_keychain_result() -> Result<Option<Self>> {
         let Some(info) = crate::api::providers::get_provider(OPENAI_PROVIDER_NAME) else {
             return Ok(None);
@@ -1535,7 +1535,7 @@ impl ApiClient {
         // Honor the active settings provider before generic env detection.
         // This prevents unrelated inherited tokens, especially
         // OPENAI_CODEX_AUTH_TOKEN from the TypeScript/Codex install, from
-        // silently routing a cc-rust Anthropic profile to openai-codex.
+        // silently routing a allthecodes Anthropic profile to openai-codex.
         if let Some(provider) = selected_api_provider_from_settings()? {
             return Self::from_selected_provider_result(&provider);
         }
@@ -1551,7 +1551,7 @@ impl ApiClient {
     }
 
     fn from_env_flag_provider_result() -> Result<Option<Self>> {
-        if is_env_truthy("CLAUDE_CODE_USE_FOUNDRY") {
+        if is_env_truthy("ALLTHECODES_USE_FOUNDRY") {
             let validation = crate::api::providers::validate_provider_name("azure-foundry");
             let reason = validation
                 .diagnostics
@@ -1560,10 +1560,10 @@ impl ApiClient {
                 .unwrap_or(crate::api::providers::FOUNDRY_UNSUPPORTED_REASON);
             bail!("{reason}");
         }
-        if is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
+        if is_env_truthy("ALLTHECODES_USE_BEDROCK") {
             return Self::from_bedrock_env_result().map(Some);
         }
-        if is_env_truthy("CLAUDE_CODE_USE_VERTEX") {
+        if is_env_truthy("ALLTHECODES_USE_VERTEX") {
             return Self::from_vertex_env_result().map(Some);
         }
         Ok(None)

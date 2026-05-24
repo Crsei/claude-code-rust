@@ -42,7 +42,7 @@ export PATH="$CARGO_HOME/bin:$PATH"
 # 运行所有离线测试（不需要 API key）
 cargo test -p claude-code-rs --test pty_tui_e2e -- --nocapture
 
-# 运行所有在线测试（需要真实 API key，从 ~/.cc-rust/settings.json 读取）
+# 运行所有在线测试（需要真实 API key，从 ~/.allthecodes/settings.json 读取）
 cargo test -p claude-code-rs --test pty_tui_e2e -- --ignored --nocapture
 
 # 运行单个模块
@@ -223,7 +223,7 @@ fn command_palette_flow() {
 let case = TestCase::new("my_test")
     .cols(120)
     .rows(40)
-    .env("CC_RUST_HOME", "/tmp/test-home")
+    .env("ALLTHECODES_HOME", "/tmp/test-home")
     .exit(ExitMethod::CtrlC)
     .timeout(Duration::from_secs(180))
     .step(TestStep::SkipTrustGate)
@@ -280,7 +280,7 @@ logs_dir()           // 日志根目录（logs/pty_tui_e2e_{timestamp}/）
 test_subdir("name")  // 测试专属子目录（logs/pty_tui_e2e_{timestamp}/{name}/）
 binary_path()        // claude-code-rs 二进制路径
 default_args()       // 标准启动参数：-C {workspace} --permission-mode bypass
-read_settings()      // 读取 ~/.cc-rust/settings.json 的 activeAuthProfile 和 model
+read_settings()      // 读取 ~/.allthecodes/settings.json 的 activeAuthProfile 和 model
 skip_trust_gate()    // 跳过首次 workspace 信任确认
 ```
 
@@ -327,7 +327,7 @@ HTML 文件可在浏览器中打开查看终端截图，带暗色终端样式和
 
 ### 在线测试（需要真实 API key）
 
-从 `~/.cc-rust/settings.json` 读取 authProfile 配置，标记为 `#[ignore]`：
+从 `~/.allthecodes/settings.json` 读取 authProfile 配置，标记为 `#[ignore]`：
 
 - `conversation::*` — 单轮/多轮对话、工具调用、中断恢复
 - `model_flow::*` — 模型验证、/model 切换、authProfile 切换

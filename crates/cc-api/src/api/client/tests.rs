@@ -580,16 +580,16 @@ fn regression_anthropic_auth_token_uses_authorization_bearer() {
     let saved = save_env(&[
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
         "ANTHROPIC_BASE_URL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     std::env::set_var("ANTHROPIC_AUTH_TOKEN", "anthropic-compatible-token");
 
@@ -618,15 +618,15 @@ fn regression_anthropic_base_url_env_currently_loses_compatible_routing() {
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_MODEL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let fixture = fixture_json("base_url_expected");
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-compatible-routing-test");
@@ -659,15 +659,15 @@ fn anthropic_auth_token_with_non_official_base_url_selects_compatible_messages_e
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let fixture = fixture_json("base_url_expected");
     std::env::set_var("ANTHROPIC_AUTH_TOKEN", "compatible-secret-token");
@@ -744,15 +744,15 @@ fn regression_anthropic_model_alias_currently_not_resolved_for_wire_model() {
         ANTHROPIC_DEFAULT_OPUS_MODEL_ENV,
         ANTHROPIC_DEFAULT_SONNET_MODEL_ENV,
         ANTHROPIC_DEFAULT_HAIKU_MODEL_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
         "ANTHROPIC_BASE_URL",
         ANTHROPIC_DEFAULT_SOTA_MODEL_ENV,
         ANTHROPIC_DEFAULT_MOTA_MODEL_ENV,
@@ -785,15 +785,15 @@ fn anthropic_alias_uses_new_default_model_env_before_official_fallback() {
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_MODEL",
         ANTHROPIC_DEFAULT_MOTA_MODEL_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-model-env-test");
     std::env::set_var("ANTHROPIC_MODEL", "MOTA");
@@ -817,15 +817,15 @@ fn anthropic_alias_uses_legacy_default_model_env_as_fallback() {
         "ANTHROPIC_MODEL",
         ANTHROPIC_DEFAULT_MOTA_MODEL_ENV,
         ANTHROPIC_DEFAULT_SONNET_MODEL_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
         ANTHROPIC_DEFAULT_MOTA_MODEL_ENV,
     ]);
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-legacy-model-env-test");
@@ -849,16 +849,16 @@ fn anthropic_compatible_alias_without_provider_default_is_config_error() {
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_model_env = save_env(ANTHROPIC_MODEL_ENV_KEYS);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     clear_env(ANTHROPIC_MODEL_ENV_KEYS);
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-compatible-model-error");
@@ -887,15 +887,15 @@ fn anthropic_compatible_explicit_model_id_wins_over_alias_defaults() {
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
         ANTHROPIC_DEFAULT_MOTA_MODEL_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-compatible-explicit");
     std::env::set_var("ANTHROPIC_BASE_URL", "https://compatible.example.com");
@@ -919,17 +919,17 @@ fn settings_runtime_env_is_visible_to_anthropic_provider_detection() {
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let env = std::collections::HashMap::from([
         (
@@ -966,15 +966,15 @@ fn startup_settings_env_overrides_inherited_anthropic_provider_env() {
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-old-process-key");
     std::env::set_var("ANTHROPIC_BASE_URL", "https://old.example.com");
@@ -1017,9 +1017,9 @@ fn settings_runtime_env_supports_anthropic_legacy_model_alias_fallback() {
         "ANTHROPIC_MODEL",
         ANTHROPIC_DEFAULT_MOTA_MODEL_ENV,
         ANTHROPIC_DEFAULT_SONNET_MODEL_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let saved_keys = save_and_clear_provider_keys();
     clear_env(&[
@@ -1027,9 +1027,9 @@ fn settings_runtime_env_supports_anthropic_legacy_model_alias_fallback() {
         "ANTHROPIC_MODEL",
         ANTHROPIC_DEFAULT_MOTA_MODEL_ENV,
         ANTHROPIC_DEFAULT_SONNET_MODEL_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     let env = std::collections::HashMap::from([
         (
@@ -1112,7 +1112,7 @@ fn active_codex_profile_env_builds_codex_client() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let temp = tempfile::tempdir().expect("tempdir");
     let saved = save_env(&[
-        "CC_RUST_HOME",
+        "ALLTHECODES_HOME",
         OPENAI_CODEX_TOKEN_ENV,
         OPENAI_CODEX_BASE_URL_ENV,
         OPENAI_CODEX_MODEL_ENV,
@@ -1122,7 +1122,7 @@ fn active_codex_profile_env_builds_codex_client() {
         OPENAI_CODEX_BASE_URL_ENV,
         OPENAI_CODEX_MODEL_ENV,
     ]);
-    std::env::set_var("CC_RUST_HOME", temp.path());
+    std::env::set_var("ALLTHECODES_HOME", temp.path());
     cc_config::settings::write_user_settings(&cc_config::settings::RawSettings {
         active_auth_profile: Some("codex".to_string()),
         auth_profiles: Some(HashMap::from([(
@@ -1168,25 +1168,25 @@ fn active_custom_profile_env_builds_anthropic_compatible_client() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let temp = tempfile::tempdir().expect("tempdir");
     let saved = save_env(&[
-        "CC_RUST_HOME",
+        "ALLTHECODES_HOME",
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     clear_env(&[
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
-    std::env::set_var("CC_RUST_HOME", temp.path());
+    std::env::set_var("ALLTHECODES_HOME", temp.path());
     cc_config::settings::write_user_settings(&cc_config::settings::RawSettings {
         active_auth_profile: Some("custom".to_string()),
         auth_profiles: Some(HashMap::from([(
@@ -1292,13 +1292,13 @@ fn test_from_env_with_anthropic_key() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let saved_flags = save_env(&[
         "ANTHROPIC_BASE_URL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
     ]);
     clear_env(&[
         "ANTHROPIC_BASE_URL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
     ]);
 
     // Temporarily set the env var for this test
@@ -1332,8 +1332,8 @@ fn test_from_env_with_anthropic_key() {
 #[test]
 fn test_from_env_no_keys() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
-    let saved_flags = save_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
-    clear_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+    let saved_flags = save_env(&["ALLTHECODES_USE_BEDROCK", "ALLTHECODES_USE_VERTEX"]);
+    clear_env(&["ALLTHECODES_USE_BEDROCK", "ALLTHECODES_USE_VERTEX"]);
 
     // Save and clear all provider keys
     let saved: Vec<_> = crate::api::providers::PROVIDERS
@@ -1360,8 +1360,8 @@ fn test_from_env_no_keys() {
 #[test]
 fn test_from_auth_with_env() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
-    let saved_flags = save_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
-    clear_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
+    let saved_flags = save_env(&["ALLTHECODES_USE_BEDROCK", "ALLTHECODES_USE_VERTEX"]);
+    clear_env(&["ALLTHECODES_USE_BEDROCK", "ALLTHECODES_USE_VERTEX"]);
 
     let key = "sk-ant-api03-test-from-auth-key";
     std::env::set_var("ANTHROPIC_API_KEY", key);
@@ -1407,8 +1407,8 @@ fn test_from_codex_auth_with_env() {
 fn test_from_env_prefers_bedrock_when_flag_set() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let saved_extra = save_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
         "AWS_BEARER_TOKEN_BEDROCK",
         "AWS_REGION",
     ]);
@@ -1421,7 +1421,7 @@ fn test_from_env_prefers_bedrock_when_flag_set() {
         std::env::remove_var(p.env_key);
     }
 
-    std::env::set_var("CLAUDE_CODE_USE_BEDROCK", "1");
+    std::env::set_var("ALLTHECODES_USE_BEDROCK", "1");
     std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", "bedrock-123");
     std::env::set_var("AWS_REGION", "us-west-2");
 
@@ -1441,10 +1441,10 @@ fn test_from_env_prefers_bedrock_when_flag_set() {
 fn test_from_env_prefers_vertex_when_flag_set() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let saved_extra = save_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
         "ANTHROPIC_VERTEX_PROJECT_ID",
-        "CLAUDE_CODE_VERTEX_ACCESS_TOKEN",
+        "ALLTHECODES_VERTEX_ACCESS_TOKEN",
         "CLOUD_ML_REGION",
     ]);
     let saved_keys: Vec<_> = crate::api::providers::PROVIDERS
@@ -1455,9 +1455,9 @@ fn test_from_env_prefers_vertex_when_flag_set() {
         std::env::remove_var(p.env_key);
     }
 
-    std::env::set_var("CLAUDE_CODE_USE_VERTEX", "true");
+    std::env::set_var("ALLTHECODES_USE_VERTEX", "true");
     std::env::set_var("ANTHROPIC_VERTEX_PROJECT_ID", "proj-42");
-    std::env::set_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", "ya29.test");
+    std::env::set_var("ALLTHECODES_VERTEX_ACCESS_TOKEN", "ya29.test");
     std::env::set_var("CLOUD_ML_REGION", "europe-west4");
 
     let client = ApiClient::from_env().expect("Vertex flag should produce a client");
@@ -1508,20 +1508,20 @@ fn test_from_bedrock_env_returns_none_without_auth() {
 fn test_from_env_result_errors_for_explicit_bedrock_without_auth() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let saved = save_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
         "AWS_BEARER_TOKEN_BEDROCK",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "ANTHROPIC_API_KEY",
     ]);
     clear_env(&[
-        "CLAUDE_CODE_USE_VERTEX",
+        "ALLTHECODES_USE_VERTEX",
         "AWS_BEARER_TOKEN_BEDROCK",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
     ]);
-    std::env::set_var("CLAUDE_CODE_USE_BEDROCK", "1");
+    std::env::set_var("ALLTHECODES_USE_BEDROCK", "1");
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-should-not-fallback");
 
     let err = match ApiClient::from_env_result() {
@@ -1529,7 +1529,7 @@ fn test_from_env_result_errors_for_explicit_bedrock_without_auth() {
         Ok(_) => panic!("Bedrock config must fail early"),
     };
     let msg = err.to_string();
-    assert!(msg.contains("CLAUDE_CODE_USE_BEDROCK"));
+    assert!(msg.contains("ALLTHECODES_USE_BEDROCK"));
     assert!(msg.contains("AWS_BEARER_TOKEN_BEDROCK"));
 
     restore_env(saved);
@@ -1539,13 +1539,13 @@ fn test_from_env_result_errors_for_explicit_bedrock_without_auth() {
 fn test_from_env_result_errors_for_explicit_foundry() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let saved = save_env(&[
-        "CLAUDE_CODE_USE_FOUNDRY",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
         "ANTHROPIC_API_KEY",
     ]);
-    clear_env(&["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]);
-    std::env::set_var("CLAUDE_CODE_USE_FOUNDRY", "1");
+    clear_env(&["ALLTHECODES_USE_BEDROCK", "ALLTHECODES_USE_VERTEX"]);
+    std::env::set_var("ALLTHECODES_USE_FOUNDRY", "1");
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-should-not-fallback");
 
     let err = match ApiClient::from_env_result() {
@@ -1563,22 +1563,22 @@ fn test_from_env_result_errors_for_explicit_foundry() {
 fn test_from_env_result_errors_for_explicit_vertex_without_project() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let saved = save_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
         "ANTHROPIC_VERTEX_PROJECT_ID",
         "GOOGLE_CLOUD_PROJECT",
         "GCLOUD_PROJECT",
-        "CLAUDE_CODE_VERTEX_ACCESS_TOKEN",
+        "ALLTHECODES_VERTEX_ACCESS_TOKEN",
         "ANTHROPIC_API_KEY",
     ]);
     clear_env(&[
-        "CLAUDE_CODE_USE_BEDROCK",
+        "ALLTHECODES_USE_BEDROCK",
         "ANTHROPIC_VERTEX_PROJECT_ID",
         "GOOGLE_CLOUD_PROJECT",
         "GCLOUD_PROJECT",
     ]);
-    std::env::set_var("CLAUDE_CODE_USE_VERTEX", "1");
-    std::env::set_var("CLAUDE_CODE_VERTEX_ACCESS_TOKEN", "vertex-token");
+    std::env::set_var("ALLTHECODES_USE_VERTEX", "1");
+    std::env::set_var("ALLTHECODES_VERTEX_ACCESS_TOKEN", "vertex-token");
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-should-not-fallback");
 
     let err = match ApiClient::from_env_result() {
@@ -1586,7 +1586,7 @@ fn test_from_env_result_errors_for_explicit_vertex_without_project() {
         Ok(_) => panic!("Vertex config must fail early"),
     };
     let msg = err.to_string();
-    assert!(msg.contains("CLAUDE_CODE_USE_VERTEX"));
+    assert!(msg.contains("ALLTHECODES_USE_VERTEX"));
     assert!(msg.contains("ANTHROPIC_VERTEX_PROJECT_ID"));
 
     restore_env(saved);
@@ -1617,25 +1617,25 @@ fn test_from_auth_uses_openai_keychain_when_api_provider_is_openai() {
     use_persistent_test_keyring();
     let temp = tempfile::tempdir().expect("tempdir");
     let saved = save_env(&[
-        "CC_RUST_HOME",
+        "ALLTHECODES_HOME",
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "OPENAI_API_KEY",
         OPENAI_CODEX_TOKEN_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     clear_env(&[
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "OPENAI_API_KEY",
         OPENAI_CODEX_TOKEN_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
-    std::env::set_var("CC_RUST_HOME", temp.path());
+    std::env::set_var("ALLTHECODES_HOME", temp.path());
     let _cwd = CwdGuard::set(temp.path());
     cc_auth::api_key::remove_api_key().unwrap();
     cc_auth::api_key::remove_openai_api_key().unwrap();
@@ -1667,25 +1667,25 @@ fn test_from_auth_anthropic_provider_does_not_read_openai_keychain() {
     use_persistent_test_keyring();
     let temp = tempfile::tempdir().expect("tempdir");
     let saved = save_env(&[
-        "CC_RUST_HOME",
+        "ALLTHECODES_HOME",
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "OPENAI_API_KEY",
         OPENAI_CODEX_TOKEN_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     clear_env(&[
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "OPENAI_API_KEY",
         OPENAI_CODEX_TOKEN_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
-    std::env::set_var("CC_RUST_HOME", temp.path());
+    std::env::set_var("ALLTHECODES_HOME", temp.path());
     let _cwd = CwdGuard::set(temp.path());
     cc_auth::api_key::remove_api_key().unwrap();
     cc_auth::api_key::remove_openai_api_key().unwrap();
@@ -1712,24 +1712,24 @@ fn test_from_auth_settings_provider_takes_priority_over_other_env_key() {
     use_persistent_test_keyring();
     let temp = tempfile::tempdir().expect("tempdir");
     let saved = save_env(&[
-        "CC_RUST_HOME",
+        "ALLTHECODES_HOME",
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "OPENAI_API_KEY",
         OPENAI_CODEX_TOKEN_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     clear_env(&[
         "ANTHROPIC_AUTH_TOKEN",
         "OPENAI_API_KEY",
         OPENAI_CODEX_TOKEN_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
-    std::env::set_var("CC_RUST_HOME", temp.path());
+    std::env::set_var("ALLTHECODES_HOME", temp.path());
     let _cwd = CwdGuard::set(temp.path());
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-env-priority-key");
     cc_auth::api_key::remove_openai_api_key().unwrap();
@@ -1760,7 +1760,7 @@ fn test_active_anthropic_profile_ignores_inherited_codex_token() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let temp = tempfile::tempdir().expect("tempdir");
     let saved = save_env(&[
-        "CC_RUST_HOME",
+        "ALLTHECODES_HOME",
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
@@ -1768,9 +1768,9 @@ fn test_active_anthropic_profile_ignores_inherited_codex_token() {
         OPENAI_CODEX_TOKEN_ENV,
         OPENAI_CODEX_BASE_URL_ENV,
         OPENAI_CODEX_MODEL_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
     clear_env(&[
         "ANTHROPIC_API_KEY",
@@ -1780,11 +1780,11 @@ fn test_active_anthropic_profile_ignores_inherited_codex_token() {
         OPENAI_CODEX_TOKEN_ENV,
         OPENAI_CODEX_BASE_URL_ENV,
         OPENAI_CODEX_MODEL_ENV,
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ]);
-    std::env::set_var("CC_RUST_HOME", temp.path());
+    std::env::set_var("ALLTHECODES_HOME", temp.path());
     let _cwd = CwdGuard::set(temp.path());
     std::env::set_var(OPENAI_CODEX_TOKEN_ENV, "inherited-codex-token");
     cc_config::settings::write_user_settings(&cc_config::settings::RawSettings {
@@ -2417,8 +2417,8 @@ fn regression_prompt_cache_marker_serializes_in_anthropic_body() {
 #[test]
 fn test_prompt_cache_policy_defaults_do_not_add_ttl_or_global() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let saved = save_env(&["CC_RUST_PROMPT_CACHE_TTL", "CC_RUST_PROMPT_CACHE_GLOBAL"]);
-    clear_env(&["CC_RUST_PROMPT_CACHE_TTL", "CC_RUST_PROMPT_CACHE_GLOBAL"]);
+    let saved = save_env(&["ALLTHECODES_PROMPT_CACHE_TTL", "ALLTHECODES_PROMPT_CACHE_GLOBAL"]);
+    clear_env(&["ALLTHECODES_PROMPT_CACHE_TTL", "ALLTHECODES_PROMPT_CACHE_GLOBAL"]);
 
     let mut body = serde_json::json!({
         "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
@@ -2478,9 +2478,9 @@ fn test_compatible_anthropic_body_strips_cache_and_thinking_extensions() {
 #[test]
 fn test_prompt_cache_policy_adds_ttl_and_global_only_when_capable() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let saved = save_env(&["CC_RUST_PROMPT_CACHE_TTL", "CC_RUST_PROMPT_CACHE_GLOBAL"]);
-    std::env::set_var("CC_RUST_PROMPT_CACHE_TTL", "1h");
-    std::env::set_var("CC_RUST_PROMPT_CACHE_GLOBAL", "1");
+    let saved = save_env(&["ALLTHECODES_PROMPT_CACHE_TTL", "ALLTHECODES_PROMPT_CACHE_GLOBAL"]);
+    std::env::set_var("ALLTHECODES_PROMPT_CACHE_TTL", "1h");
+    std::env::set_var("ALLTHECODES_PROMPT_CACHE_GLOBAL", "1");
 
     let mut body = serde_json::json!({
         "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],

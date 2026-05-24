@@ -4,7 +4,7 @@
 //! Owns:
 //! - `settings.json` loader + effective-settings merge layer
 //! - `AGENTS.md` / `CLAUDE.md` discovery + injection
-//! - Data-root path helpers (`~/.cc-rust/` or `$CC_RUST_HOME`)
+//! - Data-root path helpers (`~/.allthecodes/` or `$ALLTHECODES_HOME`)
 //! - Feature-gate system (`FEATURE_*` env vars)
 //! - Config validation warnings
 //! - `runtime_settings::SettingsJson` — the runtime projection of effective

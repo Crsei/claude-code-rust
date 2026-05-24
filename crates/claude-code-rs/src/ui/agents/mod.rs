@@ -53,7 +53,7 @@ fn production_symbol_anchors() {
     .with_model("MOTA")
     .with_memory(AgentMemoryScope::Project)
     .with_color("blue")
-    .with_base_dir(".cc-rust/agents")
+    .with_base_dir(".allthecodes/agents")
     .with_filename("anchor");
     let _ = agent.is_plugin();
     let _ = AgentMemoryScope::None.display_name();
@@ -196,7 +196,7 @@ mod tests {
         .with_model("MOTA")
         .with_memory(AgentMemoryScope::Project)
         .with_color("blue")
-        .with_base_dir("./.cc-rust/agents")
+        .with_base_dir("./.allthecodes/agents")
         .with_filename("reviewer");
         agent.permission_mode = Some("ask".to_string());
         agent.skills = vec!["code-review".to_string(), "security-review".to_string()];
@@ -403,7 +403,7 @@ mod tests {
         assert_eq!(
             path,
             std::path::Path::new("/home/user")
-                .join(".cc-rust")
+                .join(".allthecodes")
                 .join("agents")
                 .join("review-agent.md")
         );

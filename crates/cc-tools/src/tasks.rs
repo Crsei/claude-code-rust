@@ -62,8 +62,8 @@ fn default_update_owner(input: &Value, ctx: &ToolUseContext) -> String {
 
 fn plan_workflow_cwd() -> std::path::PathBuf {
     std::env::current_dir().unwrap_or_else(|_| {
-        let fallback = std::env::temp_dir().join("cc-rust-plan-workflow");
-        let _ = std::fs::create_dir_all(fallback.join(".cc-rust"));
+        let fallback = std::env::temp_dir().join("allthecodes-plan-workflow");
+        let _ = std::fs::create_dir_all(fallback.join(".allthecodes"));
         fallback
     })
 }

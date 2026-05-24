@@ -39,7 +39,7 @@ pub async fn spawn_team_memory_server(
         .and_then(|url| cc_utils::git::parse_github_repo(&url));
 
     // Compute team memory path: {data_root}/projects/<sanitized>/memory/team/
-    let team_mem_path = cc_config::paths::team_memory_dir(cwd);
+    let team_mem_path = crate::process_state::team_memory_dir(cwd);
 
     // Resolve the script path relative to the binary location.
     let exe_dir = std::env::current_exe()?

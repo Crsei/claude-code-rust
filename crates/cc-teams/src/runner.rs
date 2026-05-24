@@ -543,7 +543,7 @@ fn handle_protocol_message(
 }
 
 fn shutdown_auto_approval_enabled() -> bool {
-    std::env::var("CC_RUST_AUTO_APPROVE_SHUTDOWN_REQUESTS")
+    std::env::var("ALLTHECODES_AUTO_APPROVE_SHUTDOWN_REQUESTS")
         .map(|value| {
             matches!(
                 value.trim().to_ascii_lowercase().as_str(),
@@ -735,7 +735,7 @@ mod tests {
     #[serial_test::serial]
     fn process_mailbox_collects_plain_messages_and_marks_them_read() {
         let tmp = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         mailbox::write_to_mailbox(
             "worker",
             TeammateMessage {
@@ -769,8 +769,8 @@ mod tests {
     #[serial_test::serial]
     fn shutdown_request_requires_explicit_auto_approval_policy() {
         let tmp = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
-        let _approval = EnvGuard::remove("CC_RUST_AUTO_APPROVE_SHUTDOWN_REQUESTS");
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
+        let _approval = EnvGuard::remove("ALLTHECODES_AUTO_APPROVE_SHUTDOWN_REQUESTS");
         InProcessBackend::clear_registry();
         InProcessBackend::register_task(InProcessTeammateTaskState {
             id: "task-1".into(),
@@ -843,8 +843,8 @@ mod tests {
     #[serial_test::serial]
     fn shutdown_request_auto_approves_when_policy_enabled() {
         let tmp = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
-        let _approval = EnvGuard::set("CC_RUST_AUTO_APPROVE_SHUTDOWN_REQUESTS", "true");
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
+        let _approval = EnvGuard::set("ALLTHECODES_AUTO_APPROVE_SHUTDOWN_REQUESTS", "true");
         InProcessBackend::clear_registry();
         InProcessBackend::register_task(InProcessTeammateTaskState {
             id: "task-1".into(),
@@ -912,7 +912,7 @@ mod tests {
     #[serial_test::serial]
     fn mailbox_processing_error_marks_task_failed() {
         let tmp = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         InProcessBackend::clear_registry();
         InProcessBackend::register_task(InProcessTeammateTaskState {
             id: "task-1".into(),

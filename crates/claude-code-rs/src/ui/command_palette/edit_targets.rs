@@ -52,10 +52,10 @@ pub(super) fn display_path(path: &Path, cwd: &Path) -> String {
 
     let data_root = cc_config::paths::data_root();
     if let Ok(relative) = path.strip_prefix(&data_root) {
-        let prefix = if std::env::var_os("CC_RUST_HOME").is_some() {
-            "$CC_RUST_HOME"
+        let prefix = if std::env::var_os("ALLTHECODES_HOME").is_some() {
+            "$ALLTHECODES_HOME"
         } else {
-            "~/.cc-rust"
+            "~/.allthecodes"
         };
         return format!("{}/{}", prefix, normalize_path(relative));
     }

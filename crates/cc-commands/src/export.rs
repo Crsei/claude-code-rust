@@ -1,7 +1,7 @@
 //! /export command — export conversation to Markdown.
 //!
 //! Usage:
-//!   /export                  — export current session to ~/.cc-rust/exports/
+//!   /export                  — export current session to ~/.allthecodes/exports/
 //!   /export list             — list all previously exported files
 //!   /export <path>           — export current session to a specific file
 //!   /export <session_id>     — export a saved session by ID

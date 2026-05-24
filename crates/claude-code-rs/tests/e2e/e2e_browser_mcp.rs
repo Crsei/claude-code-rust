@@ -5,7 +5,7 @@
 //! this test verifies the *integration points* cc-rust adds on top of any
 //! third-party browser MCP server:
 //!
-//!   1. A server with `"browserMcp": true` in `.cc-rust/settings.json`
+//!   1. A server with `"browserMcp": true` in `.allthecodes/settings.json`
 //!      gets recognized and the `# Browser Automation` system-prompt section
 //!      is emitted (via `--dump-system-prompt`).
 //!   2. Even without a connected server, the tool-name heuristic table and
@@ -30,8 +30,8 @@ fn cli() -> Command {
 }
 
 fn write_browser_mcp_settings(dir: &TempDir) {
-    let cc_rust_dir = dir.path().join(".cc-rust");
-    fs::create_dir_all(&cc_rust_dir).expect("create .cc-rust dir");
+    let allthecodes_dir = dir.path().join(".allthecodes");
+    fs::create_dir_all(&allthecodes_dir).expect("create .allthecodes dir");
 
     // Note: the `command` below is a non-existent placeholder. The fast path
     // (`--dump-system-prompt`) does not connect to MCP servers, it only
@@ -46,7 +46,7 @@ fn write_browser_mcp_settings(dir: &TempDir) {
         }
     });
     fs::write(
-        cc_rust_dir.join("settings.json"),
+        allthecodes_dir.join("settings.json"),
         serde_json::to_string_pretty(&settings).unwrap(),
     )
     .expect("write settings.json");
@@ -74,7 +74,7 @@ fn dump_prompt_emits_browser_section_when_server_flagged() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
         .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success()
         .stdout(predicate::str::contains("# Browser Automation"))
@@ -83,13 +83,13 @@ fn dump_prompt_emits_browser_section_when_server_flagged() {
 
 #[test]
 fn dump_prompt_has_no_browser_section_without_flagged_server() {
-    // Empty tempdir — no .cc-rust/settings.json.
+    // Empty tempdir — no .allthecodes/settings.json.
     let dir = tempfile::tempdir().expect("tempdir");
 
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
         .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success()
         .stdout(predicate::str::contains("# Browser Automation").not());
@@ -111,7 +111,7 @@ fn init_only_survives_unreachable_browser_mcp() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
         .args(["--init-only", "-C", dir.path().to_str().unwrap()])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success();
 }

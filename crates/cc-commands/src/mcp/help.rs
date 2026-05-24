@@ -29,7 +29,7 @@ pub(super) fn help_text() -> String {
        --browser           tag this server as a browser-MCP server\n\n\
      Discovery sources (low → high precedence):\n\
      - plugin-contributed MCP servers\n\
-     - ~/.cc-rust/settings.json (user scope)\n\
-     - .cc-rust/settings.json in the current project (project scope)\n"
+     - ~/.allthecodes/settings.json (user scope)\n\
+     - .allthecodes/settings.json in the current project (project scope)\n"
         .to_string()
 }

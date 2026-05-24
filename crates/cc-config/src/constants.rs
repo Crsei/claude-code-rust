@@ -87,6 +87,8 @@ pub fn knowledge_cutoff(model_id: &str) -> Option<&'static str> {
 
 pub mod api {
     /// Core beta header for Claude Code.
+    /// Note: this is an Anthropic protocol header value — the constant name and
+    /// value stay as-is even after the `allthecodes` rename.
     pub const CLAUDE_CODE_BETA_HEADER: &str = "claude-code-20250219";
     /// Interleaved thinking beta.
     pub const INTERLEAVED_THINKING_BETA: &str = "interleaved-thinking-2025-05-14";

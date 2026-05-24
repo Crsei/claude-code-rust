@@ -153,7 +153,7 @@ pub struct McpServerConfig {
     /// Additional HTTP headers (for SSE / Streamable HTTP transports).
     pub headers: Option<HashMap<String, String>>,
     /// OAuth metadata used for remote MCP authentication. Tokens are stored
-    /// separately under the cc-rust data root and are never serialized into
+    /// separately under the allthecodes data root and are never serialized into
     /// settings or IPC config payloads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth: Option<McpOAuthConfig>,

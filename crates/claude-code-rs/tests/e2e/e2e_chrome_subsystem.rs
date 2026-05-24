@@ -9,7 +9,7 @@
 //! 3. `--chrome` causes the browser system-prompt section to appear (via
 //!    registry pre-seeding with `claude-in-chrome`) even without a real
 //!    Chrome extension connected.
-//! 4. `CLAUDE_CODE_ENABLE_CFC=1` works the same as `--chrome` when no CLI flag is given.
+//! 4. `ALLTHECODES_ENABLE_CFC=1` works the same as `--chrome` when no CLI flag is given.
 //!
 //! No live Chrome or extension required.
 
@@ -28,7 +28,7 @@ fn strip_api_keys(cmd: &mut Command) -> &mut Command {
         .env("GOOGLE_API_KEY", "")
         .env("DEEPSEEK_API_KEY", "")
         .env_remove("ANTHROPIC_AUTH_TOKEN")
-        .env_remove("CLAUDE_CODE_ENABLE_CFC")
+        .env_remove("ALLTHECODES_ENABLE_CFC")
 }
 
 // =========================================================================
@@ -46,7 +46,7 @@ fn chrome_flag_is_accepted() {
             "-C",
             dir.path().to_str().unwrap(),
         ])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success();
 }
@@ -62,7 +62,7 @@ fn no_chrome_flag_is_accepted() {
             "-C",
             dir.path().to_str().unwrap(),
         ])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success();
 }
@@ -79,7 +79,7 @@ fn chrome_and_no_chrome_are_mutually_exclusive() {
             "-C",
             dir.path().to_str().unwrap(),
         ])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
@@ -95,8 +95,8 @@ fn chrome_flag_emits_browser_automation_section() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
         .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
-        .env("CLAUDE_CODE_ENABLE_CFC", "1")
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_ENABLE_CFC", "1")
         .assert()
         .success()
         .stdout(predicate::str::contains("# Browser Automation"))
@@ -111,7 +111,7 @@ fn no_env_no_cli_no_browser_section() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
         .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success()
         .stdout(predicate::str::contains("# Browser Automation").not());
@@ -127,8 +127,8 @@ fn cfc_env_truthy_enables_subsystem() {
     let mut cmd = cli();
     strip_api_keys(&mut cmd)
         .args(["--init-only", "-C", dir.path().to_str().unwrap()])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
-        .env("CLAUDE_CODE_ENABLE_CFC", "true")
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_ENABLE_CFC", "true")
         .assert()
         .success();
 }

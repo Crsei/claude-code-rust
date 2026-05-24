@@ -1,6 +1,6 @@
 //! Codex CLI credential fallback — reads `~/.codex/auth.json` for token reuse.
 //!
-//! When a user has already logged into the OpenAI Codex CLI, cc-rust can
+//! When a user has already logged into the OpenAI Codex CLI, allthecodes can
 //! transparently reuse those credentials instead of requiring `/login 4`.
 
 use std::path::PathBuf;

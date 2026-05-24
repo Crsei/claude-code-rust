@@ -62,14 +62,14 @@ pub fn write_user_settings(raw: &RawSettings) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Write to `cwd/.cc-rust/settings.json`, creating the directory if needed.
+/// Write to `cwd/.allthecodes/settings.json`, creating the directory if needed.
 pub fn write_project_settings(cwd: &Path, raw: &RawSettings) -> Result<PathBuf> {
     let path = project_settings_path(cwd);
     write_settings_file(&path, raw)?;
     Ok(path)
 }
 
-/// Write to `cwd/.cc-rust/settings.local.json`.
+/// Write to `cwd/.allthecodes/settings.local.json`.
 pub fn write_local_settings(cwd: &Path, raw: &RawSettings) -> Result<PathBuf> {
     let path = local_settings_path(cwd);
     write_settings_file(&path, raw)?;

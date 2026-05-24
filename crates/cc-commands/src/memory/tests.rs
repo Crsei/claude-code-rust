@@ -154,9 +154,9 @@ async fn test_memory_set_with_category() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-/// Auto-toggle updates the in-memory setting. We pin `CC_RUST_HOME`
+/// Auto-toggle updates the in-memory setting. We pin `ALLTHECODES_HOME`
 /// to a tempdir so the persistence side-effect lands there instead of
-/// the real `~/.cc-rust/settings.json`.
+/// the real `~/.allthecodes/settings.json`.
 #[tokio::test]
 async fn test_memory_auto_toggle_updates_state() {
     let root = std::env::temp_dir().join(format!("cc_rust_mem_auto_test_{}", uuid::Uuid::new_v4()));

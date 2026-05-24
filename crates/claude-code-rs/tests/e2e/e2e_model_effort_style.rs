@@ -1,7 +1,7 @@
 //! E2E tests for issue #9 prompt behavior:
 //! outputStyle and language injection into the system prompt.
 //!
-//! These tests are hermetic: they pin `CC_RUST_HOME` to a per-test
+//! These tests are hermetic: they pin `ALLTHECODES_HOME` to a per-test
 //! tempdir and use `--dump-system-prompt` to inspect the assembled
 //! prompt without needing any API access.
 //!
@@ -35,7 +35,7 @@ fn dump_prompt_injects_language_section() {
     let mut cmd = cli();
     let assert = strip_keys(&mut cmd)
         .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success();
 
@@ -61,7 +61,7 @@ fn dump_prompt_injects_explanatory_output_style() {
     let mut cmd = cli();
     let assert = strip_keys(&mut cmd)
         .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success();
 
@@ -89,7 +89,7 @@ fn dump_prompt_supports_language_and_output_style_together() {
     let mut cmd = cli();
     let assert = strip_keys(&mut cmd)
         .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success();
 
@@ -107,7 +107,7 @@ fn dump_prompt_supports_language_and_output_style_together() {
 fn dump_prompt_loads_custom_output_style_from_project_dir() {
     let dir = tempfile::tempdir().expect("tempdir");
     let project = tempfile::tempdir().expect("project tmpdir");
-    let styles_dir = project.path().join(".cc-rust/output-styles");
+    let styles_dir = project.path().join(".allthecodes/output-styles");
     std::fs::create_dir_all(&styles_dir).unwrap();
     std::fs::write(
         styles_dir.join("brevity.md"),
@@ -129,7 +129,7 @@ fn dump_prompt_loads_custom_output_style_from_project_dir() {
             "-C",
             project.path().to_str().unwrap(),
         ])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success();
 
@@ -152,7 +152,7 @@ fn dump_prompt_omits_language_and_output_style_when_unset() {
     let mut cmd = cli();
     let assert = strip_keys(&mut cmd)
         .args(["--dump-system-prompt", "-C", dir.path().to_str().unwrap()])
-        .env("CC_RUST_HOME", dir.path().to_str().unwrap())
+        .env("ALLTHECODES_HOME", dir.path().to_str().unwrap())
         .assert()
         .success();
 

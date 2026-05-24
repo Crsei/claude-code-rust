@@ -5,7 +5,7 @@
 //! Manages in-session teammate color assignments through a round-robin
 //! cache.  Pane-level layout operations (tmux/iTerm2 window splitting,
 //! pane border status, command-to-pane routing) are intentionally not
-//! supported in cc-rust — teammates run in-process only.
+//! supported in allthecodes — teammates run in-process only.
 //!
 //! The color cache is session-scoped so the same teammate ID always
 //! resolves to the same display color within a session.

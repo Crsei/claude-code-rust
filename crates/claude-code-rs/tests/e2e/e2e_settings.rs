@@ -4,7 +4,7 @@
 //! tempdir, loading them, and asserting both the merged effective values
 //! and the per-key source map.
 //!
-//! These tests are intentionally hermetic — they set `CC_RUST_HOME` to a
+//! These tests are intentionally hermetic — they set `ALLTHECODES_HOME` to a
 //! per-test tempdir so they never touch the user's real settings file.
 //!
 //! Run with: `cargo test --test e2e_settings`
@@ -47,9 +47,9 @@ fn remove_provider_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Comman
         "CLAUDE_BACKEND",
         "CLAUDE_LANGUAGE",
         "CLAUDE_OUTPUT_STYLE",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
+        "ALLTHECODES_USE_BEDROCK",
+        "ALLTHECODES_USE_VERTEX",
+        "ALLTHECODES_USE_FOUNDRY",
     ] {
         cmd.env_remove(key);
     }
@@ -107,7 +107,7 @@ fn schema_file_is_valid_json() {
 }
 
 /// Tiny smoke test exercising the layered loader through the CLI binary.
-/// Sets up a CC_RUST_HOME with a user-level settings file containing a
+/// Sets up a ALLTHECODES_HOME with a user-level settings file containing a
 /// few new fields, then runs `--init-only` and `--dump-system-prompt`
 /// to make sure nothing trips on the new struct shape.
 #[test]
@@ -135,11 +135,11 @@ fn cli_starts_with_extended_user_settings() {
     std::fs::write(&user_settings, serde_json::to_string_pretty(&body).unwrap())
         .expect("write user settings");
 
-    // Use a project workspace dir distinct from CC_RUST_HOME.
+    // Use a project workspace dir distinct from ALLTHECODES_HOME.
     let project = tempfile::tempdir().expect("project tmpdir");
 
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -172,8 +172,8 @@ fn settings_env_seeds_anthropic_provider_before_full_init_detection() {
     let managed = dir.path().join("missing-managed.json");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
     remove_provider_env(&mut cmd);
-    cmd.env("CC_RUST_HOME", dir.path())
-        .env("CC_RUST_MANAGED_SETTINGS", &managed)
+    cmd.env("ALLTHECODES_HOME", dir.path())
+        .env("ALLTHECODES_MANAGED_SETTINGS", &managed)
         .arg("--init-only")
         .arg("--cwd")
         .arg(project.path());
@@ -202,8 +202,8 @@ fn settings_env_can_select_codex_backend_before_full_init_detection() {
     let managed = dir.path().join("missing-managed.json");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
     remove_provider_env(&mut cmd);
-    cmd.env("CC_RUST_HOME", dir.path())
-        .env("CC_RUST_MANAGED_SETTINGS", &managed)
+    cmd.env("ALLTHECODES_HOME", dir.path())
+        .env("ALLTHECODES_MANAGED_SETTINGS", &managed)
         .arg("--init-only")
         .arg("--cwd")
         .arg(project.path());
@@ -231,8 +231,8 @@ fn settings_env_is_applied_before_dump_system_prompt_fast_path() {
     let managed = dir.path().join("missing-managed.json");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
     remove_provider_env(&mut cmd);
-    cmd.env("CC_RUST_HOME", dir.path())
-        .env("CC_RUST_MANAGED_SETTINGS", &managed)
+    cmd.env("ALLTHECODES_HOME", dir.path())
+        .env("ALLTHECODES_MANAGED_SETTINGS", &managed)
         .arg("--dump-system-prompt")
         .arg("--cwd")
         .arg(project.path());

@@ -242,7 +242,7 @@ fn require_control_token(headers: &HeaderMap) -> Result<(), Json<Value>> {
 
 fn extract_control_token(headers: &HeaderMap) -> Option<&str> {
     headers
-        .get("x-cc-rust-daemon-token")
+        .get("x-allthecodes-daemon-token")
         .and_then(|value| value.to_str().ok())
         .or_else(|| {
             headers
@@ -674,7 +674,7 @@ mod tests {
     ) -> anyhow::Result<Option<crate::runtime::GithubPrActivityRouteOutcome>> {
         assert_eq!(event, Some("pull_request"));
         assert_eq!(delivery_id, Some("delivery-42"));
-        assert_eq!(payload["repository"]["name"], "cc-rust");
+        assert_eq!(payload["repository"]["name"], "allthecodes");
         Ok(Some(crate::runtime::GithubPrActivityRouteOutcome {
             matched: 1,
             delivered: 1,
@@ -758,20 +758,19 @@ mod tests {
     #[serial_test::serial]
     async fn github_webhook_routes_matching_pr_activity_through_adapter() {
         let home = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
-        let _github_secret = EnvGuard::set("CC_RUST_GITHUB_WEBHOOK_SECRET", "route-secret");
-        let _legacy_secret = EnvGuard::set("GITHUB_WEBHOOK_SECRET", "");
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
+        let _github_secret = EnvGuard::set("ALLTHECODES_GITHUB_WEBHOOK_SECRET", "route-secret");
         install_test_runtime_adapters();
         let body = serde_json::to_vec(&json!({
             "action": "opened",
             "repository": {
-                "name": "cc-rust",
+                "name": "allthecodes",
                 "owner": { "login": "AIclassmanager" }
             },
             "pull_request": {
                 "number": 42,
                 "title": "Phase 4",
-                "html_url": "https://github.com/AIclassmanager/cc-rust/pull/42"
+                "html_url": "https://github.com/AIclassmanager/allthecodes/pull/42"
             },
             "sender": { "login": "octocat" }
         }))
@@ -794,7 +793,7 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn github_webhook_rejects_bad_signature_when_secret_is_configured() {
-        let _secret = EnvGuard::set("CC_RUST_GITHUB_WEBHOOK_SECRET", "secret");
+        let _secret = EnvGuard::set("ALLTHECODES_GITHUB_WEBHOOK_SECRET", "secret");
         let mut headers = HeaderMap::new();
         headers.insert(
             "x-hub-signature-256",

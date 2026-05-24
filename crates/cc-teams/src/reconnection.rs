@@ -216,7 +216,7 @@ mod tests {
     }
 
     fn setup_team(tmp: &TempDir, team_name: &str) -> String {
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let tf = helpers::create_team(team_name, None, None, "/tmp").unwrap();
         let lead_id = identity::lead_agent_id(&tf.name);
 
@@ -247,7 +247,7 @@ mod tests {
     #[serial]
     fn compute_context_resolves_leader_when_no_agent_id() {
         let tmp = TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let team_name = "compute-leader-test";
         let lead_id = setup_team(&tmp, team_name);
 
@@ -269,7 +269,7 @@ mod tests {
     #[serial]
     fn compute_context_resolves_leader_by_agent_id() {
         let tmp = TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let team_name = "compute-leader-id";
         let lead_id = setup_team(&tmp, team_name);
 
@@ -289,7 +289,7 @@ mod tests {
     #[serial]
     fn compute_context_resolves_teammate_by_agent_id() {
         let tmp = TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let team_name = "compute-teammate";
         let _lead_id = setup_team(&tmp, team_name);
 
@@ -312,7 +312,7 @@ mod tests {
     #[serial]
     fn compute_context_returns_none_for_nonexistent_agent() {
         let tmp = TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let team_name = "compute-missing";
         let _lead_id = setup_team(&tmp, team_name);
 
@@ -328,7 +328,7 @@ mod tests {
     #[serial]
     fn restore_context_finds_member_by_name() {
         let tmp = TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let team_name = "restore-test";
         let _lead_id = setup_team(&tmp, team_name);
 
@@ -353,7 +353,7 @@ mod tests {
     #[serial]
     fn restore_context_preserves_unknown_member_name() {
         let tmp = TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let team_name = "restore-missing";
         let _lead_id = setup_team(&tmp, team_name);
 
@@ -385,7 +385,7 @@ mod tests {
     #[serial]
     fn restore_context_for_session_resolves_leader() {
         let tmp = TempDir::new().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let tf =
             helpers::create_team("session-restore", None, Some("sess-123".into()), "/tmp").unwrap();
 

@@ -2,7 +2,7 @@
 name = "cc-mcp"
 version = "0.1.0"
 edition = "2021"
-description = "Model Context Protocol client, transport, and manager for cc-rust"
+description = "Model Context Protocol client, transport, and manager for allthecodes"
 
 [dependencies]
 tokio = { workspace = true }

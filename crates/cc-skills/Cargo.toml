@@ -2,7 +2,7 @@
 name = "cc-skills"
 version = "0.1.0"
 edition = "2021"
-description = "Skill discovery, loading, and registry for cc-rust (bundled + user + project + plugin)"
+description = "Skill discovery, loading, and registry for allthecodes (bundled + user + project + plugin)"
 
 [dependencies]
 cc-config = { path = "../cc-config" }

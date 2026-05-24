@@ -41,7 +41,7 @@ pub fn render_view_hook_mode(view: &HookView) -> String {
     }
     lines.push(String::new());
     lines.push(
-        "To modify or remove this hook, edit .cc-rust/settings.json or ask Claude.".to_string(),
+        "To modify or remove this hook, edit .allthecodes/settings.json or ask Claude.".to_string(),
     );
     lines.join("\n")
 }

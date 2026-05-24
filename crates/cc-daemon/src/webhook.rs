@@ -255,14 +255,12 @@ fn webhook_secret(route_id: &str) -> Option<String> {
             }
         })
         .collect::<String>();
-    let route_key = format!("CC_RUST_WEBHOOK_{}_SECRET", normalized);
+    let route_key = format!("ALLTHECODES_WEBHOOK_{}_SECRET", normalized);
     std::env::var(&route_key)
         .or_else(|_| match route_id {
-            "github" => std::env::var("CC_RUST_GITHUB_WEBHOOK_SECRET")
-                .or_else(|_| std::env::var("GITHUB_WEBHOOK_SECRET")),
-            "slack" => std::env::var("CC_RUST_SLACK_WEBHOOK_SECRET")
-                .or_else(|_| std::env::var("SLACK_SIGNING_SECRET")),
-            _ => std::env::var("CC_RUST_GENERIC_WEBHOOK_SECRET"),
+            "github" => std::env::var("ALLTHECODES_GITHUB_WEBHOOK_SECRET"),
+            "slack" => std::env::var("ALLTHECODES_SLACK_WEBHOOK_SECRET"),
+            _ => std::env::var("ALLTHECODES_GENERIC_WEBHOOK_SECRET"),
         })
         .ok()
         .map(|value| value.trim().to_string())

@@ -140,7 +140,7 @@ impl LogoutReport {
         if let Some(warn) = &self.env_override_warning {
             out.push_str(&format!(
                 "\nHeads up: {} — the environment still authenticates; \
-                 unset it in your shell before restarting cc-rust.\n",
+                 unset it in your shell before restarting allthecodes.\n",
                 warn
             ));
         }
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn render_notes_managed_settings_when_present() {
         let report = LogoutReport {
-            managed_settings_path: Some("/etc/cc-rust/managed-settings.json".into()),
+            managed_settings_path: Some("/etc/allthecodes/managed-settings.json".into()),
             ..LogoutReport::default()
         };
         let text = report.render();

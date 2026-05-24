@@ -18,7 +18,7 @@ Built-in:
   general-purpose - default
 
 ## detail
-./.cc-rust/agents/reviewer.md
+./.allthecodes/agents/reviewer.md
 
 Description
   Use when code changes need a focused review before commit.
@@ -43,7 +43,7 @@ Source: Project
   Edit color
 
 ## file-summary
-path: ./.cc-rust/agents/reviewer.md
+path: ./.allthecodes/agents/reviewer.md
 source: Project
 tools: Read, Grep, Bash
 memory: project

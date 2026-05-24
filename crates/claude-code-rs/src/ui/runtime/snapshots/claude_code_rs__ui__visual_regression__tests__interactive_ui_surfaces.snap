@@ -42,8 +42,8 @@ expression: render_interactive_ui_surfaces()
 │  ghost: p                                                                                        │
 │  usage: /mcp <list|status|add|edit|remove|approve|reject|connect|disconnect|reconnect>           │
 │  example: /mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp                       │
-│  edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                        │
-│        local: ./.cc-rust/settings.local.json                                                     │
+│  edit: user: ~/.allthecodes/settings.json | project: ./.allthecodes/settings.json                        │
+│        local: ./.allthecodes/settings.local.json                                                     │
 │  target: Ctrl+E pick target                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 

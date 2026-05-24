@@ -168,8 +168,8 @@ fn handle_help() -> CommandResult {
     CommandResult::Output(format!(
         "Plugin management.\n\n\
          {}\n\n\
-         Plugin metadata is persisted at ~/.cc-rust/plugins/installed_plugins.json.\n\
-         Cache directories live at   ~/.cc-rust/plugins/cache/{{marketplace}}/{{id}}/.",
+         Plugin metadata is persisted at ~/.allthecodes/plugins/installed_plugins.json.\n\
+         Cache directories live at   ~/.allthecodes/plugins/cache/{{marketplace}}/{{id}}/.",
         usage_block()
     ))
 }
@@ -836,18 +836,18 @@ mod tests {
         }
     }
 
-    /// Isolate CC_RUST_HOME + clear registry around a closure. Tests that touch
+    /// Isolate ALLTHECODES_HOME + clear registry around a closure. Tests that touch
     /// installed_plugins.json must run serially.
     fn with_clean_state<T>(f: impl FnOnce() -> T) -> T {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let old = std::env::var("CC_RUST_HOME").ok();
-        std::env::set_var("CC_RUST_HOME", tmp.path());
+        let old = std::env::var("ALLTHECODES_HOME").ok();
+        std::env::set_var("ALLTHECODES_HOME", tmp.path());
         test_plugins::install_runtime();
         let result = f();
         test_plugins::clear_plugins();
         match old {
-            Some(v) => std::env::set_var("CC_RUST_HOME", v),
-            None => std::env::remove_var("CC_RUST_HOME"),
+            Some(v) => std::env::set_var("ALLTHECODES_HOME", v),
+            None => std::env::remove_var("ALLTHECODES_HOME"),
         }
         result
     }

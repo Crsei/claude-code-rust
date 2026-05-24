@@ -101,7 +101,7 @@ pub(super) fn selector(ctx: &CommandContext) -> Result<CommandResult> {
     ));
     lines.push(format!(
         "  [p] project memory dir - {}",
-        cwd.join(".cc-rust").join("memory").display()
+        cwd.join(".allthecodes").join("memory").display()
     ));
     lines.push(String::new());
     lines.push("Open a directory with `/memory open <auto|team|global|project>`.".into());

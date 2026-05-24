@@ -1,11 +1,11 @@
 //! MCP stdio bridge mode (`--claude-in-chrome-mcp`).
 //!
-//! Spawned as a subprocess of cc-rust's MCP manager when the first-party
-//! Chrome subsystem is on. Acts as a stdio MCP server toward cc-rust, and as
+//! Spawned as a subprocess of allthecodes's MCP manager when the first-party
+//! Chrome subsystem is on. Acts as a stdio MCP server toward allthecodes, and as
 //! a socket client toward the Chrome native host. Bridges the two:
 //!
 //! ```text
-//!   cc-rust (MCP client on stdio)
+//!   allthecodes (MCP client on stdio)
 //!       │  tools/call
 //!       ▼
 //!   --claude-in-chrome-mcp  (this file)
@@ -19,7 +19,7 @@
 //!
 //! The MCP server implementation here is a minimal, hand-rolled JSON-RPC 2.0
 //! loop — just enough for `initialize`, `tools/list`, and `tools/call`.
-//! We don't pull in a full MCP SDK because cc-rust's own MCP client only
+//! We don't pull in a full MCP SDK because allthecodes's own MCP client only
 //! uses the subset we need, and a third-party dep would duplicate work
 //! already done in `src/mcp/`.
 //!
@@ -55,7 +55,7 @@ const TOOL_CALL_TIMEOUT: Duration = Duration::from_secs(120);
 //
 // These mirror the bun reference's core browser-automation tools. The
 // JSON schemas are conservative (string inputs with permissive shapes) so
-// the extension can evolve without a matching cc-rust release.
+// the extension can evolve without a matching allthecodes release.
 
 fn tool_catalogue() -> Vec<Value> {
     vec![

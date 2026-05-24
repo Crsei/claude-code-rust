@@ -2,7 +2,7 @@
 name = "cc-services"
 version = "0.1.0"
 edition = "2021"
-description = "Background services for cc-rust: LSP lifecycle, prompt suggestions, session memory, tool-use summaries"
+description = "Background services for allthecodes: LSP lifecycle, prompt suggestions, session memory, tool-use summaries"
 
 [features]
 default = []

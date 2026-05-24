@@ -2,7 +2,7 @@
 //!
 //! Corresponds to TypeScript: `utils/swarm/backends/types.ts`
 //!
-//! cc-rust intentionally supports only the in-process backend. The pane
+//! allthecodes intentionally supports only the in-process backend. The pane
 //! backend traits remain as a typed boundary for parity review, but tmux and
 //! iTerm2 are not runtime-selectable backends in this port.
 
@@ -15,9 +15,9 @@ use super::types::*;
 // Backend strategy
 // ---------------------------------------------------------------------------
 
-/// Runtime-supported Agent Teams backends in cc-rust.
+/// Runtime-supported Agent Teams backends in allthecodes.
 ///
-/// tmux/iTerm2 pane backends are an intentional product crop for MVP-005; keep
+/// tmux/iTerm2 pane backends are intentionally not included for MVP-005; keep
 /// the enum variants for persisted config compatibility and upstream parity
 /// review, but reject them before execution.
 pub const SUPPORTED_BACKENDS: &[BackendType] = &[BackendType::InProcess];
@@ -34,13 +34,13 @@ pub fn is_backend_supported(backend_type: BackendType) -> bool {
 
 /// Human-readable backend strategy for commands, tools, and diagnostics.
 pub fn strategy_summary() -> &'static str {
-    "Agent Teams backend strategy: in-process is the only supported backend; tmux/iTerm2 pane backends are intentionally cropped in cc-rust."
+    "Agent Teams backend strategy: in-process is the only supported backend; tmux/iTerm2 pane backends are intentionally not included in allthecodes."
 }
 
 /// Consistent message for unsupported pane backends.
 pub fn unsupported_backend_message(backend_type: BackendType) -> String {
     format!(
-        "Agent Teams backend '{}' is not supported by cc-rust. Supported backend: in-process. tmux/iTerm2 pane backends are an intentional crop documented in docs/IMPLEMENTATION_GAPS.md §7.",
+        "Agent Teams backend '{}' is not supported by allthecodes. Supported backend: in-process. tmux/iTerm2 pane backends are an intentional scope choice documented in docs/IMPLEMENTATION_GAPS.md §7.",
         backend_type
     )
 }
@@ -154,7 +154,7 @@ mod tests {
     fn test_create_pane_result() {
         let result = CreatePaneResult {
             pane_id: "%3".into(),
-            session_name: "claude-swarm".into(),
+            session_name: "allthecodes-swarm".into(),
         };
         assert_eq!(result.pane_id, "%3");
     }

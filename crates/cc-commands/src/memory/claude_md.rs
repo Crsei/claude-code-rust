@@ -40,7 +40,7 @@ pub(super) fn edit_memory(cwd: &Path) -> Result<CommandResult> {
     let agents_md_path = cwd.join("AGENTS.md");
     if !agents_md_path.exists() {
         let template = "# AGENTS.md\n\n\
-            This file provides guidance to cc-rust when working with code in this repository.\n\n\
+            This file provides guidance to allthecodes when working with code in this repository.\n\n\
             ## Project Overview\n\n\
             <!-- Describe your project here -->\n";
         fs::write(&agents_md_path, template)?;

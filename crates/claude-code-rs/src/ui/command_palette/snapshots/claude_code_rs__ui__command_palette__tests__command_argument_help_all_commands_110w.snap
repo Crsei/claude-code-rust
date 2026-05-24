@@ -85,7 +85,7 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /config <show|sources|schema|set|reset> [key] [value]                                                │
 │Example: /config set theme dark                                                                             │
 │About: Show or modify configuration settings                                                                │
-│Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                                    │
+│Edit: user: ~/.allthecodes/settings.json | project: ./.allthecodes/settings.json                                    │
 │                                                                                                            │
 │Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -202,8 +202,8 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /hooks <list|path|open> [event|layer]                                                                │
 │Example: /hooks list PreToolUse                                                                             │
 │About: Read-only merged hook tree (managed + user + project + local)                                        │
-│Edit: managed: <MANAGED_SETTINGS> | user: ~/.cc-rust/settings.json                                          │
-│      project: ./.cc-rust/settings.json | local: ./.cc-rust/settings.local.json                             │
+│Edit: managed: <MANAGED_SETTINGS> | user: ~/.allthecodes/settings.json                                          │
+│      project: ./.allthecodes/settings.json | local: ./.allthecodes/settings.local.json                             │
 │Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /ide
@@ -223,7 +223,7 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /keybindings [open|status|list|reload|path]                                                          │
 │Example: /keybindings                                                                                       │
 │About: View, edit, or reload keybindings.json                                                               │
-│Edit: user: ~/.cc-rust/keybindings.json                                                                     │
+│Edit: user: ~/.allthecodes/keybindings.json                                                                     │
 │Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /login
@@ -261,8 +261,8 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /mcp <list|status|add|edit|remove|approve|reject|connect|disconnect|reconnect>                       │
 │Example: /mcp add ctx7 --command=npx --arg=-y --arg=@upstash/context7-mcp                                   │
 │About: MCP server management (list, status, add, edit, remove, approve, reject, connect)                    │
-│Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                                    │
-│      local: ./.cc-rust/settings.local.json                                                                 │
+│Edit: user: ~/.allthecodes/settings.json | project: ./.allthecodes/settings.json                                    │
+│      local: ./.allthecodes/settings.local.json                                                                 │
 │Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /memory
@@ -270,7 +270,7 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /memory <show|edit|add|search|open> [text|scope]                                                     │
 │Example: /memory search auth                                                                                │
 │About: View, search, and quick-open memory/project instructions                                             │
-│Edit: project: ./AGENTS.md | global: ~/.cc-rust/memory                                                     │
+│Edit: project: ./AGENTS.md | global: ~/.allthecodes/memory                                                     │
 │                                                                                                            │
 │Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -303,7 +303,7 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /plan [enter|show|status|approve|reject|link|classify] ...                                           │
 │Example: /plan                                                                                              │
 │About: Enter plan mode and show or edit the plan file                                                       │
-│Edit: current: ~/.cc-rust/plan.md                                                                           │
+│Edit: current: ~/.allthecodes/plan.md                                                                           │
 │Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /plugin
@@ -311,7 +311,7 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /plugin <list|installed|disabled|errors|status|enable|disable|uninstall> [id]                        │
 │Example: /plugin enable <plugin-id>                                                                         │
 │About: Plugin management (list, status, enable, disable)                                                    │
-│Edit: installed: ~/.cc-rust/plugins/installed_plugins.json | cache: ~/.cc-rust/plugins/cache                │
+│Edit: installed: ~/.allthecodes/plugins/installed_plugins.json | cache: ~/.allthecodes/plugins/cache                │
 │                                                                                                            │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /rate-limit-options
@@ -403,7 +403,7 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /skills [name]                                                                                       │
 │Example: /skills                                                                                            │
 │About: List available skills                                                                                │
-│Edit: user: ~/.cc-rust/skills | project: ./.cc-rust/skills                                                  │
+│Edit: user: ~/.allthecodes/skills | project: ./.allthecodes/skills                                                  │
 │                                                                                                            │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /sleep

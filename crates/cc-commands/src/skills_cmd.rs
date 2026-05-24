@@ -70,7 +70,7 @@ impl CommandHandler for SkillsHandler {
             return Ok(CommandResult::Output(
                 "No skills loaded.\n\n\
                  Bundled skills: simplify, remember, debug, stuck, update-config\n\
-                 Place custom skills in ~/.cc-rust/skills/<name>/SKILL.md"
+                 Place custom skills in ~/.allthecodes/skills/<name>/SKILL.md"
                     .to_string(),
             ));
         }

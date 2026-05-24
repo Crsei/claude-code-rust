@@ -112,12 +112,12 @@ fn render_diagnose(ctx: &CommandContext) -> String {
         out.push_str(&format!("  auth diagnostic:   {}\n", diagnostic));
     }
     out.push_str(&format!(
-        "  CC_RUST_REMOTE:    {}\n",
-        std::env::var("CC_RUST_REMOTE").unwrap_or_else(|_| "(unset)".into())
+        "  ALLTHECODES_REMOTE:    {}\n",
+        std::env::var("ALLTHECODES_REMOTE").unwrap_or_else(|_| "(unset)".into())
     ));
     out.push_str(&format!(
-        "  CLAUDE_CODE_REMOTE: {}\n",
-        std::env::var("CLAUDE_CODE_REMOTE").unwrap_or_else(|_| "(unset)".into())
+        "  ALLTHECODES_REMOTE: {}\n",
+        std::env::var("ALLTHECODES_REMOTE").unwrap_or_else(|_| "(unset)".into())
     ));
     out.push_str(&format!(
         "  language setting:  {}\n",
@@ -192,7 +192,9 @@ fn format_blocked(reason: &FeasibilityReason) -> String {
             );
         }
         FeasibilityReason::RemoteEnvironment(_) => {
-            out.push_str("Hint: run cc-rust locally if and when a real voice backend is added.\n");
+            out.push_str(
+                "Hint: run allthecodes locally if and when a real voice backend is added.\n",
+            );
         }
         FeasibilityReason::AudioBackend(AudioUnavailable::NotImplemented(_))
         | FeasibilityReason::SttBackend(SttUnavailable::NotImplemented(_))
@@ -406,8 +408,8 @@ mod tests {
     async fn enable_reports_unsupported_build_before_auth_hints() {
         let _api = EnvGuard::set("ANTHROPIC_API_KEY", None);
         let _token = EnvGuard::set("ANTHROPIC_AUTH_TOKEN", None);
-        let _remote = EnvGuard::set("CC_RUST_REMOTE", None);
-        let _remote2 = EnvGuard::set("CLAUDE_CODE_REMOTE", None);
+        let _remote = EnvGuard::set("ALLTHECODES_REMOTE", None);
+        let _remote2 = EnvGuard::set("ALLTHECODES_REMOTE", None);
         let handler = VoiceHandler;
         let mut ctx = make_ctx();
         let r = handler.execute("on", &mut ctx).await.unwrap();
@@ -426,7 +428,7 @@ mod tests {
     async fn disable_persists_false_flag_for_compatibility() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let home = tmp.path().to_string_lossy().to_string();
-        let _home = EnvGuard::set("CC_RUST_HOME", Some(&home));
+        let _home = EnvGuard::set("ALLTHECODES_HOME", Some(&home));
 
         let handler = VoiceHandler;
         let mut ctx = make_ctx();

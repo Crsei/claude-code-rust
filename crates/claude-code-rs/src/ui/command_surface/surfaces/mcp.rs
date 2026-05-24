@@ -229,7 +229,7 @@ impl McpSurface {
             .any(|server| server.status != McpServerStatus::Disabled);
         let mut detail_lines = split_lines(render_mcp_settings(&McpSettingsSummary {
             enabled,
-            config_path: "~/.cc-rust/settings.json".to_string(),
+            config_path: "~/.allthecodes/settings.json".to_string(),
             server_count: self.state.servers.len(),
             warning_count,
         }));

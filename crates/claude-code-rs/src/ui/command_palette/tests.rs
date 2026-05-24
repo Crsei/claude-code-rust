@@ -270,14 +270,14 @@ fn edit_targets_render_as_file_links() {
 #[test]
 fn display_path_prefers_readable_project_relative_paths() {
     let cwd = Path::new("C:\\repo");
-    let path = cwd.join(".cc-rust").join("settings.json");
-    assert_eq!(display_path(&path, cwd), "./.cc-rust/settings.json");
+    let path = cwd.join(".allthecodes").join("settings.json");
+    assert_eq!(display_path(&path, cwd), "./.allthecodes/settings.json");
 }
 
 #[test]
 #[serial_test::serial]
 fn snapshot_command_palette_root_and_filtered_views() {
-    let _home = EnvVarGuard::set("CC_RUST_HOME", "/tmp/cc-rust-snapshot-home");
+    let _home = EnvVarGuard::set("ALLTHECODES_HOME", "/tmp/cc-rust-snapshot-home");
     let cwd = snapshot_cwd();
 
     insta::assert_snapshot!(
@@ -301,7 +301,7 @@ fn snapshot_command_palette_root_and_filtered_views() {
 #[test]
 #[serial_test::serial]
 fn snapshot_all_command_argument_help_views() {
-    let _home = EnvVarGuard::set("CC_RUST_HOME", "/tmp/cc-rust-snapshot-home");
+    let _home = EnvVarGuard::set("ALLTHECODES_HOME", "/tmp/cc-rust-snapshot-home");
     let cwd = snapshot_cwd();
     let mut rendered = String::new();
 
@@ -388,7 +388,7 @@ fn normalize_snapshot_text(mut text: String) -> String {
     }
 
     text = normalize_managed_settings_path_width(text);
-    text = normalize_cc_rust_home_width(text);
+    text = normalize_allthecodes_home_width(text);
     text.replace("C:/cc-rust-snapshot", "<WORKSPACE>")
 }
 
@@ -418,14 +418,14 @@ fn normalize_managed_settings_path_width(text: String) -> String {
         .join("\n")
 }
 
-fn normalize_cc_rust_home_width(text: String) -> String {
-    if !text.contains("$CC_RUST_HOME") {
+fn normalize_allthecodes_home_width(text: String) -> String {
+    if !text.contains("$ALLTHECODES_HOME") {
         return text;
     }
     text.lines()
         .map(|line| {
             let width = line.chars().count();
-            let mut normalized = line.replace("$CC_RUST_HOME", "~/.cc-rust");
+            let mut normalized = line.replace("$ALLTHECODES_HOME", "~/.allthecodes");
             let new_width = normalized.chars().count();
             if new_width < width && normalized.ends_with('│') {
                 let pad = " ".repeat(width - new_width);

@@ -32,7 +32,7 @@ fn capability_lab_fixture_combines_project_mcp_skill_and_plugin_configuration() 
 
     cc_skills::clear_skills();
     cc_skills::reload_skills_with_extra(
-        &lab.cc_rust_home.join("skills"),
+        &lab.allthecodes_home.join("skills"),
         Some(&lab.project_dir),
         Vec::new(),
         cc_skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),

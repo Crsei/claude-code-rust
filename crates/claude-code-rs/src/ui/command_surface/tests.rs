@@ -747,7 +747,7 @@ fn memory_surface_action_tabs_apply_to_selected_target() {
     let mut surface = CommandSurface::Memory(MemorySurface {
         state: MemoryFileSelectorState::new(vec![
             MemoryFileOption::new("CLAUDE.md", MemoryFileKind::Project),
-            MemoryFileOption::new(".cc-rust/auto-memory", MemoryFileKind::Folder)
+            MemoryFileOption::new(".allthecodes/auto-memory", MemoryFileKind::Folder)
                 .with_description("auto-memory folder"),
         ]),
         cwd,

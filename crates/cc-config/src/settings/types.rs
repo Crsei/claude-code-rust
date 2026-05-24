@@ -86,7 +86,7 @@ impl PermissionsSettings {
 /// - `/absolute/path` — absolute path
 /// - `~/relative` — relative to `$HOME`
 /// - `./relative` or bare `relative` — relative to the project root (or the
-///   enclosing `~/.cc-rust/` for user settings)
+///   enclosing `~/.allthecodes/` for user settings)
 ///
 /// Lists from every [`crate::settings::SettingsSource`] are **merged**, not
 /// replaced, so users can extend managed rules without overriding them.

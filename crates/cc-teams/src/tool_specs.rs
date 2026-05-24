@@ -40,7 +40,7 @@ pub struct TeamSpawnInput {
     /// Optional description for an implicitly-created team.
     #[serde(default)]
     pub description: Option<String>,
-    /// Optional backend. cc-rust supports only in-process.
+    /// Optional backend. allthecodes supports only in-process.
     #[serde(default)]
     pub backend: Option<String>,
     /// Optional permission mode for the teammate.
@@ -180,7 +180,7 @@ pub fn team_spawn_schema() -> Value {
             "backend": {
                 "type": "string",
                 "enum": ["in-process"],
-                "description": "Execution backend. cc-rust intentionally supports only in-process Agent Teams."
+                "description": "Execution backend. allthecodes intentionally supports only in-process Agent Teams."
             },
             "mode": {
                 "type": "string",

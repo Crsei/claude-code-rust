@@ -37,7 +37,7 @@ fn mailbox_teams_dir() -> PathBuf {
         return path;
     }
 
-    cc_config::paths::teams_dir()
+    crate::storage_paths::teams_dir()
 }
 
 #[cfg(test)]

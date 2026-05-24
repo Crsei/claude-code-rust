@@ -1,7 +1,7 @@
 //! OAuth support for remote MCP transports.
 //!
 //! The on-disk settings file stores only OAuth metadata. Access and refresh
-//! tokens live in `{CC_RUST_HOME|~/.cc-rust}/mcp-oauth.json` so they stay
+//! tokens live in `{ALLTHECODES_HOME|~/.allthecodes}/mcp-oauth.json` so they stay
 //! isolated from upstream Codex paths and are never echoed through settings,
 //! command output, or IPC config events.
 
@@ -21,7 +21,7 @@ use url::Url;
 
 use super::{McpOAuthConfig, McpServerConfig};
 
-const DEFAULT_CLIENT_ID: &str = "cc-rust";
+const DEFAULT_CLIENT_ID: &str = "allthecodes";
 const DEFAULT_CALLBACK_PORT: u16 = 1455;
 const TOKEN_EXPIRY_SKEW_SECS: i64 = 60;
 
@@ -865,7 +865,7 @@ mod tests {
     #[serial]
     fn token_store_uses_cc_rust_home() {
         let temp = TempDir::new().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path().to_str().unwrap());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path().to_str().unwrap());
         assert_eq!(token_store_path(), temp.path().join("mcp-oauth.json"));
     }
 
@@ -891,7 +891,7 @@ mod tests {
     #[serial]
     async fn authorization_header_uses_stored_bearer_without_refresh() {
         let temp = TempDir::new().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path().to_str().unwrap());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path().to_str().unwrap());
         let config =
             oauth_config("http://127.0.0.1:9/.well-known/oauth-authorization-server".to_string());
         let mut store = OAuthStore::default();
@@ -918,7 +918,7 @@ mod tests {
     #[serial]
     async fn oauth_start_and_complete_with_loopback_auth_server() {
         let temp = TempDir::new().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path().to_str().unwrap());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path().to_str().unwrap());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let metadata_url = format!(
@@ -984,7 +984,7 @@ mod tests {
     #[serial]
     async fn expired_token_refreshes_through_token_endpoint() {
         let temp = TempDir::new().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path().to_str().unwrap());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path().to_str().unwrap());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let config =
@@ -1036,7 +1036,7 @@ mod tests {
     #[serial]
     fn clear_token_removes_entry_and_pending() {
         let temp = TempDir::new().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path().to_str().unwrap());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path().to_str().unwrap());
         let config =
             oauth_config("http://127.0.0.1:9/.well-known/oauth-authorization-server".to_string());
         let key = server_auth_key(&config);

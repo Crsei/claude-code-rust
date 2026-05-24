@@ -10,7 +10,7 @@
 pub const TEAM_LEAD_NAME: &str = "team-lead";
 
 /// Tmux session name for swarm windows.
-pub const SWARM_SESSION_NAME: &str = "claude-swarm";
+pub const SWARM_SESSION_NAME: &str = "allthecodes-swarm";
 
 /// Tmux window name for the swarm view.
 pub const SWARM_VIEW_WINDOW_NAME: &str = "swarm-view";
@@ -19,23 +19,23 @@ pub const SWARM_VIEW_WINDOW_NAME: &str = "swarm-view";
 pub const TMUX_COMMAND: &str = "tmux";
 
 /// Hidden tmux session name (for background panes).
-pub const HIDDEN_SESSION_NAME: &str = "claude-hidden";
+pub const HIDDEN_SESSION_NAME: &str = "allthecodes-hidden";
 
 // ---------------------------------------------------------------------------
 // Environment variables
 // ---------------------------------------------------------------------------
 
 /// Env var overriding the teammate launch command.
-pub const TEAMMATE_COMMAND_ENV_VAR: &str = "CLAUDE_CODE_TEAMMATE_COMMAND";
+pub const TEAMMATE_COMMAND_ENV_VAR: &str = "ALLTHECODES_TEAMMATE_COMMAND";
 
 /// Env var setting the teammate's UI color.
-pub const TEAMMATE_COLOR_ENV_VAR: &str = "CLAUDE_CODE_AGENT_COLOR";
+pub const TEAMMATE_COLOR_ENV_VAR: &str = "ALLTHECODES_AGENT_COLOR";
 
 /// Env var requiring plan mode for a teammate.
-pub const PLAN_MODE_REQUIRED_ENV_VAR: &str = "CLAUDE_CODE_PLAN_MODE_REQUIRED";
+pub const PLAN_MODE_REQUIRED_ENV_VAR: &str = "ALLTHECODES_PLAN_MODE_REQUIRED";
 
 /// Env var enabling experimental agent teams.
-pub const AGENT_TEAMS_ENV_VAR: &str = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS";
+pub const AGENT_TEAMS_ENV_VAR: &str = "ALLTHECODES_EXPERIMENTAL_AGENT_TEAMS";
 
 // ---------------------------------------------------------------------------
 // Mailbox configuration
@@ -114,8 +114,9 @@ mod tests {
 
     #[test]
     fn test_env_var_names() {
-        assert!(AGENT_TEAMS_ENV_VAR.starts_with("CLAUDE_CODE_"));
-        assert!(TEAMMATE_COLOR_ENV_VAR.starts_with("CLAUDE_CODE_"));
-        assert!(PLAN_MODE_REQUIRED_ENV_VAR.starts_with("CLAUDE_CODE_"));
+        assert!(AGENT_TEAMS_ENV_VAR.starts_with("ALLTHECODES_"));
+        assert!(TEAMMATE_COLOR_ENV_VAR.starts_with("ALLTHECODES_"));
+        assert!(PLAN_MODE_REQUIRED_ENV_VAR.starts_with("ALLTHECODES_"));
+        assert!(TEAMMATE_COMMAND_ENV_VAR.starts_with("ALLTHECODES_"));
     }
 }

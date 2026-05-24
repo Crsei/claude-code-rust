@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 
 use crate::process_state::{self, DaemonStatusSnapshot};
 
-const TOKEN_HEADER: &str = "x-cc-rust-daemon-token";
+const TOKEN_HEADER: &str = "x-allthecodes-daemon-token";
 
 #[derive(Debug, Clone)]
 pub enum LocalGatewayDaemonStatus {
@@ -101,13 +101,13 @@ impl LocalGatewayClient {
                 LocalGatewayDaemonStatus::Stale { pid } => diagnostic(
                     "daemon_stale",
                     "The daemon state is stale.",
-                    "Restart the daemon with `claude daemon restart`.",
+                    "Restart the daemon with `allthecodes daemon restart`.",
                 )
                 .with_context(format!("pid={pid}")),
                 LocalGatewayDaemonStatus::Stopped => diagnostic(
                     "daemon_stopped",
                     "The daemon is not running.",
-                    "Start it with `FEATURE_KAIROS=1 claude daemon start`.",
+                    "Start it with `FEATURE_KAIROS=1 allthecodes daemon start`.",
                 ),
                 LocalGatewayDaemonStatus::Running { .. } => unreachable!(),
             });

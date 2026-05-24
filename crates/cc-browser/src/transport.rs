@@ -10,7 +10,7 @@
 //!   `/tmp/claude-mcp-browser-bridge-{user}/{pid}.sock`, mode 0600.
 //! - **Windows**: a named pipe, `\\.\pipe\claude-mcp-browser-bridge-{user}`.
 //!
-//! Socket paths are cross-process discoverable so a cc-rust MCP bridge spawned
+//! Socket paths are cross-process discoverable so a allthecodes MCP bridge spawned
 //! later can find the native host that's already running under Chrome.
 
 use std::io;
@@ -49,7 +49,7 @@ pub fn socket_dir() -> PathBuf {
 /// - Unix: `{socket_dir}/{pid}.sock`
 /// - Windows: `\\.\pipe\claude-mcp-browser-bridge-{user}`
 ///
-/// Per-PID on Unix lets several cc-rust processes coexist; on Windows
+/// Per-PID on Unix lets several allthecodes processes coexist; on Windows
 /// pipes are inherently process-scoped so the user-suffixed name is
 /// unique enough.
 pub fn secure_socket_path() -> PathBuf {
@@ -62,7 +62,7 @@ pub fn secure_socket_path() -> PathBuf {
     }
 }
 
-/// Enumerate every candidate socket a cc-rust MCP bridge could connect to.
+/// Enumerate every candidate socket a allthecodes MCP bridge could connect to.
 ///
 /// On Unix we scan the socket directory for any `*.sock` files (one per
 /// running native host). On Windows there's only one named pipe path.

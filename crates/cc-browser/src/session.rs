@@ -24,11 +24,11 @@ use super::state::{self, ChromeConnectionState};
 /// the connection state machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChromeEnablement {
-    /// Explicitly off (`--no-chrome`, or `CLAUDE_CODE_ENABLE_CFC=false`, or
+    /// Explicitly off (`--no-chrome`, or `ALLTHECODES_ENABLE_CFC=false`, or
     /// saved-config `claudeInChromeDefaultEnabled: false` with no opposite
     /// CLI signal).
     Disabled,
-    /// Explicitly on (`--chrome` or `CLAUDE_CODE_ENABLE_CFC=true`).
+    /// Explicitly on (`--chrome` or `ALLTHECODES_ENABLE_CFC=true`).
     Enabled,
 }
 
@@ -42,7 +42,7 @@ impl ChromeEnablement {
 ///
 /// Precedence (highest first):
 /// 1. `cli_chrome == Some(true/false)` — `--chrome` / `--no-chrome`
-/// 2. `CLAUDE_CODE_ENABLE_CFC` env var (truthy / falsy)
+/// 2. `ALLTHECODES_ENABLE_CFC` env var (truthy / falsy)
 /// 3. `config_default` — `claudeInChromeDefaultEnabled` from settings.json
 /// 4. Default: disabled.
 ///
@@ -60,7 +60,7 @@ pub fn resolve_enablement(
         };
     }
 
-    match std::env::var("CLAUDE_CODE_ENABLE_CFC")
+    match std::env::var("ALLTHECODES_ENABLE_CFC")
         .ok()
         .as_deref()
         .map(env_truthy_falsy)
@@ -104,7 +104,7 @@ impl ChromeSession {
     /// Returns `Ok(())` even if sub-steps fail (extension not installed,
     /// native-host install denied by the OS, etc.) — we record the error in
     /// state and let `/chrome` surface it rather than crashing the whole
-    /// cc-rust process over a best-effort feature.
+    /// allthecodes process over a best-effort feature.
     pub fn start(&self) -> Result<()> {
         if !self.enablement.is_enabled() {
             state::set_connection(ChromeConnectionState::Disabled);
@@ -122,7 +122,7 @@ impl ChromeSession {
         // useful — the user can install the extension later and re-run.
         //
         // In this skeleton PR the binary path points at the current
-        // cc-rust binary with `--chrome-native-host` (wired in #5). That's
+        // allthecodes binary with `--chrome-native-host` (wired in #5). That's
         // intentional: the manifest files will be correct the moment #5
         // ships, without requiring a second install step.
         match install_native_host() {
@@ -158,7 +158,7 @@ impl ChromeSession {
     ///
     /// In #4 this is a stub: re-runs detection and re-installs the manifest
     /// (idempotent), so the user can fix their setup and hit "reconnect"
-    /// without restarting cc-rust. #5 will additionally re-open the socket
+    /// without restarting allthecodes. #5 will additionally re-open the socket
     /// and re-handshake with the extension.
     pub fn reconnect(&self) -> Result<()> {
         if !self.enablement.is_enabled() {
@@ -169,7 +169,7 @@ impl ChromeSession {
     }
 }
 
-/// Install the native host manifest pointing at the current cc-rust binary.
+/// Install the native host manifest pointing at the current allthecodes binary.
 ///
 /// The `--chrome-native-host` flag it's wired to is the entry point #5 will
 /// add. Until then, the manifest is correct-by-construction; nothing reads it
@@ -190,35 +190,35 @@ mod tests {
     use super::*;
 
     fn with_clean_env<F: FnOnce()>(f: F) {
-        let prev = std::env::var("CLAUDE_CODE_ENABLE_CFC").ok();
-        std::env::remove_var("CLAUDE_CODE_ENABLE_CFC");
+        let prev = std::env::var("ALLTHECODES_ENABLE_CFC").ok();
+        std::env::remove_var("ALLTHECODES_ENABLE_CFC");
         f();
         if let Some(v) = prev {
-            std::env::set_var("CLAUDE_CODE_ENABLE_CFC", v);
+            std::env::set_var("ALLTHECODES_ENABLE_CFC", v);
         }
     }
 
     #[test]
     fn cli_flag_beats_env_and_config() {
         with_clean_env(|| {
-            std::env::set_var("CLAUDE_CODE_ENABLE_CFC", "true");
+            std::env::set_var("ALLTHECODES_ENABLE_CFC", "true");
             let got = resolve_enablement(Some(false), Some(true));
             assert_eq!(
                 got,
                 ChromeEnablement::Disabled,
                 "--no-chrome overrides env and config"
             );
-            std::env::remove_var("CLAUDE_CODE_ENABLE_CFC");
+            std::env::remove_var("ALLTHECODES_ENABLE_CFC");
         });
     }
 
     #[test]
     fn env_beats_config() {
         with_clean_env(|| {
-            std::env::set_var("CLAUDE_CODE_ENABLE_CFC", "0");
+            std::env::set_var("ALLTHECODES_ENABLE_CFC", "0");
             let got = resolve_enablement(None, Some(true));
             assert_eq!(got, ChromeEnablement::Disabled);
-            std::env::remove_var("CLAUDE_CODE_ENABLE_CFC");
+            std::env::remove_var("ALLTHECODES_ENABLE_CFC");
         });
     }
 

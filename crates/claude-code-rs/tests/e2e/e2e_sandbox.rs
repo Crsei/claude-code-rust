@@ -111,7 +111,7 @@ fn cli_starts_with_extended_sandbox_settings() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -130,7 +130,7 @@ fn cli_accepts_no_network_flag() {
     let dir = tempfile::tempdir().expect("tempdir");
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -160,7 +160,7 @@ fn cli_rejects_invalid_sandbox_mode_without_crashing() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")

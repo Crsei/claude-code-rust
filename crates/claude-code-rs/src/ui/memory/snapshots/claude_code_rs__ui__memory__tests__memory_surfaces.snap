@@ -3,10 +3,10 @@ source: crates/claude-code-rs/src/ui/memory/mod.rs
 expression: rendered
 ---
 ## selector
-  User memory - Saved in ~/.cc-rust/AGENTS.md
+  User memory - Saved in ~/.allthecodes/AGENTS.md
 > Project memory (new) - Saved in ./AGENTS.md
   L ./docs/AGENTS.md - @-imported
-  Open ~/.cc-rust/memory - auto-memory folder
+  Open ~/.allthecodes/memory - auto-memory folder
 
 ## notification
 Memory updated in ./AGENTS.md - /memory to edit

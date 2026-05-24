@@ -378,7 +378,7 @@ fn open_dir(which: &str, cwd: &Path) -> Result<CommandResult> {
         "auto" => ("auto-memory", cfg_paths::auto_memory_dir()),
         "team" => ("team-memory", cfg_paths::team_memory_dir(cwd)),
         "global" => ("global memory", cfg_paths::memory_dir_global()),
-        "project" => ("project memory", cwd.join(".cc-rust").join("memory")),
+        "project" => ("project memory", cwd.join(".allthecodes").join("memory")),
         "" => {
             return Ok(CommandResult::Output(
                 "Usage: /memory open <auto|team|global|project>".into(),

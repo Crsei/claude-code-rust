@@ -549,7 +549,7 @@ language: python
 +------------------------------------------------------------------------------------------------------------------------------------------+
 
 ## rule-description
-allow Bash(ls*) (project, source: .cc-rust/settings.json)
+allow Bash(ls*) (project, source: .allthecodes/settings.json)
 
 ## rule-input
 pattern: Bash(cargo test*)
@@ -560,7 +560,7 @@ pattern must be one line
 
 ## rule-list
 Permission rules (2)
-  allow Bash(ls*) (project, source: .cc-rust/settings.json)
+  allow Bash(ls*) (project, source: .allthecodes/settings.json)
 > deny Write(src/**) (local settings, source: policy)
 
 ## add-rules

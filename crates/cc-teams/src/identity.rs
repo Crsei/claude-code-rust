@@ -55,7 +55,7 @@ pub fn get_agent_id() -> Option<String> {
         return Some(id);
     }
     // 2. Check environment variable (tmux/iTerm2 teammate)
-    env::var("CLAUDE_CODE_AGENT_ID").ok()
+    env::var("ALLTHECODES_AGENT_ID").ok()
 }
 
 /// Get the current agent name (part before `@`).

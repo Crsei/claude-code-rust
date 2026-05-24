@@ -674,8 +674,8 @@ mod tests {
     #[serial_test::serial]
     async fn test_model_switch_uses_active_profile_capabilities() {
         let dir = tempfile::tempdir().unwrap();
-        let previous = std::env::var("CC_RUST_HOME").ok();
-        std::env::set_var("CC_RUST_HOME", dir.path());
+        let previous = std::env::var("ALLTHECODES_HOME").ok();
+        std::env::set_var("ALLTHECODES_HOME", dir.path());
         let handler = ModelHandler;
         let mut ctx = test_ctx();
         add_codex_profile(&mut ctx);
@@ -700,8 +700,8 @@ mod tests {
         );
 
         match previous {
-            Some(value) => std::env::set_var("CC_RUST_HOME", value),
-            None => std::env::remove_var("CC_RUST_HOME"),
+            Some(value) => std::env::set_var("ALLTHECODES_HOME", value),
+            None => std::env::remove_var("ALLTHECODES_HOME"),
         }
     }
 

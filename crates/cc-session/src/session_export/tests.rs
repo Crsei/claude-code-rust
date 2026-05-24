@@ -50,6 +50,7 @@ fn make_assistant_msg(text: &str) -> Message {
         usage: Some(Usage {
             input_tokens: 100,
             output_tokens: 50,
+            reasoning_output_tokens: 0,
             cache_read_input_tokens: 10,
             cache_creation_input_tokens: 0,
         }),
@@ -73,6 +74,7 @@ fn make_assistant_with_tool_use(tool_use_id: &str, tool_name: &str) -> Message {
         usage: Some(Usage {
             input_tokens: 200,
             output_tokens: 30,
+            reasoning_output_tokens: 0,
             cache_read_input_tokens: 0,
             cache_creation_input_tokens: 0,
         }),
@@ -353,7 +355,7 @@ fn test_build_session_export_schema_v2_includes_api_view_defaults() {
 #[serial_test::serial]
 fn test_build_session_export_reports_bad_api_snapshot_log() {
     let temp = tempfile::tempdir().unwrap();
-    let _guard = EnvGuard::set_path("CC_RUST_HOME", temp.path());
+    let _guard = EnvGuard::set_path("ALLTHECODES_HOME", temp.path());
     let path = crate::request_snapshot::snapshot_path("session-bad-snapshots");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, "{not-json}\n").unwrap();

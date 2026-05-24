@@ -95,7 +95,7 @@ fn cli_init_only_accepts_user_keybindings() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -136,7 +136,7 @@ fn cli_init_only_accepts_context_local_unbinds() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -158,7 +158,7 @@ fn cli_init_only_tolerates_malformed_keybindings() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -183,7 +183,7 @@ fn cli_init_only_accepts_editor_mode_vim() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")

@@ -25,8 +25,8 @@
 //!
 //! Sources:
 //!   * `Builtin` — engine-provided, loaded from [`super::builtin_agents`]
-//!   * `User`    — `~/.cc-rust/agents/*.md`, editable
-//!   * `Project` — `{cwd}/.cc-rust/agents/*.md`, editable
+//!   * `User`    — `~/.allthecodes/agents/*.md`, editable
+//!   * `Project` — `{cwd}/.allthecodes/agents/*.md`, editable
 //!   * `Plugin`  — contributed by plugins, read-only (future hook)
 //!
 //! [upstream]: https://github.com/anthropics/claude-code/blob/main/src/tools/AgentTool/loadAgentsDir.ts
@@ -156,7 +156,7 @@ pub fn list_all_agents(cwd: &Path) -> Vec<AgentDefinitionEntry> {
     let user_dir = cc_config::paths::data_root().join("agents");
     out.extend(load_agents_from_dir(&user_dir, AgentDefinitionSource::User));
 
-    let project_dir = cwd.join(".cc-rust").join("agents");
+    let project_dir = cwd.join(".allthecodes").join("agents");
     out.extend(load_agents_from_dir(
         &project_dir,
         AgentDefinitionSource::Project,
@@ -581,7 +581,7 @@ fn delete_agent(cwd: &Path, name: &str, source: &AgentDefinitionSource) -> Resul
 fn agents_dir_for_source(cwd: &Path, source: &AgentDefinitionSource) -> PathBuf {
     match source {
         AgentDefinitionSource::User => cc_config::paths::data_root().join("agents"),
-        AgentDefinitionSource::Project => cwd.join(".cc-rust").join("agents"),
+        AgentDefinitionSource::Project => cwd.join(".allthecodes").join("agents"),
         // Read-only scopes are rejected earlier, but return something harmless.
         AgentDefinitionSource::Builtin | AgentDefinitionSource::Plugin { .. } => cwd.join(""),
     }
@@ -768,7 +768,7 @@ fn is_inside_agents_dir(path: &Path) -> bool {
     let Ok(cwd) = std::env::current_dir() else {
         return false;
     };
-    let project_dir = cwd.join(".cc-rust").join("agents");
+    let project_dir = cwd.join(".allthecodes").join("agents");
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     path_prefixed_by(path, &project_dir)
 }
@@ -830,13 +830,13 @@ mod tests {
         assert_eq!(saved.name, "reviewer");
         let expected = tmp
             .path()
-            .join(".cc-rust")
+            .join(".allthecodes")
             .join("agents")
             .join("reviewer.md");
         assert!(expected.exists(), "file should have been written");
 
         let loaded = load_agents_from_dir(
-            &tmp.path().join(".cc-rust").join("agents"),
+            &tmp.path().join(".allthecodes").join("agents"),
             AgentDefinitionSource::Project,
         );
         assert_eq!(loaded.len(), 1);
@@ -867,7 +867,11 @@ mod tests {
         let entry = make_entry("temp", AgentDefinitionSource::Project);
         upsert_agent(tmp.path(), entry).unwrap();
 
-        let path = tmp.path().join(".cc-rust").join("agents").join("temp.md");
+        let path = tmp
+            .path()
+            .join(".allthecodes")
+            .join("agents")
+            .join("temp.md");
         assert!(path.exists());
 
         delete_agent(tmp.path(), "temp", &AgentDefinitionSource::Project).unwrap();

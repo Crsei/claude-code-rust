@@ -139,7 +139,7 @@ fn render_help() -> String {
      vars (TERM_PROGRAM, VSCODE_PID, IDEA_INITIAL_DIRECTORY) to decide if\n\
      each IDE is installed and/or currently running.\n\n\
      Selection is persisted under `selectedIde` in\n\
-     `{data_root}/settings.json` (usually `~/.cc-rust/settings.json`).\n"
+     `{data_root}/settings.json` (usually `~/.allthecodes/settings.json`).\n"
         .to_string()
 }
 
@@ -206,8 +206,8 @@ mod tests {
 
     impl HomeGuard {
         fn set(path: &Path) -> Self {
-            let previous = std::env::var("CC_RUST_HOME").ok();
-            std::env::set_var("CC_RUST_HOME", path);
+            let previous = std::env::var("ALLTHECODES_HOME").ok();
+            std::env::set_var("ALLTHECODES_HOME", path);
             Self { previous }
         }
     }
@@ -215,8 +215,8 @@ mod tests {
     impl Drop for HomeGuard {
         fn drop(&mut self) {
             match &self.previous {
-                Some(v) => std::env::set_var("CC_RUST_HOME", v),
-                None => std::env::remove_var("CC_RUST_HOME"),
+                Some(v) => std::env::set_var("ALLTHECODES_HOME", v),
+                None => std::env::remove_var("ALLTHECODES_HOME"),
             }
         }
     }

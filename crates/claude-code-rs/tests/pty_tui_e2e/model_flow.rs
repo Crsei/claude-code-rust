@@ -1,7 +1,7 @@
 //! 设置与模型流测试：验证 settings.json 中的 auth profile 对应正确的模型。
 //!
 //! 测试流程：
-//! 1. 读取 `~/.cc-rust/settings.json`，解析 activeAuthProfile 和预期模型
+//! 1. 读取 `~/.allthecodes/settings.json`，解析 activeAuthProfile 和预期模型
 //! 2. 启动 TUI 检查状态栏模型名是否匹配
 //! 3. 发起对话问"你是哪个模型？"验证回复
 //! 4. 使用 `/model` 切换模型后验证
@@ -17,13 +17,13 @@ pub struct AppSettings {
     pub expected_model: String,
 }
 
-/// 读取 ~/.cc-rust/settings.json，返回 activeAuthProfile 和其 model
+/// 读取 ~/.allthecodes/settings.json，返回 activeAuthProfile 和其 model
 pub fn read_settings() -> AppSettings {
-    let home = std::env::var("CC_RUST_HOME")
+    let home = std::env::var("ALLTHECODES_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             dirs::home_dir()
-                .map(|p| p.join(".cc-rust"))
+                .map(|p| p.join(".allthecodes"))
                 .expect("cannot determine home dir")
         });
 
@@ -54,11 +54,11 @@ pub fn read_settings() -> AppSettings {
 /// 创建一个包含指定 activeAuthProfile 的临时设置目录。
 /// 复制原始 settings.json 并修改 activeAuthProfile。
 pub fn create_temp_profile_home(profile_name: &str) -> tempfile::TempDir {
-    let home = std::env::var("CC_RUST_HOME")
+    let home = std::env::var("ALLTHECODES_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             dirs::home_dir()
-                .map(|p| p.join(".cc-rust"))
+                .map(|p| p.join(".allthecodes"))
                 .expect("cannot determine home dir")
         });
 
@@ -91,9 +91,9 @@ pub fn create_temp_profile_home(profile_name: &str) -> tempfile::TempDir {
     eprintln!("[settings] temp profile: {profile_name} → model: {model}");
 
     let tmp = tempfile::tempdir().expect("create temp dir");
-    let cc_rust_dir = tmp.path().join(".cc-rust");
-    std::fs::create_dir_all(&cc_rust_dir).expect("create .cc-rust dir");
-    let dest_path = cc_rust_dir.join("settings.json");
+    let allthecodes_dir = tmp.path().join(".allthecodes");
+    std::fs::create_dir_all(&allthecodes_dir).expect("create .allthecodes dir");
+    let dest_path = allthecodes_dir.join("settings.json");
     std::fs::write(&dest_path, serde_json::to_string_pretty(&json).unwrap())
         .expect("write temp settings");
     eprintln!("[settings] wrote temp settings to {:?}", dest_path);
@@ -170,10 +170,10 @@ fn verify_model_matches_settings_status_bar() {
         expected.expected_model, expected.active_auth_profile
     );
 
-    // 使用 CC_RUST_HOME 指向原始 home（确保读取原始 settings）
-    let home = std::env::var("CC_RUST_HOME").unwrap_or_else(|_| {
+    // 使用 ALLTHECODES_HOME 指向原始 home（确保读取原始 settings）
+    let home = std::env::var("ALLTHECODES_HOME").unwrap_or_else(|_| {
         dirs::home_dir()
-            .map(|p| p.display().to_string() + "/.cc-rust")
+            .map(|p| p.display().to_string() + "/.allthecodes")
             .unwrap()
     });
 
@@ -182,7 +182,7 @@ fn verify_model_matches_settings_status_bar() {
         120,
         40,
         false, // strip_keys=false：使用真实的 API key
-        &[("CC_RUST_HOME", home.as_str())],
+        &[("ALLTHECODES_HOME", home.as_str())],
     );
     std::thread::sleep(Duration::from_secs(5));
 
@@ -223,9 +223,9 @@ fn ask_model_identity_and_verify() {
     eprintln!("\n=== 测试 2: 对话验证模型身份 ===");
     eprintln!("预期模型: {}", expected.expected_model);
 
-    let home = std::env::var("CC_RUST_HOME").unwrap_or_else(|_| {
+    let home = std::env::var("ALLTHECODES_HOME").unwrap_or_else(|_| {
         dirs::home_dir()
-            .map(|p| p.display().to_string() + "/.cc-rust")
+            .map(|p| p.display().to_string() + "/.allthecodes")
             .unwrap()
     });
 
@@ -234,7 +234,7 @@ fn ask_model_identity_and_verify() {
         120,
         40,
         false, // 使用真实 API key
-        &[("CC_RUST_HOME", home.as_str())],
+        &[("ALLTHECODES_HOME", home.as_str())],
     );
     std::thread::sleep(RENDER_WAIT);
     skip_trust_gate(&session);
@@ -288,9 +288,9 @@ fn switch_model_with_slash_command() {
         expected.expected_model, new_model
     );
 
-    let home = std::env::var("CC_RUST_HOME").unwrap_or_else(|_| {
+    let home = std::env::var("ALLTHECODES_HOME").unwrap_or_else(|_| {
         dirs::home_dir()
-            .map(|p| p.display().to_string() + "/.cc-rust")
+            .map(|p| p.display().to_string() + "/.allthecodes")
             .unwrap()
     });
 
@@ -299,7 +299,7 @@ fn switch_model_with_slash_command() {
         120,
         40,
         false,
-        &[("CC_RUST_HOME", home.as_str())],
+        &[("ALLTHECODES_HOME", home.as_str())],
     );
     std::thread::sleep(RENDER_WAIT);
     skip_trust_gate(&session);
@@ -352,9 +352,9 @@ fn verify_claude_code_profile_model() {
     eprintln!("\n=== 测试 4: claude_code profile 模型验证 ===");
     eprintln!("预期模型: deepseek-v4-pro");
 
-    // 创建临时 .cc-rust 目录，activeAuthProfile = "claude_code"
+    // 创建临时 .allthecodes 目录，activeAuthProfile = "claude_code"
     let tmp = create_temp_profile_home("claude_code");
-    let tmp_home = tmp.path().join(".cc-rust");
+    let tmp_home = tmp.path().join(".allthecodes");
     let tmp_path_str = tmp_home.to_str().expect("utf-8 temp path");
 
     let session = PtySession::spawn_with_env(
@@ -362,7 +362,7 @@ fn verify_claude_code_profile_model() {
         120,
         40,
         false,
-        &[("CC_RUST_HOME", tmp_path_str)],
+        &[("ALLTHECODES_HOME", tmp_path_str)],
     );
     std::thread::sleep(Duration::from_secs(5));
 
@@ -408,9 +408,9 @@ fn full_model_flow() {
         expected.active_auth_profile, expected.expected_model
     );
 
-    let home = std::env::var("CC_RUST_HOME").unwrap_or_else(|_| {
+    let home = std::env::var("ALLTHECODES_HOME").unwrap_or_else(|_| {
         dirs::home_dir()
-            .map(|p| p.display().to_string() + "/.cc-rust")
+            .map(|p| p.display().to_string() + "/.allthecodes")
             .unwrap()
     });
 
@@ -419,7 +419,7 @@ fn full_model_flow() {
         120,
         40,
         false,
-        &[("CC_RUST_HOME", home.as_str())],
+        &[("ALLTHECODES_HOME", home.as_str())],
     );
     std::thread::sleep(RENDER_WAIT);
     skip_trust_gate(&session);

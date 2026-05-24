@@ -2,7 +2,7 @@
 //!
 //! Exposes [`reload_plugins`], which:
 //!   1. Clears the in-memory registry.
-//!   2. Reloads installed plugins from `~/.cc-rust/plugins/installed_plugins.json`.
+//!   2. Reloads installed plugins from `~/.allthecodes/plugins/installed_plugins.json`.
 //!   3. Reports the outcome as a [`ReloadReport`] and emits a
 //!      [`crate::PluginSubsystemEvent::Reloaded`] on the host event sink so
 //!      connected frontends pick up the change without polling.
@@ -271,9 +271,9 @@ mod tests {
     }
 
     impl EnvGuard {
-        fn set_cc_rust_home(path: &Path) -> Self {
-            let old = std::env::var("CC_RUST_HOME").ok();
-            std::env::set_var("CC_RUST_HOME", path);
+        fn set_allthecodes_home(path: &Path) -> Self {
+            let old = std::env::var("ALLTHECODES_HOME").ok();
+            std::env::set_var("ALLTHECODES_HOME", path);
             Self { old }
         }
     }
@@ -281,8 +281,8 @@ mod tests {
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             match &self.old {
-                Some(value) => std::env::set_var("CC_RUST_HOME", value),
-                None => std::env::remove_var("CC_RUST_HOME"),
+                Some(value) => std::env::set_var("ALLTHECODES_HOME", value),
+                None => std::env::remove_var("ALLTHECODES_HOME"),
             }
         }
     }
@@ -348,10 +348,10 @@ mod tests {
     fn report_surfaces_global_metadata_diagnostics() {
         let _guard = REGISTRY_GUARD.lock();
         let home = std::env::temp_dir().join(format!(
-            "cc_rust_reload_global_diagnostic_{}",
+            "allthecodes_reload_global_diagnostic_{}",
             uuid::Uuid::new_v4()
         ));
-        let _env = EnvGuard::set_cc_rust_home(&home);
+        let _env = EnvGuard::set_allthecodes_home(&home);
         clear_plugins();
         fs::create_dir_all(plugins_dir()).unwrap();
         fs::write(installed_plugins_path(), "{ broken json").unwrap();

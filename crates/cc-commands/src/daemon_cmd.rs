@@ -219,7 +219,7 @@ mod tests {
     #[serial_test::serial]
     async fn test_status_without_state_reports_not_running() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         install_test_runtime();
         let handler = DaemonCmdHandler;
         let mut ctx = test_ctx();
@@ -234,7 +234,7 @@ mod tests {
     #[serial_test::serial]
     async fn test_start_and_restart_show_shell_hint() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         install_test_runtime();
         let handler = DaemonCmdHandler;
         let mut ctx = test_ctx();

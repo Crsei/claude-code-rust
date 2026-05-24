@@ -1,6 +1,6 @@
 //! Subprocess-level integration smoke for Phase 1 storage unification.
 //!
-//! Verifies that running the actual binary with `CC_RUST_HOME=<tempdir>`
+//! Verifies that running the actual binary with `ALLTHECODES_HOME=<tempdir>`
 //! causes runtime state (logs, sessions) to appear under that tempdir
 //! and NOT inside the test's working directory.
 
@@ -17,7 +17,7 @@ fn binary_path() -> std::path::PathBuf {
 
 #[test]
 #[serial]
-fn cc_rust_home_redirects_logs_and_leaves_cwd_clean() {
+fn allthecodes_home_redirects_logs_and_leaves_cwd_clean() {
     let tmp = TempDir::new().expect("tempdir");
     let cwd = TempDir::new().expect("cwd tempdir");
 
@@ -28,7 +28,7 @@ fn cc_rust_home_redirects_logs_and_leaves_cwd_clean() {
     //   - manual acceptance steps (Task 20)
     let status = Command::new(binary_path())
         .arg("--version")
-        .env("CC_RUST_HOME", tmp.path())
+        .env("ALLTHECODES_HOME", tmp.path())
         .current_dir(cwd.path())
         .status()
         .expect("spawn cc-rust");

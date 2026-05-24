@@ -92,7 +92,7 @@ Enter continue | Esc cancel
 ## desktop-import-dialog
 Import MCP Servers from Claude Desktop
 Found 2 MCP server(s) in Claude Desktop.
-Target: ~/.cc-rust/settings.json
+Target: ~/.allthecodes/settings.json
 Name collisions import with a numbered suffix when selected.
   [x] filesystem - npx @modelcontextprotocol/server-filesystem
 > [ ] github -> github-1 - uvx mcp-github
@@ -109,7 +109,7 @@ actions: view tools | reconnect
 ## settings
 MCP settings
 enabled: true
-config: ~/.cc-rust/mcp.json
+config: ~/.allthecodes/mcp.json
 servers: 3
 warnings: 1
 

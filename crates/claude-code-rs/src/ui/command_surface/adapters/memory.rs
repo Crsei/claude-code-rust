@@ -52,8 +52,11 @@ pub(crate) fn memory_options(cwd: &Path, home: &Path) -> Vec<MemoryFileOption> {
             MemoryFileKind::Folder,
         )
         .with_description("global memory folder"),
-        MemoryFileOption::new(cwd.join(".cc-rust").join("memory"), MemoryFileKind::Folder)
-            .with_description("project memory folder"),
+        MemoryFileOption::new(
+            cwd.join(".allthecodes").join("memory"),
+            MemoryFileKind::Folder,
+        )
+        .with_description("project memory folder"),
     ]);
     options
 }

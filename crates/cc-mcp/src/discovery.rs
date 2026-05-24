@@ -19,7 +19,7 @@ use std::sync::LazyLock;
 pub enum DiscoveryScope {
     /// Global user settings (`{data_root}/settings.json`).
     User,
-    /// Project-scoped settings (`{cwd}/.cc-rust/settings.json`).
+    /// Project-scoped settings (`{cwd}/.allthecodes/settings.json`).
     Project,
     /// Contributed by a plugin (id preserved).
     Plugin(String),
@@ -123,7 +123,7 @@ fn ide_servers() -> Vec<McpServerConfig> {
 /// Precedence for same server name (higher overrides lower):
 /// 1. Plugin-contributed defaults
 /// 2. Global config (`{data_root}/settings.json`)
-/// 3. Project config (`.cc-rust/settings.json`)
+/// 3. Project config (`.allthecodes/settings.json`)
 ///
 /// Duplicates (same `name` from multiple sources) are merged: the
 /// higher-precedence entry wins. Callers that need one row per source
@@ -189,8 +189,8 @@ pub fn discover_mcp_servers_scoped(cwd: &Path) -> Result<Vec<ScopedMcpServer>> {
         out.push(entry);
     }
 
-    // Highest precedence: project config .cc-rust/settings.json
-    let project_settings = cwd.join(".cc-rust").join("settings.json");
+    // Highest precedence: project config .allthecodes/settings.json
+    let project_settings = cwd.join(".allthecodes").join("settings.json");
     for entry in load_mcp_from_settings(&project_settings, DiscoveryScope::Project)? {
         out.push(entry);
     }
@@ -294,7 +294,7 @@ mod tests {
     fn discover_mcp_servers_merges_project_over_user() {
         let home = TempDir::new().unwrap();
         let cwd = TempDir::new().unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         std::fs::write(
             home.path().join("settings.json"),
@@ -306,7 +306,7 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let p_dir = cwd.path().join(".cc-rust");
+        let p_dir = cwd.path().join(".allthecodes");
         std::fs::create_dir_all(&p_dir).unwrap();
         std::fs::write(
             p_dir.join("settings.json"),
@@ -334,7 +334,7 @@ mod tests {
         let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
         let cwd = TempDir::new().expect("cwd tempdir");
         let _home = EnvGuard::set(
-            "CC_RUST_HOME",
+            "ALLTHECODES_HOME",
             cc_rust_home.path().to_str().expect("utf8 tempdir"),
         );
 
@@ -349,7 +349,7 @@ mod tests {
         )
         .unwrap();
 
-        let project_dir = cwd.path().join(".cc-rust");
+        let project_dir = cwd.path().join(".allthecodes");
         std::fs::create_dir_all(&project_dir).unwrap();
         std::fs::write(
             project_dir.join("settings.json"),
@@ -381,7 +381,7 @@ mod tests {
         let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
         let cwd = TempDir::new().expect("cwd tempdir");
         let _home = EnvGuard::set(
-            "CC_RUST_HOME",
+            "ALLTHECODES_HOME",
             cc_rust_home.path().to_str().expect("utf8 tempdir"),
         );
 
@@ -389,7 +389,7 @@ mod tests {
             "mcpServers": {
                 "override-server": {
                     "transport": "stdio",
-                    "command": "from-cc-rust-home",
+                    "command": "from-allthecodes-home",
                     "args": ["--flag"]
                 }
             }
@@ -404,9 +404,9 @@ mod tests {
         let server = servers
             .iter()
             .find(|s| s.name == "override-server")
-            .expect("server from CC_RUST_HOME settings");
+            .expect("server from ALLTHECODES_HOME settings");
 
-        assert_eq!(server.command.as_deref(), Some("from-cc-rust-home"));
+        assert_eq!(server.command.as_deref(), Some("from-allthecodes-home"));
         assert_eq!(server.args.as_ref(), Some(&vec!["--flag".to_string()]));
     }
 
@@ -416,7 +416,7 @@ mod tests {
         let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
         let cwd = TempDir::new().expect("cwd tempdir");
         let _home = EnvGuard::set(
-            "CC_RUST_HOME",
+            "ALLTHECODES_HOME",
             cc_rust_home.path().to_str().expect("utf8 tempdir"),
         );
 
@@ -430,7 +430,7 @@ mod tests {
         let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
         let cwd = TempDir::new().expect("cwd tempdir");
         let _home = EnvGuard::set(
-            "CC_RUST_HOME",
+            "ALLTHECODES_HOME",
             cc_rust_home.path().to_str().expect("utf8 tempdir"),
         );
 
@@ -447,7 +447,7 @@ mod tests {
         let cc_rust_home = TempDir::new().expect("cc_rust_home tempdir");
         let cwd = TempDir::new().expect("cwd tempdir");
         let _home = EnvGuard::set(
-            "CC_RUST_HOME",
+            "ALLTHECODES_HOME",
             cc_rust_home.path().to_str().expect("utf8 tempdir"),
         );
 

@@ -2,7 +2,7 @@
 name = "cc-browser"
 version = "0.1.0"
 edition = "2021"
-description = "Chrome / browser MCP bridge for cc-rust"
+description = "Chrome / browser MCP bridge for allthecodes"
 
 [dependencies]
 anyhow = { workspace = true }

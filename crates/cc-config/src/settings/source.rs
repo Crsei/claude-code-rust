@@ -17,11 +17,11 @@ pub enum SettingsSource {
     Default,
     /// Managed / policy-level settings.
     Managed,
-    /// User-level settings (`~/.cc-rust/settings.json`).
+    /// User-level settings (`~/.allthecodes/settings.json`).
     User,
-    /// Project-level settings (`.cc-rust/settings.json`).
+    /// Project-level settings (`.allthecodes/settings.json`).
     Project,
-    /// Project-local overrides (`.cc-rust/settings.local.json`).
+    /// Project-local overrides (`.allthecodes/settings.local.json`).
     Local,
     /// Environment variable override.
     Env,

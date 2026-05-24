@@ -26,7 +26,7 @@ pub fn init_langfuse() -> anyhow::Result<Option<SdkTracer>> {
 
     let slot = LANGFUSE_PROVIDER.get_or_init(|| Mutex::new(None));
     if let Some(provider) = slot.lock().clone() {
-        return Ok(Some(provider.tracer("cc-rust-langfuse")));
+        return Ok(Some(provider.tracer("allthecodes-langfuse")));
     }
 
     let public_key = env_var("LANGFUSE_PUBLIC_KEY").expect("checked above");
@@ -49,7 +49,7 @@ pub fn init_langfuse() -> anyhow::Result<Option<SdkTracer>> {
 
     let resource = Resource::builder()
         .with_attributes([
-            KeyValue::new("service.name", "cc-rust"),
+            KeyValue::new("service.name", "allthecodes"),
             KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
             KeyValue::new("deployment.environment", environment),
         ])
@@ -78,7 +78,7 @@ pub fn init_langfuse() -> anyhow::Result<Option<SdkTracer>> {
             .build()
     };
 
-    let tracer = provider.tracer("cc-rust-langfuse");
+    let tracer = provider.tracer("allthecodes-langfuse");
     *slot.lock() = Some(provider);
     Ok(Some(tracer))
 }
@@ -97,7 +97,7 @@ pub fn shutdown_langfuse() {
 
 /// Export telemetry events to Langfuse.
 ///
-/// Converts cc-rust telemetry events to Langfuse-compatible OpenTelemetry
+/// Converts allthecodes telemetry events to Langfuse-compatible OpenTelemetry
 /// spans and sends them through the configured exporter.
 pub fn export_telemetry_events(events: Vec<TelemetryEvent>) {
     if events.is_empty() {
@@ -121,7 +121,7 @@ pub fn export_telemetry_events(events: Vec<TelemetryEvent>) {
         }
     };
 
-    let tracer = provider.tracer("cc-rust-langfuse-telemetry");
+    let tracer = provider.tracer("allthecodes-langfuse-telemetry");
     let count = events.len();
 
     for event in events {
@@ -134,7 +134,7 @@ pub fn export_telemetry_events(events: Vec<TelemetryEvent>) {
                 ..
             } => {
                 let mut attrs = vec![
-                    KeyValue::new("service.name", "cc-rust"),
+                    KeyValue::new("service.name", "allthecodes"),
                     KeyValue::new("event.type", "interaction"),
                 ];
                 if let Some(ref model) = model {
@@ -158,7 +158,7 @@ pub fn export_telemetry_events(events: Vec<TelemetryEvent>) {
                 ..
             } => {
                 let mut attrs = vec![
-                    KeyValue::new("service.name", "cc-rust"),
+                    KeyValue::new("service.name", "allthecodes"),
                     KeyValue::new("event.type", "model_call"),
                     KeyValue::new("span.id", span_id.clone()),
                 ];
@@ -183,7 +183,7 @@ pub fn export_telemetry_events(events: Vec<TelemetryEvent>) {
                 ..
             } => {
                 let mut attrs = vec![
-                    KeyValue::new("service.name", "cc-rust"),
+                    KeyValue::new("service.name", "allthecodes"),
                     KeyValue::new("event.type", "tool_execution"),
                 ];
                 if let Some(dur) = duration_ms {
@@ -198,7 +198,7 @@ pub fn export_telemetry_events(events: Vec<TelemetryEvent>) {
                 result,
             } => {
                 let mut attrs = vec![
-                    KeyValue::new("service.name", "cc-rust"),
+                    KeyValue::new("service.name", "allthecodes"),
                     KeyValue::new("event.type", "hook_execution"),
                 ];
                 if let Some(dur) = duration_ms {
@@ -212,7 +212,7 @@ pub fn export_telemetry_events(events: Vec<TelemetryEvent>) {
                 input_type,
             } => {
                 let attrs = vec![
-                    KeyValue::new("service.name", "cc-rust"),
+                    KeyValue::new("service.name", "allthecodes"),
                     KeyValue::new("event.type", "input_event"),
                     KeyValue::new("input.type", input_type.clone()),
                     KeyValue::new("input.summary", input_summary),

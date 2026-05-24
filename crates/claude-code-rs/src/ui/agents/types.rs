@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-pub const AGENT_FOLDER_NAME: &str = ".cc-rust";
+pub const AGENT_FOLDER_NAME: &str = ".allthecodes";
 pub const AGENTS_DIR: &str = "agents";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

@@ -414,7 +414,7 @@ fn unsubscribe(params: UnsubscribeInput) -> Result<usize> {
 }
 
 fn load_subscriptions() -> Result<Vec<PrActivitySubscription>> {
-    let path = cc_config::paths::pr_activity_subscriptions_path();
+    let path = crate::storage_paths::pr_activity_subscriptions_path();
     if !path.exists() {
         return Ok(Vec::new());
     }
@@ -427,7 +427,7 @@ fn load_subscriptions() -> Result<Vec<PrActivitySubscription>> {
 }
 
 fn save_subscriptions(subscriptions: &[PrActivitySubscription]) -> Result<()> {
-    let path = cc_config::paths::pr_activity_subscriptions_path();
+    let path = crate::storage_paths::pr_activity_subscriptions_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -511,13 +511,13 @@ mod tests {
         json!({
             "action": "synchronize",
             "repository": {
-                "name": "cc-rust",
+                "name": "allthecodes",
                 "owner": { "login": "AIclassmanager" }
             },
             "pull_request": {
                 "number": 42,
                 "title": "Coordinator phase",
-                "html_url": "https://github.com/AIclassmanager/cc-rust/pull/42"
+                "html_url": "https://github.com/AIclassmanager/allthecodes/pull/42"
             },
             "sender": { "login": "octocat" }
         })
@@ -527,7 +527,7 @@ mod tests {
     #[serial]
     fn subscribe_dedupes_and_unsubscribe_is_idempotent() {
         let home = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         let first = subscribe(
             "owner".into(),
@@ -572,11 +572,11 @@ mod tests {
     #[serial]
     fn webhook_activity_routes_to_matching_team_mailbox() {
         let home = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
         helpers::create_team("phase4", None, None, ".").unwrap();
         subscribe(
             "AIclassmanager".into(),
-            "cc-rust".into(),
+            "allthecodes".into(),
             42,
             "phase4".into(),
             constants::TEAM_LEAD_NAME.into(),
@@ -592,7 +592,7 @@ mod tests {
         assert_eq!(routed.delivered, 1);
         let inbox = mailbox::read_mailbox(constants::TEAM_LEAD_NAME, "phase4").unwrap();
         assert_eq!(inbox.len(), 1);
-        assert!(inbox[0].text.contains("AIclassmanager/cc-rust#42"));
+        assert!(inbox[0].text.contains("AIclassmanager/allthecodes#42"));
         assert!(inbox[0].text.contains("delivery-1"));
     }
 

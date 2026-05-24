@@ -52,7 +52,7 @@ pub fn team_config_path(team_name: &str) -> PathBuf {
 
 /// Get the tasks directory for a team.
 pub fn team_tasks_dir(team_name: &str) -> PathBuf {
-    cc_config::paths::tasks_dir().join(sanitize_team_name(team_name))
+    crate::storage_paths::tasks_dir().join(sanitize_team_name(team_name))
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +318,7 @@ pub fn team_exists(team_name: &str) -> bool {
 
 /// List team names that have a readable config path on disk.
 pub fn list_team_names() -> Result<Vec<String>> {
-    let teams_root = cc_config::paths::teams_dir();
+    let teams_root = crate::storage_paths::teams_dir();
     if !teams_root.exists() {
         return Ok(Vec::new());
     }
@@ -392,7 +392,10 @@ mod tests {
     #[serial]
     fn test_create_and_read_team() {
         let tmp = TempDir::new().expect("tempdir");
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().expect("utf8 tempdir"));
+        let _home = EnvGuard::set(
+            "ALLTHECODES_HOME",
+            tmp.path().to_str().expect("utf8 tempdir"),
+        );
 
         let name = format!("test-{}", &uuid::Uuid::new_v4().to_string()[..8]);
         let tf = create_team(&name, Some("Test team".into()), None, "/tmp").unwrap();
@@ -410,7 +413,10 @@ mod tests {
     #[serial]
     fn test_add_member() {
         let tmp = TempDir::new().expect("tempdir");
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().expect("utf8 tempdir"));
+        let _home = EnvGuard::set(
+            "ALLTHECODES_HOME",
+            tmp.path().to_str().expect("utf8 tempdir"),
+        );
 
         let name = format!("test-{}", &uuid::Uuid::new_v4().to_string()[..8]);
         let tf = create_team(&name, None, None, "/tmp").unwrap();
@@ -443,24 +449,28 @@ mod tests {
 
     #[test]
     #[serial]
-    fn create_team_honors_cc_rust_home_for_config_and_tasks() {
+    fn create_team_honors_allthecodes_home_for_config_and_tasks() {
         let tmp = TempDir::new().expect("tempdir");
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().expect("utf8 tempdir"));
+        let _home = EnvGuard::set(
+            "ALLTHECODES_HOME",
+            tmp.path().to_str().expect("utf8 tempdir"),
+        );
 
         let name = format!("test-{}", &uuid::Uuid::new_v4().to_string()[..8]);
         let tf = create_team(&name, Some("Test team".into()), None, "/tmp").unwrap();
 
         let config_path = team_config_path(&tf.name);
         let tasks_path = team_tasks_dir(&tf.name);
+        let data_root = tmp.path().join(".allthecodes");
 
         assert!(
-            config_path.starts_with(tmp.path()),
-            "config path escaped CC_RUST_HOME: {}",
+            config_path.starts_with(&data_root),
+            "config path escaped ALLTHECODES_HOME: {}",
             config_path.display()
         );
         assert!(
-            tasks_path.starts_with(tmp.path()),
-            "tasks path escaped CC_RUST_HOME: {}",
+            tasks_path.starts_with(&data_root),
+            "tasks path escaped ALLTHECODES_HOME: {}",
             tasks_path.display()
         );
         assert!(

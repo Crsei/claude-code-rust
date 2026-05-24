@@ -389,7 +389,7 @@ pub fn load_skills_from_dir_with_diagnostics(
     load
 }
 
-/// Load legacy commands from `.cc-rust/commands/` directory.
+/// Load legacy commands from `.allthecodes/commands/` directory.
 pub fn load_legacy_commands(dir: &Path, source: SkillSource) -> Vec<SkillDefinition> {
     let mut skills = Vec::new();
 

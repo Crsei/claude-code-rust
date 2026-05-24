@@ -948,7 +948,7 @@ if ready {
     #[serial_test::serial]
     async fn edit_auto_adjusts_unique_indentation_mismatch() {
         let dir = tempfile::TempDir::new().unwrap();
-        let _home = EnvGuard::set_path("CC_RUST_HOME", dir.path());
+        let _home = EnvGuard::set_path("ALLTHECODES_HOME", dir.path());
         let file_path = dir.path().join("sample.rs");
         let original = "\
 fn main() {
@@ -1046,7 +1046,7 @@ fn main() {
     #[serial_test::serial]
     async fn full_read_registers_state_and_edit_refreshes_it() {
         let dir = tempfile::TempDir::new().unwrap();
-        let _home = EnvGuard::set_path("CC_RUST_HOME", dir.path());
+        let _home = EnvGuard::set_path("ALLTHECODES_HOME", dir.path());
         let file_path = dir.path().join("sample.txt");
         tokio::fs::write(&file_path, "alpha\nbeta\n").await.unwrap();
 

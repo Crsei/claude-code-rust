@@ -130,7 +130,7 @@ hex = "0.4"             # hex 编码 (审计)
 | `compact_module_compiles` | compact 模块编译通过 |
 | `print_mode_does_not_crash_without_api_key` | -p 无 key 不崩溃 |
 | `tool_result_temp_dir_is_writable` | 临时目录可写 |
-| `tool_result_path_isolation` | 路径隔离 (.cc-rust) |
+| `tool_result_path_isolation` | 路径隔离 (.allthecodes) |
 | `four_chars_per_token_heuristic` | 4字符/token 启发式 |
 | `auto_compact_threshold_calculation` | 自动压缩阈值 |
 | `microcompact_threshold` | 微压缩阈值 |

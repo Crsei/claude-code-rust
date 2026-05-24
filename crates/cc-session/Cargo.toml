@@ -2,7 +2,7 @@
 name = "cc-session"
 version = "0.1.0"
 edition = "2021"
-description = "Session persistence for cc-rust — conversation state, transcripts, memdir, exports"
+description = "Session persistence for allthecodes — conversation state, transcripts, memdir, exports"
 build = "build.rs"
 
 [dependencies]

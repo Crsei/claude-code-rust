@@ -11,7 +11,7 @@ pub struct InitHandler;
 
 const AGENTS_MD_TEMPLATE: &str = r#"# AGENTS.md
 
-Project instructions for cc-rust.
+Project instructions for allthecodes.
 
 ## Build And Test
 
@@ -25,7 +25,7 @@ Project instructions for cc-rust.
 #[async_trait]
 impl CommandHandler for InitHandler {
     async fn execute(&self, _args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
-        let config_dir = ctx.cwd.join(".cc-rust");
+        let config_dir = ctx.cwd.join(".allthecodes");
         let settings_file = config_dir.join("settings.json");
         let agents_md = ctx.cwd.join("AGENTS.md");
         let claude_md = ctx.cwd.join("CLAUDE.md");
@@ -102,7 +102,7 @@ mod tests {
             _ => panic!("Expected Output"),
         }
 
-        let settings = tmp.join(".cc-rust").join("settings.json");
+        let settings = tmp.join(".allthecodes").join("settings.json");
         let agents_md = tmp.join("AGENTS.md");
         assert!(settings.exists());
         assert!(agents_md.exists());
@@ -111,7 +111,7 @@ mod tests {
             .contains("Project instructions"));
         assert!(fs::read_to_string(&agents_md)
             .unwrap()
-            .contains("cc-rust"));
+            .contains("allthecodes"));
 
         fs::write(&agents_md, "# Existing instructions\n").unwrap();
 
@@ -134,10 +134,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_skips_when_claude_md_exists() {
-        let tmp = std::env::temp_dir().join(format!(
-            "cc_rust_init_claude_skip_{}",
-            uuid::Uuid::new_v4()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("cc_rust_init_claude_skip_{}", uuid::Uuid::new_v4()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
 

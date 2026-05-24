@@ -1,6 +1,6 @@
 //! API request snapshot persistence.
 //!
-//! Snapshots are written next to session files under `~/.cc-rust/sessions/`
+//! Snapshots are written next to session files under `~/.allthecodes/sessions/`
 //! as JSONL. They intentionally store the final canonical request shape the
 //! engine handed to the provider client, without credentials or headers.
 
@@ -242,7 +242,7 @@ mod tests {
     #[serial]
     fn record_and_load_api_request_snapshots_roundtrip() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set_path("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set_path("ALLTHECODES_HOME", temp.path());
         let request = serde_json::json!({
             "model": "claude-sonnet",
             "messages": [{"role": "user", "content": "hello"}],

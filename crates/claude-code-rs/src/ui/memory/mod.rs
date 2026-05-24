@@ -14,11 +14,14 @@ mod tests {
         let cwd = Path::new("C:/repo/project");
         let home = Path::new("C:/Users/alice");
         let mut state = MemoryFileSelectorState::new(vec![
-            MemoryFileOption::new("C:/Users/alice/.cc-rust/AGENTS.md", MemoryFileKind::User),
+            MemoryFileOption::new(
+                "C:/Users/alice/.allthecodes/AGENTS.md",
+                MemoryFileKind::User,
+            ),
             MemoryFileOption::new("C:/repo/project/AGENTS.md", MemoryFileKind::Project).missing(),
             MemoryFileOption::new("C:/repo/project/docs/AGENTS.md", MemoryFileKind::Nested)
                 .with_parent("C:/repo/project/AGENTS.md"),
-            MemoryFileOption::new("C:/Users/alice/.cc-rust/memory", MemoryFileKind::Folder)
+            MemoryFileOption::new("C:/Users/alice/.allthecodes/memory", MemoryFileKind::Folder)
                 .with_description("auto-memory folder"),
         ]);
         state.selected_index = 1;

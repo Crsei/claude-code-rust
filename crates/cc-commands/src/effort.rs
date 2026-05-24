@@ -267,8 +267,8 @@ mod tests {
     impl HomeGuard {
         fn temp() -> (tempfile::TempDir, Self) {
             let dir = tempfile::tempdir().unwrap();
-            let previous = std::env::var("CC_RUST_HOME").ok();
-            std::env::set_var("CC_RUST_HOME", dir.path());
+            let previous = std::env::var("ALLTHECODES_HOME").ok();
+            std::env::set_var("ALLTHECODES_HOME", dir.path());
             (dir, Self { previous })
         }
     }
@@ -276,8 +276,8 @@ mod tests {
     impl Drop for HomeGuard {
         fn drop(&mut self) {
             match &self.previous {
-                Some(value) => std::env::set_var("CC_RUST_HOME", value),
-                None => std::env::remove_var("CC_RUST_HOME"),
+                Some(value) => std::env::set_var("ALLTHECODES_HOME", value),
+                None => std::env::remove_var("ALLTHECODES_HOME"),
             }
         }
     }

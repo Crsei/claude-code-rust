@@ -58,7 +58,7 @@ pub struct ManagedSettingsConfig {
     ///
     /// Enforcement is active when:
     /// 1. The managed settings file exists and defines an enforcement level, or
-    /// 2. The `CC_RUST_ENFORCE_POLICY` environment variable is set.
+    /// 2. The `ALLTHECODES_ENFORCE_POLICY` environment variable is set.
     pub enforcement_active: bool,
     /// The effective enforcement level (defaults to Strict when enforcement
     /// is active but no explicit level is configured).
@@ -121,7 +121,7 @@ impl ManagedSettingsConfig {
 /// This is the primary entry point for the MDM layer. It:
 /// 1. Checks if a managed settings file exists.
 /// 2. Reads and parses it (first as `RawSettings`, then extracts policy fields).
-/// 3. Checks the `CC_RUST_ENFORCE_POLICY` env var.
+/// 3. Checks the `ALLTHECODES_ENFORCE_POLICY` env var.
 /// 4. Returns a consolidated `ManagedSettingsConfig`.
 pub fn load_managed_settings_policy() -> Result<ManagedSettingsConfig> {
     let file_path = managed_settings_path();
@@ -131,7 +131,7 @@ pub fn load_managed_settings_policy() -> Result<ManagedSettingsConfig> {
     match raw {
         None => {
             // No managed file; check env for enforcement override.
-            let enforcement_active = std::env::var(constants::CC_RUST_ENFORCE_POLICY)
+            let enforcement_active = std::env::var(constants::ALLTHECODES_ENFORCE_POLICY)
                 .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
                 .unwrap_or(false);
 
@@ -148,7 +148,7 @@ pub fn load_managed_settings_policy() -> Result<ManagedSettingsConfig> {
             let managed = ManagedSettings::from_raw(&raw_settings);
             let has_enforcement = managed.enforcement.is_some();
             let enforcement_active = has_enforcement
-                || std::env::var(constants::CC_RUST_ENFORCE_POLICY)
+                || std::env::var(constants::ALLTHECODES_ENFORCE_POLICY)
                     .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
                     .unwrap_or(false);
 
@@ -254,7 +254,7 @@ mod tests {
     fn test_enforcement_env_var() {
         // We cannot easily test this without a managed file, but we can
         // verify the env var constant is accessible.
-        assert_eq!(CC_RUST_ENFORCE_POLICY, "CC_RUST_ENFORCE_POLICY");
-        assert_eq!(CC_RUST_MANAGED_SETTINGS, "CC_RUST_MANAGED_SETTINGS");
+        assert_eq!(ALLTHECODES_ENFORCE_POLICY, "ALLTHECODES_ENFORCE_POLICY");
+        assert_eq!(ALLTHECODES_MANAGED_SETTINGS, "ALLTHECODES_MANAGED_SETTINGS");
     }
 }

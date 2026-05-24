@@ -252,11 +252,11 @@ fn build_install_section() -> Section {
         },
     ));
 
-    if let Ok(override_dir) = std::env::var("CC_RUST_HOME") {
+    if let Ok(override_dir) = std::env::var("ALLTHECODES_HOME") {
         let trimmed = override_dir.trim();
         if !trimmed.is_empty() {
             rows.push(Row::new(
-                "CC_RUST_HOME",
+                "ALLTHECODES_HOME",
                 Status::Info,
                 format!("override active: {}", trimmed),
             ));
@@ -264,7 +264,7 @@ fn build_install_section() -> Section {
     }
 
     rows.push(Row::new(
-        "cc-rust version",
+        "allthecodes version",
         Status::Info,
         env!("CARGO_PKG_VERSION").to_string(),
     ));
@@ -547,10 +547,10 @@ fn build_managed_config_section() -> Section {
                 ));
             }
 
-            if let Ok(val) = std::env::var(mdm_module::CC_RUST_ENFORCE_POLICY) {
+            if let Ok(val) = std::env::var(mdm_module::ALLTHECODES_ENFORCE_POLICY) {
                 if val.eq_ignore_ascii_case("true") || val == "1" {
                     rows.push(Row::new(
-                        "CC_RUST_ENFORCE_POLICY",
+                        "ALLTHECODES_ENFORCE_POLICY",
                         Status::Warn,
                         "set — policy enforcement forced via environment".to_string(),
                     ));

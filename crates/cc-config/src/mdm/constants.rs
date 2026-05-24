@@ -2,11 +2,11 @@
 //! for the MDM (Managed Device Management) settings layer.
 
 /// Environment variable pointing to a custom managed settings file path.
-pub const CC_RUST_MANAGED_SETTINGS: &str = "CC_RUST_MANAGED_SETTINGS";
+pub const ALLTHECODES_MANAGED_SETTINGS: &str = "ALLTHECODES_MANAGED_SETTINGS";
 
 /// Environment variable that forces policy enforcement regardless of the
 /// managed file's `enforcement.overridable` flag.
-pub const CC_RUST_ENFORCE_POLICY: &str = "CC_RUST_ENFORCE_POLICY";
+pub const ALLTHECODES_ENFORCE_POLICY: &str = "ALLTHECODES_ENFORCE_POLICY";
 
 /// Default file name for managed settings (platform-dependent paths are
 /// resolved by `settings::managed_settings_path()`).

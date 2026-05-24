@@ -1,6 +1,6 @@
 //! OAuth token persistence.
 //!
-//! Stores OAuth tokens at cc-rust's path-isolated credentials file, resolved
+//! Stores OAuth tokens at allthecodes' path-isolated credentials file, resolved
 //! through `cc-config`.
 
 use anyhow::Result;

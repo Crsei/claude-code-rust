@@ -148,7 +148,7 @@ mod tests {
                 "Bash(ls*)",
                 PermissionDecision::Allow,
                 PermissionScope::Project,
-                ".cc-rust/settings.json",
+                ".allthecodes/settings.json",
             ),
             PermissionRule::new(
                 "Write(src/**)",

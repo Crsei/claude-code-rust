@@ -131,7 +131,7 @@ pub fn bundled_skills() -> Vec<SkillDefinition> {
             source: SkillSource::Bundled,
             base_dir: None,
             frontmatter: SkillFrontmatter {
-                description: "Update cc-rust configuration settings.".to_string(),
+                description: "Update allthecodes configuration settings.".to_string(),
                 allowed_tools: vec!["Read".into(), "Edit".into(), "Write".into()],
                 user_invocable: true,
                 disable_model_invocation: true,
@@ -139,7 +139,7 @@ pub fn bundled_skills() -> Vec<SkillDefinition> {
                 ..Default::default()
             },
             prompt_body: concat!(
-                "Help the user update their cc-rust configuration. ",
+                "Help the user update their allthecodes configuration. ",
                 "Read the current settings, understand what they want to change, ",
                 "and make the appropriate modifications.\n\n",
                 "Settings request: $ARGUMENTS",

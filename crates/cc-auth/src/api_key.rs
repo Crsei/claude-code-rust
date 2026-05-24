@@ -7,8 +7,8 @@
 
 use anyhow::Result;
 
-/// Service name used for cc-rust API keys in the system keychain.
-pub const KEYCHAIN_SERVICE_NAME: &str = "cc-rust";
+/// Service name used for allthecodes API keys in the system keychain.
+pub const KEYCHAIN_SERVICE_NAME: &str = "allthecodes";
 
 /// Account name used for the Anthropic API key in the system keychain.
 pub const KEYCHAIN_ACCOUNT_API_KEY: &str = "api-key";
@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn keychain_service_name_is_path_isolated() {
-        assert_eq!(KEYCHAIN_SERVICE_NAME, "cc-rust");
+        assert_eq!(KEYCHAIN_SERVICE_NAME, "allthecodes");
         assert_ne!(KEYCHAIN_SERVICE_NAME, "Codex");
         assert_ne!(KEYCHAIN_SERVICE_NAME, "Claude");
     }

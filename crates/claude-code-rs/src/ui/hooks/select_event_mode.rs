@@ -36,7 +36,8 @@ pub fn render_select_event_mode(
         );
     }
     lines.push(
-        "Read-only. Edit .cc-rust/settings.json or .cc-rust/settings.local.json.".to_string(),
+        "Read-only. Edit .allthecodes/settings.json or .allthecodes/settings.local.json."
+            .to_string(),
     );
     lines.push("Use /hooks open user or /hooks open project to edit a settings layer.".to_string());
     lines.push(String::new());

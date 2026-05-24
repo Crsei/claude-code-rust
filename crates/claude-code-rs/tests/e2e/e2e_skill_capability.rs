@@ -14,7 +14,7 @@ fn project_skill_is_discovered_with_reference_files_in_cc_rust_project_dir() {
     cc_skills::clear_skills();
 
     let report = cc_skills::reload_skills_with_extra(
-        &lab.cc_rust_home.join("skills"),
+        &lab.allthecodes_home.join("skills"),
         Some(&lab.project_dir),
         Vec::new(),
         SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
@@ -49,7 +49,7 @@ fn project_skill_negative_prompt_has_no_hard_reference_preload() {
     let (_home, _cc_home) = lab.set_env();
     cc_skills::clear_skills();
     cc_skills::reload_skills_with_extra(
-        &lab.cc_rust_home.join("skills"),
+        &lab.allthecodes_home.join("skills"),
         Some(&lab.project_dir),
         Vec::new(),
         SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
@@ -85,7 +85,7 @@ fn plugin_skill_is_loaded_only_when_plugin_contributes_it() {
     plugin_skill.frontmatter.description = "Review capability lab changes.".to_string();
 
     cc_skills::reload_skills_with_extra(
-        &lab.cc_rust_home.join("skills"),
+        &lab.allthecodes_home.join("skills"),
         Some(&lab.project_dir),
         vec![plugin_skill],
         SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
@@ -101,7 +101,7 @@ fn plugin_skill_is_loaded_only_when_plugin_contributes_it() {
     );
 
     cc_skills::reload_skills_with_extra(
-        &lab.cc_rust_home.join("skills"),
+        &lab.allthecodes_home.join("skills"),
         Some(&lab.project_dir),
         Vec::new(),
         SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),

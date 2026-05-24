@@ -371,7 +371,7 @@ fn handle_mode(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult
 
     if matches!(requested, PermissionMode::Auto) && !confirmed {
         return Ok(CommandResult::Output(
-            "Auto mode lets cc-rust answer permission prompts with a safety classifier. \
+            "Auto mode lets allthecodes answer permission prompts with a safety classifier. \
              It can still make mistakes; use isolated workspaces for risky tasks.\n\
              Confirm with: /permissions mode auto --confirm"
                 .into(),
@@ -722,9 +722,9 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let project_root = dir.path().join("workspace");
         let nested = project_root.join("src").join("nested");
-        std::fs::create_dir_all(project_root.join(".cc-rust")).unwrap();
+        std::fs::create_dir_all(project_root.join(".allthecodes")).unwrap();
         std::fs::create_dir_all(&nested).unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         let handler = PermissionsHandler;
         let mut ctx = test_ctx_with_cwd(nested.clone());
@@ -744,10 +744,13 @@ mod tests {
             Some(PermissionMode::AcceptEdits)
         );
         assert!(project_root
-            .join(".cc-rust")
+            .join(".allthecodes")
             .join("plan-workflow.json")
             .is_file());
-        assert!(!nested.join(".cc-rust").join("plan-workflow.json").exists());
+        assert!(!nested
+            .join(".allthecodes")
+            .join("plan-workflow.json")
+            .exists());
     }
 
     #[tokio::test]
@@ -885,10 +888,10 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn test_permissions_allow_user_persist() {
-        // Use a tempdir as CC_RUST_HOME so /permissions allow doesn't
+        // Use a tempdir as ALLTHECODES_HOME so /permissions allow doesn't
         // touch the developer's real settings file.
         let dir = tempfile::tempdir().unwrap();
-        let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
 
         let handler = PermissionsHandler;
         let mut ctx = test_ctx();
@@ -909,7 +912,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let project_root = dir.path().join("workspace");
         let nested = project_root.join("src").join("nested");
-        let project_dir = project_root.join(".cc-rust");
+        let project_dir = project_root.join(".allthecodes");
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::create_dir_all(&project_dir).unwrap();
 
@@ -940,7 +943,7 @@ mod tests {
         assert!(perms.deny.iter().any(|rule| rule == "Bash(rm)"));
         assert!(perms.allow.iter().any(|rule| rule == "Read"));
         assert!(perms.allow.iter().any(|rule| rule == "Bash(prefix:git)"));
-        assert!(!nested.join(".cc-rust").join("settings.json").exists());
+        assert!(!nested.join(".allthecodes").join("settings.json").exists());
     }
 
     #[tokio::test]
@@ -954,7 +957,7 @@ mod tests {
         assert!(text.contains("Unknown permissions subcommand"));
     }
 
-    /// Process-env guard for tests that mutate CC_RUST_HOME.
+    /// Process-env guard for tests that mutate ALLTHECODES_HOME.
     struct EnvGuard {
         key: &'static str,
         previous: Option<String>,

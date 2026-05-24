@@ -4,7 +4,7 @@
 //! by source, with override/shadow visibility when multiple sources define
 //! the same name.
 //!
-//! In cc-rust "agent" is a superset that covers:
+//! In allthecodes "agent" is a superset that covers:
 //! * the built-in subagent types the engine always honours (general-purpose,
 //!   Explore, Plan, code-reviewer);
 //! * user-invocable skills whose frontmatter flips them into forked
@@ -360,12 +360,12 @@ fn render_sources(ctx: &CommandContext) -> String {
     out.push_str("Agent discovery sources\n");
     out.push_str("──────────────────────\n");
     out.push_str("  [built-in]   Engine-provided subagent types (always available)\n");
-    out.push_str("  [bundled]    Skills compiled into cc-rust (`src/skills/bundled.rs`)\n");
+    out.push_str("  [bundled]    Skills compiled into allthecodes (`src/skills/bundled.rs`)\n");
     out.push_str(&format!(
         "  [user]       {}\n",
         shorten_path(&cc_config::paths::skills_dir_global())
     ));
-    let project_skills = ctx.cwd.join(".cc-rust").join("skills");
+    let project_skills = ctx.cwd.join(".allthecodes").join("skills");
     out.push_str(&format!(
         "  [project]    {}\n",
         shorten_path(&project_skills)

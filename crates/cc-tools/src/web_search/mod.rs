@@ -54,7 +54,7 @@ const SEARCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 // ---------------------------------------------------------------------------
 
 /// Environment variable for configuring cache TTL.
-const CACHE_TTL_ENV: &str = "CC_RUST_SEARCH_CACHE_TTL";
+const CACHE_TTL_ENV: &str = "ALLTHECODES_SEARCH_CACHE_TTL";
 
 /// Default cache TTL in seconds (5 minutes).
 const DEFAULT_CACHE_TTL_SECS: u64 = 300;

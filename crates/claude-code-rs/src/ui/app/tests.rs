@@ -468,7 +468,7 @@ fn agent_tree_dialog_navigation_select_and_close() {
 #[serial]
 fn status_bar_renders_only_model_and_workspace() {
     let home = tempfile::tempdir().expect("cc-rust home");
-    let _home_guard = EnvGuard::set_path("CC_RUST_HOME", home.path());
+    let _home_guard = EnvGuard::set_path("ALLTHECODES_HOME", home.path());
     let mut app = App::new();
     app.set_model_name("deepseek-v4-pro".to_string());
     app.set_cwd("/repo/workspace".to_string());
@@ -592,7 +592,7 @@ fn argument_entry_does_not_render_parameter_help_near_input() {
 #[serial]
 fn render_workspace_trust_prompt_after_cwd_is_set() {
     let home = tempfile::tempdir().expect("cc-rust home");
-    let _home_guard = EnvGuard::set_path("CC_RUST_HOME", home.path());
+    let _home_guard = EnvGuard::set_path("ALLTHECODES_HOME", home.path());
     let workspace = tempfile::tempdir().expect("workspace");
     let cwd = workspace.path().display().to_string();
 
@@ -612,7 +612,7 @@ fn render_workspace_trust_prompt_after_cwd_is_set() {
 #[serial]
 fn workspace_trust_prompt_accepts_persists_and_exits() {
     let home = tempfile::tempdir().expect("cc-rust home");
-    let _home_guard = EnvGuard::set_path("CC_RUST_HOME", home.path());
+    let _home_guard = EnvGuard::set_path("ALLTHECODES_HOME", home.path());
     let workspace = tempfile::tempdir().expect("workspace");
     let cwd = workspace.path().display().to_string();
 

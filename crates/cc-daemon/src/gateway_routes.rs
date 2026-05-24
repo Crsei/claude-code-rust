@@ -106,8 +106,8 @@ mod tests {
     #[serial]
     fn busy_snapshot_counts_active_submit_commands() {
         let tmp = tempfile::tempdir().unwrap();
-        let previous = std::env::var("CC_RUST_HOME").ok();
-        std::env::set_var("CC_RUST_HOME", tmp.path());
+        let previous = std::env::var("ALLTHECODES_HOME").ok();
+        std::env::set_var("ALLTHECODES_HOME", tmp.path());
         crate::protocol_store()
             .enqueue_command(
                 ASSISTANT_WORKER_ID,
@@ -125,8 +125,8 @@ mod tests {
         assert_eq!(snapshot.running, 1);
         assert_eq!(snapshot.queued, 0);
         match previous {
-            Some(value) => std::env::set_var("CC_RUST_HOME", value),
-            None => std::env::remove_var("CC_RUST_HOME"),
+            Some(value) => std::env::set_var("ALLTHECODES_HOME", value),
+            None => std::env::remove_var("ALLTHECODES_HOME"),
         }
     }
 
@@ -134,8 +134,8 @@ mod tests {
     #[serial]
     fn gateway_routes_runs_startup_recovery() {
         let tmp = tempfile::tempdir().unwrap();
-        let previous = std::env::var("CC_RUST_HOME").ok();
-        std::env::set_var("CC_RUST_HOME", tmp.path());
+        let previous = std::env::var("ALLTHECODES_HOME").ok();
+        std::env::set_var("ALLTHECODES_HOME", tmp.path());
 
         let store = GatewayStore::default_with_policy(SessionKeyPolicy::default());
         let created = store
@@ -166,8 +166,8 @@ mod tests {
             RunStatus::Recoverable
         );
         match previous {
-            Some(value) => std::env::set_var("CC_RUST_HOME", value),
-            None => std::env::remove_var("CC_RUST_HOME"),
+            Some(value) => std::env::set_var("ALLTHECODES_HOME", value),
+            None => std::env::remove_var("ALLTHECODES_HOME"),
         }
     }
 }

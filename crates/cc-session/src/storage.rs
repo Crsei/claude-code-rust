@@ -1,6 +1,6 @@
 //! Session storage -- persisting conversation state to disk.
 //!
-//! Sessions are stored as JSON files under `~/.cc-rust/sessions/`.
+//! Sessions are stored as JSON files under `~/.allthecodes/sessions/`.
 //! Each session is identified by a UUID and contains the full message history
 //! along with metadata (creation time, working directory, etc.).
 
@@ -850,7 +850,7 @@ mod tests {
 
     // ------------------------------------------------------------------
     // Round-trip tests for the new title / truncate / info APIs. These
-    // all pin CC_RUST_HOME to a tempdir and run serially so they cannot
+    // all pin ALLTHECODES_HOME to a tempdir and run serially so they cannot
     // stomp on each other or on the user's real session directory.
     // ------------------------------------------------------------------
 
@@ -860,8 +860,8 @@ mod tests {
 
     impl HomeGuard {
         fn set(path: &Path) -> Self {
-            let previous = std::env::var("CC_RUST_HOME").ok();
-            std::env::set_var("CC_RUST_HOME", path);
+            let previous = std::env::var("ALLTHECODES_HOME").ok();
+            std::env::set_var("ALLTHECODES_HOME", path);
             Self { previous }
         }
     }
@@ -869,8 +869,8 @@ mod tests {
     impl Drop for HomeGuard {
         fn drop(&mut self) {
             match &self.previous {
-                Some(v) => std::env::set_var("CC_RUST_HOME", v),
-                None => std::env::remove_var("CC_RUST_HOME"),
+                Some(v) => std::env::set_var("ALLTHECODES_HOME", v),
+                None => std::env::remove_var("ALLTHECODES_HOME"),
             }
         }
     }

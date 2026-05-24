@@ -1,7 +1,7 @@
 //! Session persistence — extracted as a workspace crate in Phase 4
 //! (issue #73).
 //!
-//! Writes conversation state to `~/.cc-rust/memory/` (path unchanged by
+//! Writes conversation state to `~/.allthecodes/memory/` (path unchanged by
 //! the split — the acceptance test in the issue explicitly calls that
 //! out). Depends on cc-bootstrap (process state), cc-compact (for the
 //! export pipeline's context-window helpers), cc-types (message types),

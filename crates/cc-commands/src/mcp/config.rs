@@ -143,7 +143,7 @@ fn persist_upsert(cwd: &std::path::Path, entry: McpServerConfigEntry) -> Result<
         ConfigScope::User => cc_config::settings::user_settings_path(),
         // Keep the write path aligned with the scoped discovery layer -
         // see the aside in `ipc::subsystem_handlers::settings_path_for_scope`.
-        ConfigScope::Project => cwd.join(".cc-rust").join("settings.json"),
+        ConfigScope::Project => cwd.join(".allthecodes").join("settings.json"),
         _ => {
             return Ok(format!(
                 "Cannot upsert `{}` into scope `{}` (read-only).",
@@ -250,7 +250,7 @@ pub(super) fn handle_remove(rest: &[&str], ctx: &mut CommandContext) -> Result<C
 
     let path = match &target.scope {
         ConfigScope::User => cc_config::settings::user_settings_path(),
-        ConfigScope::Project => ctx.cwd.join(".cc-rust").join("settings.json"),
+        ConfigScope::Project => ctx.cwd.join(".allthecodes").join("settings.json"),
         _ => unreachable!("editable check above covers plugin/ide"),
     };
     let mut value = read_settings_value(&path)?;

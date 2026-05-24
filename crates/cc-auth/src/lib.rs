@@ -3,7 +3,7 @@
 //! Supports three active auth methods:
 //! - API Key: via `ANTHROPIC_API_KEY` env var or system keychain
 //! - External Auth Token: via `ANTHROPIC_AUTH_TOKEN` env var
-//! - OAuth Token: from cc-rust's isolated credentials path (Claude.ai / Console / OpenAI Codex)
+//! - OAuth Token: from allthecodes' isolated credentials path (Claude.ai / Console / OpenAI Codex)
 
 pub mod api_key;
 pub mod codex_cli;
@@ -16,7 +16,7 @@ const OPENAI_CODEX_AUTH_TOKEN_ENV: &str = "OPENAI_CODEX_AUTH_TOKEN";
 // Credentials path
 // ---------------------------------------------------------------------------
 
-/// Return cc-rust's isolated OAuth credentials path.
+/// Return allthecodes' isolated OAuth credentials path.
 ///
 /// `cc-auth` depends on `cc-config` for path ownership, so binary startup no
 /// longer installs this path as an adapter.
@@ -75,7 +75,7 @@ impl AuthMethod {
 /// Priority:
 /// 1. `ANTHROPIC_API_KEY` env var
 /// 2. `ANTHROPIC_AUTH_TOKEN` env var
-/// 3. OAuth token from `~/.cc-rust/credentials.json` (if not expired)
+/// 3. OAuth token from `~/.allthecodes/credentials.json` (if not expired)
 /// 4. API key from system keychain
 /// 5. `AuthMethod::None`
 pub fn resolve_auth() -> AuthMethod {
@@ -137,7 +137,7 @@ pub fn try_resolve_auth() -> anyhow::Result<AuthMethod> {
 ///
 /// Priority:
 /// 1. `OPENAI_CODEX_AUTH_TOKEN` environment variable
-/// 2. OAuth token from `~/.cc-rust/credentials.json` when method is `openai_codex`
+/// 2. OAuth token from `~/.allthecodes/credentials.json` when method is `openai_codex`
 /// 3. Codex CLI credentials from `~/.codex/auth.json` (fallback)
 pub fn resolve_codex_auth_token() -> Option<String> {
     match try_resolve_codex_auth_token() {
@@ -160,7 +160,7 @@ pub fn try_resolve_codex_auth_token() -> anyhow::Result<Option<String>> {
         }
     }
 
-    // 2. cc-rust credentials.json
+    // 2. allthecodes credentials.json
     if let Some(token) = try_resolve_codex_from_credentials()? {
         return Ok(Some(token));
     }
@@ -169,7 +169,7 @@ pub fn try_resolve_codex_auth_token() -> anyhow::Result<Option<String>> {
     try_resolve_codex_cli()
 }
 
-/// Resolve an OpenAI Platform API key from cc-rust's provider-scoped keychain.
+/// Resolve an OpenAI Platform API key from allthecodes' provider-scoped keychain.
 ///
 /// `OPENAI_API_KEY` is intentionally not read here; environment variables are
 /// handled by `cc-api` before provider-scoped keychain fallback runs.
@@ -183,7 +183,7 @@ pub fn try_resolve_openai_api_key() -> anyhow::Result<Option<String>> {
     Ok(Some(key.trim().to_string()))
 }
 
-/// Try to resolve Codex token from cc-rust's own `credentials.json`.
+/// Try to resolve Codex token from allthecodes' own `credentials.json`.
 fn try_resolve_codex_from_credentials() -> anyhow::Result<Option<String>> {
     let stored = match token::load_token()? {
         Some(stored) => stored,
@@ -224,7 +224,7 @@ fn try_resolve_codex_from_credentials() -> anyhow::Result<Option<String>> {
 /// Try to resolve Codex token from Codex CLI's `~/.codex/auth.json`.
 ///
 /// If the token is expired, attempt refresh using the Codex CLI client_id
-/// and save the refreshed token to cc-rust's `credentials.json`.
+/// and save the refreshed token to allthecodes' `credentials.json`.
 fn try_resolve_codex_cli() -> anyhow::Result<Option<String>> {
     let cred = match codex_cli::read_codex_cli_credential()? {
         Some(cred) => cred,
@@ -267,7 +267,7 @@ fn try_resolve_codex_cli() -> anyhow::Result<Option<String>> {
     .join()
     .map_err(|_| anyhow::anyhow!("Codex CLI token refresh thread panicked"))??;
 
-    // Save refreshed token to cc-rust's credentials.json
+    // Save refreshed token to allthecodes' credentials.json
     let expires_at = chrono::Utc::now().timestamp() + result.expires_in as i64;
     let new_scopes: Vec<String> = result
         .scope
@@ -290,7 +290,7 @@ fn try_resolve_codex_cli() -> anyhow::Result<Option<String>> {
         oauth_method: Some("openai_codex".to_string()),
     };
     let _ = token::save_token(&stored);
-    tracing::info!("Codex CLI token refreshed and saved to cc-rust credentials");
+    tracing::info!("Codex CLI token refreshed and saved to allthecodes credentials");
     Ok(Some(result.access_token))
 }
 
@@ -464,7 +464,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("credentials.json");
         std::fs::write(&path, "{not-json").unwrap();
-        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+        let _allthecodes_home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
 
         let err = try_resolve_oauth().expect_err("corrupt existing credentials must be diagnostic");
 
@@ -485,7 +485,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("credentials.json");
-        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+        let _allthecodes_home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
         token::save_token(&expired_token(Some("refresh-token"), "claude_ai")).unwrap();
 
         let err =
@@ -507,7 +507,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("credentials.json");
-        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+        let _allthecodes_home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
         token::save_token(&expired_token(None, "claude_ai")).unwrap();
 
         let err = try_resolve_oauth().expect_err("expired present credentials are invalid");
@@ -527,7 +527,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("credentials.json");
-        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+        let _allthecodes_home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
         token::save_token(&expired_token(Some("refresh-token"), "openai_codex")).unwrap();
 
         let err = try_resolve_codex_from_credentials()
@@ -549,7 +549,7 @@ mod tests {
         let _api_key = EnvGuard::set("ANTHROPIC_API_KEY", "not-a-valid-key");
         let _auth_token = EnvGuard::remove("ANTHROPIC_AUTH_TOKEN");
         let dir = tempfile::TempDir::new().unwrap();
-        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+        let _allthecodes_home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
 
         let err = try_resolve_auth().expect_err("invalid present env API key must be diagnostic");
 
@@ -563,7 +563,7 @@ mod tests {
     fn credentials_path_is_owned_by_cc_config_path_isolation() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::TempDir::new().unwrap();
-        let _cc_home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+        let _allthecodes_home = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
         let stored = token::StoredToken {
             access_token: "isolated-access".into(),
             refresh_token: None,

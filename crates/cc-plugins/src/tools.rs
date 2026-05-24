@@ -113,10 +113,10 @@ impl PluginToolWrapper {
         cmd.stdin(std::process::Stdio::piped());
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
-        cmd.env("CC_RUST_PLUGIN_ID", &self.plugin_id);
-        cmd.env("CC_RUST_PLUGIN_TOOL_NAME", &self.contribution.name);
-        cmd.env("CC_RUST_PLUGIN_ROOT", &self.plugin_root);
-        cmd.env("CC_RUST_TOOL_INPUT", &input_json);
+        cmd.env("ALLTHECODES_PLUGIN_ID", &self.plugin_id);
+        cmd.env("ALLTHECODES_PLUGIN_TOOL_NAME", &self.contribution.name);
+        cmd.env("ALLTHECODES_PLUGIN_ROOT", &self.plugin_root);
+        cmd.env("ALLTHECODES_TOOL_INPUT", &input_json);
 
         for (key, value) in &runtime.env {
             cmd.env(key, value);

@@ -3,7 +3,7 @@
 //!
 //! Output covers:
 //! - detected shell / terminal program / multiplexer
-//! - status of the `CLAUDE_CODE_*` env toggles
+//! - status of the `ALLTHECODES_*` env toggles
 //! - manual setup tips for Shift+Enter support across common terminals
 //! - tmux passthrough advice when `$TMUX` is set
 //! - transcript-export expectations for `$VISUAL` / `$EDITOR`
@@ -98,10 +98,10 @@ impl EnvProbe {
                 "EDITOR" => p.editor = value,
                 "VTE_VERSION" => p.vte_version = value,
                 "WT_SESSION" => p.wt_session = value,
-                "CLAUDE_CODE_NO_FLICKER" => p.claude_code_no_flicker = value,
-                "CLAUDE_CODE_ENABLE_MOUSE_CAPTURE" => p.claude_code_enable_mouse_capture = value,
-                "CLAUDE_CODE_DISABLE_MOUSE" => p.claude_code_disable_mouse = value,
-                "CLAUDE_CODE_SCROLL_SPEED" => p.claude_code_scroll_speed = value,
+                "ALLTHECODES_NO_FLICKER" => p.claude_code_no_flicker = value,
+                "ALLTHECODES_ENABLE_MOUSE_CAPTURE" => p.claude_code_enable_mouse_capture = value,
+                "ALLTHECODES_DISABLE_MOUSE" => p.claude_code_disable_mouse = value,
+                "ALLTHECODES_SCROLL_SPEED" => p.claude_code_scroll_speed = value,
                 _ => {}
             }
         }
@@ -220,21 +220,21 @@ fn render_all(p: &EnvProbe) -> String {
 fn render_env(p: &EnvProbe) -> String {
     let effective = TerminalEnvConfig::from_pairs([
         (
-            "CLAUDE_CODE_NO_FLICKER",
+            "ALLTHECODES_NO_FLICKER",
             p.claude_code_no_flicker.clone().unwrap_or_default(),
         ),
         (
-            "CLAUDE_CODE_ENABLE_MOUSE_CAPTURE",
+            "ALLTHECODES_ENABLE_MOUSE_CAPTURE",
             p.claude_code_enable_mouse_capture
                 .clone()
                 .unwrap_or_default(),
         ),
         (
-            "CLAUDE_CODE_DISABLE_MOUSE",
+            "ALLTHECODES_DISABLE_MOUSE",
             p.claude_code_disable_mouse.clone().unwrap_or_default(),
         ),
         (
-            "CLAUDE_CODE_SCROLL_SPEED",
+            "ALLTHECODES_SCROLL_SPEED",
             p.claude_code_scroll_speed.clone().unwrap_or_default(),
         ),
     ]);
@@ -258,18 +258,18 @@ fn render_env(p: &EnvProbe) -> String {
         out.push_str(&format!("    -> editor export:        {}\n", note));
     }
 
-    out.push_str("\nCLAUDE_CODE_* toggles (issue #12)\n");
-    out.push_str(&row("CLAUDE_CODE_NO_FLICKER", &p.claude_code_no_flicker));
+    out.push_str("\nALLTHECODES_* toggles (issue #12)\n");
+    out.push_str(&row("ALLTHECODES_NO_FLICKER", &p.claude_code_no_flicker));
     out.push_str(&format!(
         "    -> synchronized updates: {}\n",
         if effective.sync_updates { "on" } else { "off" }
     ));
     out.push_str(&row(
-        "CLAUDE_CODE_ENABLE_MOUSE_CAPTURE",
+        "ALLTHECODES_ENABLE_MOUSE_CAPTURE",
         &p.claude_code_enable_mouse_capture,
     ));
     out.push_str(&row(
-        "CLAUDE_CODE_DISABLE_MOUSE",
+        "ALLTHECODES_DISABLE_MOUSE",
         &p.claude_code_disable_mouse,
     ));
     out.push_str(&format!(
@@ -285,7 +285,7 @@ fn render_env(p: &EnvProbe) -> String {
         }
     ));
     out.push_str(&row(
-        "CLAUDE_CODE_SCROLL_SPEED",
+        "ALLTHECODES_SCROLL_SPEED",
         &p.claude_code_scroll_speed,
     ));
     out.push_str(&format!(
@@ -317,7 +317,7 @@ fn render_tips(p: &EnvProbe) -> String {
             "  - Manual setup: add `set -g extended-keys on` + `set -as terminal-features ',xterm*:extkeys'` for Shift+Enter passthrough.\n",
         );
         out.push_str(
-            "  - Manual setup: use `set -g allow-passthrough on` (tmux >= 3.3) so cc-rust can emit notifications / OSC sequences.\n\n",
+            "  - Manual setup: use `set -g allow-passthrough on` (tmux >= 3.3) so allthecodes can emit notifications / OSC sequences.\n\n",
         );
     }
 
@@ -413,7 +413,7 @@ mod tests {
         match r {
             CommandResult::Output(s) => {
                 assert!(s.contains("Terminal setup"));
-                assert!(s.contains("CLAUDE_CODE_NO_FLICKER"));
+                assert!(s.contains("ALLTHECODES_NO_FLICKER"));
                 assert!(s.contains("Tips"));
             }
             _ => panic!("expected Output"),
@@ -427,7 +427,7 @@ mod tests {
         let r = handler.execute("env", &mut ctx).await.unwrap();
         match r {
             CommandResult::Output(s) => {
-                assert!(s.contains("CLAUDE_CODE_NO_FLICKER"));
+                assert!(s.contains("ALLTHECODES_NO_FLICKER"));
                 assert!(!s.contains("Tips\n----\n"));
             }
             _ => panic!("expected Output"),
@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn env_table_shows_effective_scroll_speed() {
-        let p = EnvProbe::from_pairs(vec![("CLAUDE_CODE_SCROLL_SPEED", "7")]);
+        let p = EnvProbe::from_pairs(vec![("ALLTHECODES_SCROLL_SPEED", "7")]);
         let out = render_env(&p);
         assert!(out.contains("7 lines / step"), "{}", out);
     }
@@ -512,14 +512,14 @@ mod tests {
 
     #[test]
     fn env_table_reports_enable_mouse_capture_runtime_effect() {
-        let p = EnvProbe::from_pairs(vec![("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1")]);
+        let p = EnvProbe::from_pairs(vec![("ALLTHECODES_ENABLE_MOUSE_CAPTURE", "1")]);
         let out = render_env(&p);
         assert!(out.contains("enabled for wheel events"));
     }
 
     #[test]
     fn env_table_reports_disable_mouse_runtime_effect() {
-        let p = EnvProbe::from_pairs(vec![("CLAUDE_CODE_DISABLE_MOUSE", "1")]);
+        let p = EnvProbe::from_pairs(vec![("ALLTHECODES_DISABLE_MOUSE", "1")]);
         let out = render_env(&p);
         assert!(out.contains("disabled (native selection/copy)"));
     }

@@ -1,7 +1,7 @@
 //! Session memory service — extracts conversation insights into persistent
 //! memory entries on disk.
 //!
-//! Memory entries are stored as individual JSON files under `~/.cc-rust/memory/`.
+//! Memory entries are stored as individual JSON files under `~/.allthecodes/memory/`.
 //! This is complementary to the `session::memdir` module which manages
 //! AGENTS.md/CLAUDE.md-based memories; this service focuses on structured, searchable
 //! per-session insights.

@@ -43,7 +43,7 @@ pub fn load_project_config(cwd: &Path) -> Result<RawSettings> {
     }
 }
 
-/// Load project-local overrides (`.cc-rust/settings.local.json`).
+/// Load project-local overrides (`.allthecodes/settings.local.json`).
 pub fn load_local_config(cwd: &Path) -> Result<RawSettings> {
     match find_local_config(cwd) {
         Some(p) => Ok(load_raw_from(&p)?.unwrap_or_default()),
@@ -261,10 +261,10 @@ pub fn apply_runtime_env(env: &HashMap<String, String>) -> Result<RuntimeEnvAppl
     apply_runtime_env_inner(env, false)
 }
 
-/// Apply merged `settings.env` values during cc-rust startup.
+/// Apply merged `settings.env` values during allthecodes startup.
 ///
 /// Most variables still only fill missing process env. Provider auth, endpoint,
-/// and model variables are intentionally overridden when declared in cc-rust
+/// and model variables are intentionally overridden when declared in allthecodes
 /// settings so inherited shell state from other Claude/Codex installations does
 /// not silently route this process to the wrong account or model.
 pub fn apply_startup_runtime_env(env: &HashMap<String, String>) -> Result<RuntimeEnvApplyReport> {

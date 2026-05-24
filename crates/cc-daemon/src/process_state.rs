@@ -1,7 +1,7 @@
 //! Cross-process daemon supervisor state.
 //!
 //! This is the Phase 1 durability layer for daemon management. It lets one
-//! process publish daemon status under `~/.cc-rust/daemon/` and another process
+//! process publish daemon status under `~/.allthecodes/daemon/` and another process
 //! inspect or request shutdown without sharing memory with the daemon runtime.
 
 use std::fs;
@@ -11,7 +11,7 @@ use std::process::{Command, ExitCode, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::protocol;
@@ -120,8 +120,49 @@ pub enum DaemonStatusSnapshot {
     Stopped,
 }
 
+pub(crate) fn data_root() -> Option<PathBuf> {
+    let home = std::env::var("ALLTHECODES_HOME").ok()?;
+    let home = home.trim();
+    if home.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(home).join(".allthecodes"))
+}
+
+pub(crate) fn daily_log_path(now: DateTime<Local>) -> PathBuf {
+    let year = now.format("%Y").to_string();
+    let month = now.format("%m").to_string();
+    let filename = now.format("%Y-%m-%d.md").to_string();
+    data_root()
+        .map(|root| root.join("logs").join(year).join(month).join(filename))
+        .unwrap_or_else(|| cc_config::paths::daily_log_path(now))
+}
+
+pub(crate) fn team_memory_dir(cwd: &Path) -> PathBuf {
+    let Some(root) = data_root() else {
+        return cc_config::paths::team_memory_dir(cwd);
+    };
+    let sanitized: String = cwd
+        .to_string_lossy()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    root.join("projects")
+        .join(sanitized)
+        .join("memory")
+        .join("team")
+}
+
 pub fn daemon_dir() -> PathBuf {
-    cc_config::paths::daemon_dir()
+    data_root()
+        .map(|root| root.join("daemon"))
+        .unwrap_or_else(cc_config::paths::daemon_dir)
 }
 
 pub fn state_path() -> PathBuf {
@@ -843,7 +884,7 @@ fn print_result(result: Result<()>) -> ExitCode {
 
 fn print_usage() {
     eprintln!(
-        "Usage:\n  claude daemon [status]\n  claude daemon start [--port <port>]\n  claude daemon stop\n  claude daemon restart [--port <port>]\n  claude daemon submit <text>\n  claude daemon abort\n  claude daemon command <id> [worker-id]\n  claude daemon events [worker-id]\n  claude daemon token\n  claude daemon sleep <seconds> [reason]\n  claude daemon wake"
+        "Usage:\n  allthecodes daemon [status]\n  allthecodes daemon start [--port <port>]\n  allthecodes daemon stop\n  allthecodes daemon restart [--port <port>]\n  allthecodes daemon submit <text>\n  allthecodes daemon abort\n  allthecodes daemon command <id> [worker-id]\n  allthecodes daemon events [worker-id]\n  allthecodes daemon token\n  allthecodes daemon sleep <seconds> [reason]\n  allthecodes daemon wake"
     );
 }
 
@@ -940,13 +981,14 @@ mod tests {
 
     #[test]
     #[serial]
-    fn write_and_read_state_uses_cc_rust_home() {
+    fn write_and_read_state_uses_allthecodes_home() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         let cwd = temp.path().join("workspace");
         fs::create_dir_all(&cwd).unwrap();
 
         let state = write_started(19999, &cwd).unwrap();
+        assert!(state_path().starts_with(temp.path().join(".allthecodes")));
         let read_back = read_state().unwrap().unwrap();
 
         assert_eq!(state.pid, std::process::id());
@@ -959,7 +1001,7 @@ mod tests {
     #[serial]
     fn shutdown_request_sets_state_flag() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         write_started(DEFAULT_DAEMON_PORT, temp.path()).unwrap();
 
         request_shutdown("test").unwrap();
@@ -989,7 +1031,7 @@ mod tests {
     #[serial]
     fn worker_state_updates_supervisor_summary() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         let cwd = temp.path().join("workspace");
         fs::create_dir_all(&cwd).unwrap();
         let log_path = worker_log_path("assistant/session:1");
@@ -1017,7 +1059,7 @@ mod tests {
     #[serial]
     fn worker_heartbeat_preserves_restart_count() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         let log_path = worker_log_path("assistant-session-1");
         write_worker_running(
             "assistant-session-1",
@@ -1042,7 +1084,7 @@ mod tests {
     #[serial]
     fn control_token_is_created_and_cleared_with_daemon_state() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
 
         write_started(DEFAULT_DAEMON_PORT, temp.path()).unwrap();
         let token = read_control_token().unwrap().unwrap();
@@ -1057,7 +1099,7 @@ mod tests {
     #[serial]
     fn sleep_state_tracks_active_and_expired_sleep() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
 
         let active = write_sleep_state(60, "waiting").unwrap();
         assert_eq!(active.reason.as_deref(), Some("waiting"));

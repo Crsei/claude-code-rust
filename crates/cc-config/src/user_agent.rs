@@ -15,7 +15,7 @@ pub fn claude_code_user_agent() -> String {
 /// The `claude-cli` prefix is kept for parity with upstream log filtering.
 pub fn api_user_agent() -> String {
     let user_type = env_component("USER_TYPE").unwrap_or_else(|| "unknown".to_string());
-    let entrypoint = env_component("CLAUDE_CODE_ENTRYPOINT").unwrap_or_else(|| "cli".to_string());
+    let entrypoint = env_component("ALLTHECODES_ENTRYPOINT").unwrap_or_else(|| "cli".to_string());
     let mut details = vec![user_type, entrypoint];
 
     if let Some(version) = env_component("CLAUDE_AGENT_SDK_VERSION") {
@@ -24,7 +24,7 @@ pub fn api_user_agent() -> String {
     if let Some(client_app) = env_component("CLAUDE_AGENT_SDK_CLIENT_APP") {
         details.push(format!("client-app/{client_app}"));
     }
-    if let Some(workload) = env_component("CLAUDE_CODE_WORKLOAD") {
+    if let Some(workload) = env_component("ALLTHECODES_WORKLOAD") {
         details.push(format!("workload/{workload}"));
     }
 
@@ -34,7 +34,7 @@ pub fn api_user_agent() -> String {
 /// User-Agent used by MCP HTTP transports and MCP OAuth discovery/token calls.
 pub fn mcp_user_agent() -> String {
     let mut details = Vec::new();
-    if let Some(entrypoint) = env_component("CLAUDE_CODE_ENTRYPOINT") {
+    if let Some(entrypoint) = env_component("ALLTHECODES_ENTRYPOINT") {
         details.push(entrypoint);
     }
     if let Some(version) = env_component("CLAUDE_AGENT_SDK_VERSION") {
@@ -81,10 +81,10 @@ mod tests {
 
     const ENV_KEYS: &[&str] = &[
         "USER_TYPE",
-        "CLAUDE_CODE_ENTRYPOINT",
+        "ALLTHECODES_ENTRYPOINT",
         "CLAUDE_AGENT_SDK_VERSION",
         "CLAUDE_AGENT_SDK_CLIENT_APP",
-        "CLAUDE_CODE_WORKLOAD",
+        "ALLTHECODES_WORKLOAD",
     ];
 
     fn clear_env() {
@@ -118,10 +118,10 @@ mod tests {
     fn api_user_agent_includes_sdk_client_and_workload_parts() {
         clear_env();
         std::env::set_var("USER_TYPE", "pro");
-        std::env::set_var("CLAUDE_CODE_ENTRYPOINT", "sdk");
+        std::env::set_var("ALLTHECODES_ENTRYPOINT", "sdk");
         std::env::set_var("CLAUDE_AGENT_SDK_VERSION", "1.2.3");
         std::env::set_var("CLAUDE_AGENT_SDK_CLIENT_APP", "my-app/2");
-        std::env::set_var("CLAUDE_CODE_WORKLOAD", "cron");
+        std::env::set_var("ALLTHECODES_WORKLOAD", "cron");
 
         assert_eq!(
             api_user_agent(),
@@ -138,7 +138,7 @@ mod tests {
     #[serial]
     fn mcp_user_agent_includes_only_mcp_supported_suffixes() {
         clear_env();
-        std::env::set_var("CLAUDE_CODE_ENTRYPOINT", "cli");
+        std::env::set_var("ALLTHECODES_ENTRYPOINT", "cli");
         std::env::set_var("CLAUDE_AGENT_SDK_VERSION", "1.2.3");
         std::env::set_var("CLAUDE_AGENT_SDK_CLIENT_APP", "my-app/2");
 

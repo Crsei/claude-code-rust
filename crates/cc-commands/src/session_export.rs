@@ -1,7 +1,7 @@
 //! /session-export command — export session as a structured JSON data package.
 //!
 //! Usage:
-//!   /session-export              — export current session to ~/.cc-rust/exports/
+//!   /session-export              — export current session to ~/.allthecodes/exports/
 //!   /session-export list         — list all session export files
 //!   /session-export <path>       — export current session to a specific file
 //!   /session-export <session_id> — export a saved session by ID

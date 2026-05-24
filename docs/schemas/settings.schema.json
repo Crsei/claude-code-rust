@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cc-rust/settings.schema.json",
-  "title": "cc-rust settings",
+  "$id": "https://allthecodes/settings.schema.json",
+  "title": "allthecodes settings",
   "description": "On-disk shape of settings.json (managed/user/project/local). Generated from src/config/settings.rs::settings_schema() — keep in sync via the `schema_file_matches_runtime` test.",
   "type": "object",
   "additionalProperties": true,
@@ -121,7 +121,7 @@
     },
     "outputStyle": {
       "type": "string",
-      "description": "Built-in: default, explanatory, learning. Custom names are loaded from <cwd>/.cc-rust/output-styles/<name>.md or <data_root>/output-styles/<name>.md."
+      "description": "Built-in: default, explanatory, learning. Custom names are loaded from <cwd>/.allthecodes/output-styles/<name>.md or <data_root>/output-styles/<name>.md."
     },
     "language": { "type": "string" },
     "voiceEnabled": { "type": "boolean" },

@@ -179,7 +179,7 @@ async fn test_message(provider: Option<&str>, target: Option<&str>, text: String
         return "Usage: /remote test-message <telegram|lark> <target> [text]".to_string();
     };
     let text = if text.trim().is_empty() {
-        "cc-rust remote gateway test".to_string()
+        "allthecodes remote gateway test".to_string()
     } else {
         text
     };
@@ -597,7 +597,7 @@ mod tests {
     #[serial_test::serial]
     async fn status_reports_stopped_without_token_leak() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         let mut ctx = ctx();
         let result = RemoteHandler.execute("status", &mut ctx).await.unwrap();
 
@@ -615,7 +615,7 @@ mod tests {
     #[serial_test::serial]
     async fn runs_lists_local_gateway_store() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         let store =
             gateway::GatewayStore::default_with_policy(gateway::SessionKeyPolicy::default());
         let created = store.create_run(request()).unwrap().meta().run_id.clone();

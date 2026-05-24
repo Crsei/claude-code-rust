@@ -98,22 +98,22 @@ fn help_flag_prints_usage_and_exits() {
 
 #[test]
 fn init_only_exits_successfully() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .arg("--init-only")
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success();
 }
 
 #[test]
 fn dump_system_prompt_outputs_prompt_and_exits() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["--dump-system-prompt", "-C", workspace()])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("tool"));
@@ -126,23 +126,23 @@ fn dump_system_prompt_outputs_prompt_and_exits() {
 #[test]
 fn cwd_flag_accepts_valid_directory() {
     assert!(Path::new(workspace()).is_dir(), "F:\\temp must exist");
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
 
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["-C", workspace(), "--init-only"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success();
 }
 
 #[test]
 fn cwd_flag_rejects_nonexistent_directory() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["-C", r"F:\this\path\does\not\exist", "--init-only"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .failure()
         .stderr(
@@ -153,11 +153,11 @@ fn cwd_flag_rejects_nonexistent_directory() {
 
 #[test]
 fn cwd_short_flag_works() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["-C", workspace(), "--init-only"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success();
 }
@@ -168,11 +168,11 @@ fn cwd_short_flag_works() {
 
 #[test]
 fn print_mode_without_prompt_fails() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .arg("-p")
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .failure();
 }
@@ -180,11 +180,11 @@ fn print_mode_without_prompt_fails() {
 #[test]
 fn print_mode_no_api_key_reports_error() {
     // With a prompt but no API key, the error is printed to stderr.
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["-p", "hello"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .failure()
         .stderr(
@@ -196,11 +196,11 @@ fn print_mode_no_api_key_reports_error() {
 
 #[test]
 fn json_output_mode_emits_machine_parseable_jsonl_for_prompt_argument() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     let output = clear_auth_env(&mut cmd)
         .args(["--output-format", "json", "-p", "hello"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .output()
         .expect("run json output mode");
 
@@ -209,11 +209,11 @@ fn json_output_mode_emits_machine_parseable_jsonl_for_prompt_argument() {
 
 #[test]
 fn json_output_mode_reads_prompt_from_stdin() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     let output = clear_auth_env(&mut cmd)
         .args(["--output-format", "json", "-p"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .write_stdin("hello from stdin\n")
         .output()
         .expect("run json output mode with stdin");
@@ -223,11 +223,11 @@ fn json_output_mode_reads_prompt_from_stdin() {
 
 #[test]
 fn stream_json_output_format_currently_follows_plain_print_dispatch() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["--output-format", "stream-json", "-p", "hello"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .failure()
         .stderr(
@@ -243,18 +243,18 @@ fn stream_json_output_format_currently_follows_plain_print_dispatch() {
 
 #[test]
 fn model_flag_accepted() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["-m", "gpt-4o", "--init-only"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success();
 }
 
 #[test]
 fn dump_system_prompt_with_model_override() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args([
@@ -264,7 +264,7 @@ fn dump_system_prompt_with_model_override() {
             "-C",
             workspace(),
         ])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success()
         .stdout(predicate::str::is_empty().not());
@@ -276,11 +276,11 @@ fn dump_system_prompt_with_model_override() {
 
 #[test]
 fn verbose_flag_accepted() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["-v", "--init-only"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success();
 }
@@ -291,14 +291,14 @@ fn daemon_management_reports_stopped_state_without_running_daemon() {
 
     cli()
         .args(["daemon", "status"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("daemon status: stopped"));
 
     cli()
         .args(["daemon", "sleep", "1", "e2e"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .failure()
         .stderr(predicate::str::contains(
@@ -312,7 +312,7 @@ fn daemon_management_reports_stopped_state_without_running_daemon() {
 
 #[test]
 fn custom_system_prompt_in_dump() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args([
@@ -322,7 +322,7 @@ fn custom_system_prompt_in_dump() {
             "-C",
             workspace(),
         ])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("You are a test bot."));
@@ -330,7 +330,7 @@ fn custom_system_prompt_in_dump() {
 
 #[test]
 fn append_system_prompt_in_dump() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args([
@@ -340,7 +340,7 @@ fn append_system_prompt_in_dump() {
             "-C",
             workspace(),
         ])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("EXTRA CONTEXT INJECTED"));
@@ -352,33 +352,33 @@ fn append_system_prompt_in_dump() {
 
 #[test]
 fn permission_mode_auto_accepted() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["--permission-mode", "auto", "--init-only"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success();
 }
 
 #[test]
 fn permission_mode_bypass_accepted() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["--permission-mode", "bypass", "--init-only"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success();
 }
 
 #[test]
 fn no_network_flag_accepted_for_init_only() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["--no-network", "--init-only"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success();
 }
@@ -389,22 +389,22 @@ fn no_network_flag_accepted_for_init_only() {
 
 #[test]
 fn max_budget_flag_accepted() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["--max-budget", "5.0", "--init-only"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success();
 }
 
 #[test]
 fn max_turns_flag_accepted() {
-    let home = tempfile::tempdir().expect("temp cc-rust home");
+    let home = tempfile::tempdir().expect("temp allthecodes home");
     let mut cmd = cli();
     clear_auth_env(&mut cmd)
         .args(["--max-turns", "3", "--init-only"])
-        .env("CC_RUST_HOME", home.path())
+        .env("ALLTHECODES_HOME", home.path())
         .assert()
         .success();
 }

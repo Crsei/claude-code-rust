@@ -1,6 +1,6 @@
 //! Config tool -- runtime settings read/write.
 //!
-//! Provides get/set/list operations on the project `.cc-rust/settings.json` file.
+//! Provides get/set/list operations on the project `.allthecodes/settings.json` file.
 //! - "get"  : returns the value for a specific key
 //! - "set"  : modifies a setting (writes back to the project config file)
 //! - "list" : returns all current settings
@@ -242,9 +242,9 @@ impl Tool for ConfigTool {
         "Use the Config tool to read and modify runtime settings.\n\n\
 Actions:\n\
 - \"get\": Retrieve a specific setting by key.\n\
-- \"set\": Update a specific setting. The value is stored in `.cc-rust/settings.json`.\n\
+- \"set\": Update a specific setting. The value is stored in `.allthecodes/settings.json`.\n\
 - \"list\": List all current settings.\n\n\
-Settings are persisted per-project in `.cc-rust/settings.json`."
+Settings are persisted per-project in `.allthecodes/settings.json`."
             .to_string()
     }
 
@@ -273,7 +273,7 @@ mod tests {
 
         let path = ConfigTool::project_settings_path_for_cwd(dir.path());
 
-        assert_eq!(path, dir.path().join(".cc-rust").join("settings.json"));
+        assert_eq!(path, dir.path().join(".allthecodes").join("settings.json"));
     }
 
     #[test]

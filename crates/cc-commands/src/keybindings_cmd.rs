@@ -15,7 +15,7 @@
 //!   /keybindings reload          force a reload now
 //!   /keybindings path            print the config file path
 //!
-//! `~/.cc-rust/keybindings.json` is created from [`EMPTY_TEMPLATE`] when
+//! `~/.allthecodes/keybindings.json` is created from [`EMPTY_TEMPLATE`] when
 //! missing. The existing file is never overwritten.
 
 use anyhow::Result;

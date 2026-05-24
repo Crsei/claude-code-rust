@@ -45,7 +45,7 @@ pub struct CapabilityLab {
     _root: TempDir,
     pub project_dir: PathBuf,
     pub home_dir: PathBuf,
-    pub cc_rust_home: PathBuf,
+    pub allthecodes_home: PathBuf,
 }
 
 impl CapabilityLab {
@@ -56,20 +56,20 @@ impl CapabilityLab {
             .expect("create capability lab tempdir");
         let project_dir = root.path().join("cc-rust-capability-lab");
         let home_dir = root.path().join("home");
-        let cc_rust_home = home_dir.join(".cc-rust");
+        let allthecodes_home = home_dir.join(".allthecodes");
 
         fs::create_dir_all(project_dir.join("src")).expect("create src");
         fs::create_dir_all(project_dir.join("tests")).expect("create tests");
         fs::create_dir_all(project_dir.join("docs")).expect("create docs");
         fs::create_dir_all(
             project_dir
-                .join(".cc-rust")
+                .join(".allthecodes")
                 .join("skills")
                 .join("product-brief-writer")
                 .join("references"),
         )
         .expect("create project skill");
-        fs::create_dir_all(&cc_rust_home).expect("create cc-rust home");
+        fs::create_dir_all(&allthecodes_home).expect("create allthecodes home");
 
         write_file(
             &project_dir.join("package.json"),
@@ -175,7 +175,7 @@ assert.match(closeAndRender(1), /Closed issues still render as open: closed/);
         );
         write_file(
             &project_dir
-                .join(".cc-rust")
+                .join(".allthecodes")
                 .join("skills")
                 .join("product-brief-writer")
                 .join("SKILL.md"),
@@ -190,27 +190,27 @@ Use `references/style-guide.md` before writing any product-facing summary. Keep 
 "#,
         );
         write_file(
-            &project_dir.join(".cc-rust").join("skills").join("product-brief-writer").join("references").join("style-guide.md"),
+            &project_dir.join(".allthecodes").join("skills").join("product-brief-writer").join("references").join("style-guide.md"),
             "# Style Guide\n\nUse direct headings, short paragraphs, and explicitly mention acceptance criteria.\n",
         );
         write_file(
             &project_dir.join("AGENTS.md"),
-            "# Capability Lab Instructions\n\nAll generated reports must be written under `docs/`. Keep persistent cc-rust state under `.cc-rust/` or `CC_RUST_HOME`.\n",
+            "# Capability Lab Instructions\n\nAll generated reports must be written under `docs/`. Keep persistent allthecodes state under `.allthecodes/` or `ALLTHECODES_HOME`.\n",
         );
-        write_file(&project_dir.join(".cc-rust").join("settings.json"), "{}\n");
+        write_file(&project_dir.join(".allthecodes").join("settings.json"), "{}\n");
 
         Self {
             _root: root,
             project_dir,
             home_dir,
-            cc_rust_home,
+            allthecodes_home,
         }
     }
 
     pub fn set_env(&self) -> (EnvGuard, EnvGuard) {
         (
             EnvGuard::set_path("HOME", &self.home_dir),
-            EnvGuard::set_path("CC_RUST_HOME", &self.cc_rust_home),
+            EnvGuard::set_path("ALLTHECODES_HOME", &self.allthecodes_home),
         )
     }
 
@@ -231,7 +231,7 @@ Use `references/style-guide.md` before writing any product-facing summary. Keep 
     pub fn write_project_mcp_settings(&self, mcp_servers: serde_json::Value) {
         let settings = json!({ "mcpServers": mcp_servers });
         write_file(
-            &self.project_dir.join(".cc-rust").join("settings.json"),
+            &self.project_dir.join(".allthecodes").join("settings.json"),
             &serde_json::to_string_pretty(&settings).expect("serialize project settings"),
         );
     }
@@ -371,7 +371,7 @@ Review the changed issue tracker code and report user-visible risks.
     }
 
     pub fn npm_cache_dir(&self) -> PathBuf {
-        self.cc_rust_home.join("npm-cache")
+        self.allthecodes_home.join("npm-cache")
     }
 
     pub fn assert_path_isolated(&self) {

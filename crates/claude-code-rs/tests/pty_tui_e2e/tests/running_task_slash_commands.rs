@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 fn write_slow_user_prompt_hook(workspace: &Path) {
-    let settings_dir = workspace.join(".cc-rust");
+    let settings_dir = workspace.join(".allthecodes");
     std::fs::create_dir_all(&settings_dir).expect("create project settings dir");
     let settings = json!({
         "hooks": {
@@ -13,7 +13,7 @@ fn write_slow_user_prompt_hook(workspace: &Path) {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "while [ ! -f .cc-rust/release-slow-hook ]; do sleep 0.1; done",
+                            "command": "while [ ! -f .allthecodes/release-slow-hook ]; do sleep 0.1; done",
                             "timeout": 20
                         }
                     ]
@@ -38,7 +38,7 @@ fn spawn_session_with_slow_prompt_hook(temp: &tempfile::TempDir) -> (PtySession,
     let workspace_arg = workspace.to_string_lossy().into_owned();
     let cc_home_env = cc_home.to_string_lossy().into_owned();
     let args = ["-C", workspace_arg.as_str(), "--permission-mode", "bypass"];
-    let env = [("CC_RUST_HOME", cc_home_env.as_str())];
+    let env = [("ALLTHECODES_HOME", cc_home_env.as_str())];
     let session = PtySession::spawn_with_env(&args, 120, 40, true, &env);
     (session, workspace, cc_home)
 }
@@ -57,7 +57,7 @@ fn start_slow_turn(session: &PtySession) {
 
 fn release_slow_hook(workspace: &Path) {
     std::fs::write(
-        workspace.join(".cc-rust").join("release-slow-hook"),
+        workspace.join(".allthecodes").join("release-slow-hook"),
         b"done",
     )
     .expect("release slow hook");

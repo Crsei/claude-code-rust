@@ -1,7 +1,7 @@
 """Message-test suite runner.
 
 Design goals:
-    • Per-case subprocess isolation (own port + own CC_RUST_HOME + own cwd)
+    • Per-case subprocess isolation (own port + own ALLTHECODES_HOME + own cwd)
     • Text-only transport — HTTP + SSE, no browser
     • Fan-out across concurrency groups; serial within a group
     • Human + JSONL traces under ``results/<timestamp>/<case-id>.*``
@@ -194,7 +194,7 @@ def spawn_server(
     case_id: str,
 ) -> ServerHandle:
     env = os.environ.copy()
-    env["CC_RUST_HOME"] = str(home)
+    env["ALLTHECODES_HOME"] = str(home)
     env["RUST_LOG"] = env.get("RUST_LOG", "warn,claude_code_rs=info")
     env.update(env_overrides)
 
@@ -369,8 +369,8 @@ class CaseRunner:
         else:
             ws_path = Path(tempfile.mkdtemp(prefix=f"ccrs-ws-{self.case.id}-"))
 
-        # Always use a dedicated CC_RUST_HOME so sessions/credentials don't leak
-        home_path = Path(tempfile.mkdtemp(prefix=f"ccrs-home-{self.case.id}-"))
+        # Always use a dedicated ALLTHECODES_HOME so sessions/credentials don't leak
+        home_path = Path(tempfile.mkdtemp(prefix=f"atc-home-{self.case.id}-"))
 
         # Write prereq files (relative to workspace)
         for spec in prereq.get("files") or []:
@@ -512,7 +512,7 @@ class CaseRunner:
         # Run assertions
         globals_ = getattr(self, "_globals", {}) or {
             "workspace": "",
-            "home": os.environ.get("CC_RUST_HOME", ""),
+            "home": os.environ.get("ALLTHECODES_HOME", ""),
         }
         outcomes: list[AssertOutcome] = []
         for ass in step.get("expect") or []:

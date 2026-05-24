@@ -105,9 +105,9 @@ mod tests {
         let text = format_flags(&FeatureFlags::all_enabled());
         assert!(text.contains("kairos"));
         assert!(text.contains("agent_teams"));
-        assert!(text.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
+        assert!(text.contains("ALLTHECODES_EXPERIMENTAL_AGENT_TEAMS"));
         assert!(text.contains("coordinator"));
-        assert!(text.contains("CLAUDE_CODE_COORDINATOR_MODE"));
+        assert!(text.contains("ALLTHECODES_COORDINATOR_MODE"));
     }
 
     #[test]

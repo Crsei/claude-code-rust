@@ -33,14 +33,14 @@ fn typed_text_appears() {
 
 #[test]
 fn slash_palette_renders_below_input() {
-    let home = tempfile::tempdir().expect("cc-rust home");
+    let home = tempfile::tempdir().expect("allthecodes home");
     let home_path = home.path().to_str().expect("utf-8 temp path");
     let session = PtySession::spawn_with_env(
         default_args(),
         120,
         40,
         true,
-        &[("CC_RUST_HOME", home_path)],
+        &[("ALLTHECODES_HOME", home_path)],
     );
     std::thread::sleep(RENDER_WAIT);
 
@@ -89,14 +89,14 @@ fn slash_palette_renders_below_input() {
 
 #[test]
 fn slash_agents_twice_keeps_surface_off_top_row() {
-    let home = tempfile::tempdir().expect("cc-rust home");
+    let home = tempfile::tempdir().expect("allthecodes home");
     let home_path = home.path().to_str().expect("utf-8 temp path");
     let session = PtySession::spawn_with_env(
         default_args(),
         120,
         24,
         true,
-        &[("CC_RUST_HOME", home_path)],
+        &[("ALLTHECODES_HOME", home_path)],
     );
     std::thread::sleep(RENDER_WAIT);
 

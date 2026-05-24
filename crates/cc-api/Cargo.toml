@@ -2,7 +2,7 @@
 name = "cc-api"
 version = "0.1.0"
 edition = "2021"
-description = "Provider API clients, streaming transport, retry, and token-counting for cc-rust"
+description = "Provider API clients, streaming transport, retry, and token-counting for allthecodes"
 
 [dependencies]
 anyhow = { workspace = true }

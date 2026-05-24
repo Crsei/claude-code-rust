@@ -15,7 +15,7 @@
 
 use std::path::PathBuf;
 
-/// Chromium-based browsers cc-rust knows how to find and talk to.
+/// Chromium-based browsers allthecodes knows how to find and talk to.
 ///
 /// Ordered by popularity — callers that want "the first browser we can see"
 /// should iterate in [`BROWSER_DETECTION_ORDER`].

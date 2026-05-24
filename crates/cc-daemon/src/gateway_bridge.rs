@@ -350,7 +350,7 @@ mod tests {
     #[serial]
     fn bridge_enqueues_submit_with_gateway_context() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         let bridge = GatewayDaemonBridge::for_worker("assistant-session-1");
 
         let receipt = bridge
@@ -376,7 +376,7 @@ mod tests {
     #[serial]
     fn bridge_appends_gateway_events_to_durable_run_log() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         let store = GatewayStore::default_with_policy(SessionKeyPolicy::default());
         let source = gateway::RemoteSource::new(
             gateway::RemoteTransport::Http,

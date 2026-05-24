@@ -36,9 +36,9 @@ async fn test_config_show() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_config_set_model_is_read_only() {
-    // Use a tempdir as CC_RUST_HOME so we don't clobber the real user file.
+    // Use a tempdir as ALLTHECODES_HOME so we don't clobber the real user file.
     let dir = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
     let handler = ConfigHandler;
     let mut ctx = test_ctx();
     let result = handler
@@ -72,7 +72,7 @@ async fn test_config_set_model_rejects_write_entry() {
 #[serial_test::serial]
 async fn test_config_set_model_reasoning_effort() {
     let dir = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
     let handler = ConfigHandler;
     let mut ctx = test_ctx();
     let result = handler
@@ -92,7 +92,7 @@ async fn test_config_set_model_reasoning_effort() {
 #[serial_test::serial]
 async fn test_config_set_permission_mode_updates_live_context() {
     let dir = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
     let handler = ConfigHandler;
     let mut ctx = test_ctx();
     let result = handler
@@ -113,7 +113,7 @@ async fn test_config_set_permission_mode_updates_live_context() {
 #[serial_test::serial]
 async fn test_config_set_permission_mode_full_access_canonicalizes_to_bypass() {
     let dir = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
     let handler = ConfigHandler;
     let mut ctx = test_ctx();
     let result = handler
@@ -139,7 +139,7 @@ async fn test_config_set_permission_mode_full_access_canonicalizes_to_bypass() {
 #[serial_test::serial]
 async fn test_config_set_permission_mode_auto_respects_disabled_policy() {
     let dir = tempfile::tempdir().unwrap();
-    let _g = EnvGuard::set("CC_RUST_HOME", dir.path().to_str().unwrap());
+    let _g = EnvGuard::set("ALLTHECODES_HOME", dir.path().to_str().unwrap());
     let handler = ConfigHandler;
     let mut ctx = test_ctx();
     ctx.app_state.tool_permission_context.is_auto_mode_available = Some(false);
@@ -181,7 +181,7 @@ async fn test_config_set_invalid_existing_file_does_not_publish_staged_state() {
     let dir = tempfile::tempdir().unwrap();
     let project_root = dir.path().join("workspace");
     let nested = project_root.join("src");
-    let project_dir = project_root.join(".cc-rust");
+    let project_dir = project_root.join(".allthecodes");
     std::fs::create_dir_all(&nested).unwrap();
     std::fs::create_dir_all(&project_dir).unwrap();
     std::fs::write(project_dir.join("settings.json"), "{ invalid json").unwrap();
@@ -203,7 +203,7 @@ async fn test_config_set_project_from_subdir_preserves_existing_settings() {
     let dir = tempfile::tempdir().unwrap();
     let project_root = dir.path().join("workspace");
     let nested = project_root.join("src").join("nested");
-    let project_dir = project_root.join(".cc-rust");
+    let project_dir = project_root.join(".allthecodes");
     std::fs::create_dir_all(&nested).unwrap();
     std::fs::create_dir_all(&project_dir).unwrap();
 
@@ -231,7 +231,7 @@ async fn test_config_set_project_from_subdir_preserves_existing_settings() {
     assert_eq!(written.model.as_deref(), Some("claude-opus"));
     assert_eq!(written.verbose, Some(true));
     assert_eq!(written.theme.as_deref(), Some("light"));
-    assert!(!nested.join(".cc-rust").join("settings.json").exists());
+    assert!(!nested.join(".allthecodes").join("settings.json").exists());
 }
 
 #[tokio::test]
@@ -274,7 +274,7 @@ async fn test_config_sources_empty_default() {
     }
 }
 
-/// Process-env guard for tests that mutate CC_RUST_HOME.
+/// Process-env guard for tests that mutate ALLTHECODES_HOME.
 struct EnvGuard {
     key: &'static str,
     previous: Option<String>,

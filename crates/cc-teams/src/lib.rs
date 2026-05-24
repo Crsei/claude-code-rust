@@ -22,6 +22,7 @@ pub mod protocol;
 pub mod reconnection;
 pub mod runner;
 pub mod send_message;
+pub(crate) mod storage_paths;
 pub mod team_spawn;
 pub mod tool_specs;
 pub mod types;

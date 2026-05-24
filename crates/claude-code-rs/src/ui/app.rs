@@ -249,9 +249,9 @@ pub struct App {
     view_mode: ViewMode,
     /// Extra state only used in transcript/focus modes.
     transcript_state: TranscriptState,
-    /// Env-driven terminal config: `CLAUDE_CODE_NO_FLICKER`,
-    /// `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE`, `CLAUDE_CODE_DISABLE_MOUSE`,
-    /// `CLAUDE_CODE_SCROLL_SPEED`.
+    /// Env-driven terminal config: `ALLTHECODES_NO_FLICKER`,
+    /// `ALLTHECODES_ENABLE_MOUSE_CAPTURE`, `ALLTHECODES_DISABLE_MOUSE`,
+    /// `ALLTHECODES_SCROLL_SPEED`.
     terminal_env: TerminalEnvConfig,
 
     // Voice dictation (issue #13)

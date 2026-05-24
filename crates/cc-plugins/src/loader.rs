@@ -84,7 +84,7 @@ struct InstalledPluginsFile {
     plugins: Vec<PluginEntry>,
 }
 
-/// Load installed plugins from `~/.cc-rust/plugins/installed_plugins.json`.
+/// Load installed plugins from `~/.allthecodes/plugins/installed_plugins.json`.
 pub fn load_installed_plugins_report() -> LoadedPlugins {
     let path = installed_plugins_path();
     if !path.is_file() {
@@ -153,7 +153,7 @@ pub fn load_installed_plugins() -> Vec<PluginEntry> {
     load_installed_plugins_report().plugins
 }
 
-/// Save installed plugins to `~/.cc-rust/plugins/installed_plugins.json`.
+/// Save installed plugins to `~/.allthecodes/plugins/installed_plugins.json`.
 pub fn save_installed_plugins(plugins: &[PluginEntry]) -> Result<()> {
     let path = installed_plugins_path();
     if let Some(parent) = path.parent() {
@@ -403,9 +403,9 @@ mod tests {
     }
 
     impl EnvGuard {
-        fn set_cc_rust_home(path: &Path) -> Self {
-            let old = std::env::var("CC_RUST_HOME").ok();
-            std::env::set_var("CC_RUST_HOME", path);
+        fn set_allthecodes_home(path: &Path) -> Self {
+            let old = std::env::var("ALLTHECODES_HOME").ok();
+            std::env::set_var("ALLTHECODES_HOME", path);
             Self { old }
         }
     }
@@ -413,8 +413,8 @@ mod tests {
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             match &self.old {
-                Some(value) => std::env::set_var("CC_RUST_HOME", value),
-                None => std::env::remove_var("CC_RUST_HOME"),
+                Some(value) => std::env::set_var("ALLTHECODES_HOME", value),
+                None => std::env::remove_var("ALLTHECODES_HOME"),
             }
         }
     }
@@ -472,10 +472,10 @@ mod tests {
     #[serial_test::serial]
     fn corrupt_installed_plugins_reports_diagnostic() {
         let home = std::env::temp_dir().join(format!(
-            "cc_rust_corrupt_installed_{}",
+            "allthecodes_corrupt_installed_{}",
             uuid::Uuid::new_v4()
         ));
-        let _guard = EnvGuard::set_cc_rust_home(&home);
+        let _guard = EnvGuard::set_allthecodes_home(&home);
         std::fs::create_dir_all(crate::plugins_dir()).unwrap();
         std::fs::write(installed_plugins_path(), "{ this is not json").unwrap();
 
@@ -501,10 +501,10 @@ mod tests {
     #[serial_test::serial]
     fn installed_plugin_with_malformed_manifest_enters_error_state() {
         let home = std::env::temp_dir().join(format!(
-            "cc_rust_malformed_installed_manifest_{}",
+            "allthecodes_malformed_installed_manifest_{}",
             uuid::Uuid::new_v4()
         ));
-        let _guard = EnvGuard::set_cc_rust_home(&home);
+        let _guard = EnvGuard::set_allthecodes_home(&home);
         let plugin_dir = cache_dir().join("local").join("bad-plugin").join("1.0.0");
         std::fs::create_dir_all(&plugin_dir).unwrap();
         std::fs::write(
@@ -557,10 +557,10 @@ mod tests {
     #[serial_test::serial]
     fn cached_plugin_with_malformed_manifest_reports_diagnostic() {
         let home = std::env::temp_dir().join(format!(
-            "cc_rust_malformed_cached_manifest_{}",
+            "allthecodes_malformed_cached_manifest_{}",
             uuid::Uuid::new_v4()
         ));
-        let _guard = EnvGuard::set_cc_rust_home(&home);
+        let _guard = EnvGuard::set_allthecodes_home(&home);
         let plugin_dir = cache_dir().join("local").join("bad-cache").join("1.0.0");
         std::fs::create_dir_all(&plugin_dir).unwrap();
         std::fs::write(plugin_dir.join("plugin.json"), "{ invalid json").unwrap();

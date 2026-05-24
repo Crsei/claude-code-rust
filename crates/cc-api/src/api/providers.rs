@@ -233,14 +233,14 @@ const AUTH_BEDROCK: &[&str] = &[
     "AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY",
 ];
 const AUTH_VERTEX: &[&str] = &[
-    "CLAUDE_CODE_VERTEX_ACCESS_TOKEN",
+    "ALLTHECODES_VERTEX_ACCESS_TOKEN",
     "GOOGLE_OAUTH_ACCESS_TOKEN",
     "GOOGLE_APPLICATION_CREDENTIALS",
     "gcloud application-default access token",
 ];
-const AUTH_FOUNDRY: &[&str] = &["CLAUDE_CODE_USE_FOUNDRY", "AZURE_FOUNDRY_*"];
+const AUTH_FOUNDRY: &[&str] = &["ALLTHECODES_USE_FOUNDRY", "AZURE_FOUNDRY_*"];
 
-pub const FOUNDRY_UNSUPPORTED_REASON: &str = "Microsoft Foundry provider selection is known from the reference project, but cc-rust has no Foundry request/auth adapter yet";
+pub const FOUNDRY_UNSUPPORTED_REASON: &str = "Microsoft Foundry provider selection is known from the reference project, but allthecodes has no Foundry request/auth adapter yet";
 
 /// All supported providers 鈥?ordered by detection priority.
 ///

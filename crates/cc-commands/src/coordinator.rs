@@ -237,7 +237,7 @@ mod tests {
                 team_name: team_name.to_string(),
                 team_file_path: ctx
                     .cwd
-                    .join(".cc-rust")
+                    .join(".allthecodes")
                     .join("teams")
                     .join(team_name)
                     .join("config.json")
@@ -260,7 +260,7 @@ mod tests {
     async fn start_enables_coordinator_and_creates_active_team() {
         let home = tempfile::tempdir().unwrap();
         let cwd = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
         let _features = FeatureOverrideGuard;
         features::set_runtime_override(FeatureFlags::all_disabled());
         install_mock_team_runtime();
@@ -297,7 +297,7 @@ mod tests {
     async fn stop_disables_coordinator_without_clearing_team() {
         let home = tempfile::tempdir().unwrap();
         let cwd = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
         let _features = FeatureOverrideGuard;
         features::set_runtime_override(FeatureFlags::all_disabled());
         install_mock_team_runtime();
@@ -322,7 +322,7 @@ mod tests {
     async fn status_reports_coordinator_tool_policy() {
         let home = tempfile::tempdir().unwrap();
         let cwd = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
         let _features = FeatureOverrideGuard;
         features::set_runtime_override(FeatureFlags::all_disabled());
         install_mock_team_runtime();

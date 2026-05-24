@@ -11,7 +11,7 @@
 //! - **Context snapshot**: token estimates, cost breakdown, tool usage statistics
 //! - **Session metadata**: git branch, project path, model, timestamps
 //!
-//! Storage: `~/.cc-rust/exports/<session_id>.session.json`
+//! Storage: `~/.allthecodes/exports/<session_id>.session.json`
 
 mod builders;
 mod compression;

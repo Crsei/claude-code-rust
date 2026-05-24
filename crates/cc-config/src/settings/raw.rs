@@ -80,7 +80,7 @@ pub struct RawSettings {
     pub effort_level: Option<String>,
     /// Codex/OpenAI Responses reasoning effort. Serialized with the Codex CLI
     /// key name so users can reuse `model_reasoning_effort = "high"` muscle
-    /// memory in cc-rust settings JSON.
+    /// memory in allthecodes settings JSON.
     #[serde(rename = "model_reasoning_effort", alias = "modelReasoningEffort")]
     pub model_reasoning_effort: Option<String>,
     pub fast_mode: Option<bool>,

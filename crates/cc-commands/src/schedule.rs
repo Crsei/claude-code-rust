@@ -9,7 +9,7 @@
 //!   and served by [`cc_services::scheduler::SchedulerStore`]. All
 //!   subcommands below operate on this store.
 //! - **remote triggers** — delegated to a cloud-side agent runtime in the
-//!   Bun reference. In cc-rust the remote path requires OAuth/API
+//!   Bun reference. In allthecodes the remote path requires OAuth/API
 //!   groundwork we haven't landed yet, so `/schedule remote …` currently
 //!   refuses and points the user at the design doc.
 //!
@@ -299,7 +299,7 @@ fn trigger(store: &SchedulerStore, id_raw: &str) -> String {
 
 fn remote_hint(_rest: &str) -> String {
     [
-        "Remote triggers are not implemented yet in cc-rust (issue #60).",
+        "Remote triggers are not implemented yet in allthecodes (issue #60).",
         "",
         "The first /schedule milestone covers LOCAL cron only — tasks persist",
         "to {data_root}/scheduled_tasks.json and are run by the current",

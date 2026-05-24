@@ -326,7 +326,7 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
 
     // Validate output style. Built-in names always pass; unknown names
     // are accepted but flagged Info so the user knows we'll look for a
-    // matching <cwd>/.cc-rust/output-styles/<name>.md file at runtime.
+    // matching <cwd>/.allthecodes/output-styles/<name>.md file at runtime.
     if let Some(style) = &settings.output_style {
         let trimmed = style.trim();
         if trimmed.is_empty() {
@@ -341,7 +341,7 @@ pub fn validate_settings(settings: &SettingsJson) -> Vec<ValidationWarning> {
                 warnings.push(ValidationWarning {
                     field: "outputStyle".to_string(),
                     message: format!(
-                        "Unknown built-in style '{}'. Expected one of {}, or a custom file in .cc-rust/output-styles/.",
+                        "Unknown built-in style '{}'. Expected one of {}, or a custom file in .allthecodes/output-styles/.",
                         trimmed,
                         BUILT_IN_STYLE_NAMES.join(", "),
                     ),

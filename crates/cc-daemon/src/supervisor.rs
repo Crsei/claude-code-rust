@@ -397,7 +397,7 @@ mod tests {
     #[serial]
     fn default_worker_spec_uses_daemon_paths() {
         let temp = tempfile::tempdir().unwrap();
-        let _guard = EnvGuard::set("CC_RUST_HOME", temp.path());
+        let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
         let specs = default_worker_specs(temp.path());
 
         assert_eq!(specs.len(), 1);

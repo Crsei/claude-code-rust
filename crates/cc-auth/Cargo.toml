@@ -2,7 +2,7 @@
 name = "cc-auth"
 version = "0.1.0"
 edition = "2021"
-description = "Authentication (API key, OAuth, Keychain) for cc-rust"
+description = "Authentication (API key, OAuth, Keychain) for allthecodes"
 
 [dependencies]
 anyhow = { workspace = true }

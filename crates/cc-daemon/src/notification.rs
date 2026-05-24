@@ -88,7 +88,7 @@ pub fn send_windows_toast(notif: &FullNotification) {
     #[cfg(target_os = "windows")]
     {
         if let Err(e) = notify_rust::Notification::new()
-            .appname("cc-rust")
+            .appname("allthecodes")
             .summary(&notif.title)
             .body(&notif.body)
             .show()

@@ -326,7 +326,7 @@ mod tests {
     #[serial]
     async fn bare_plan_enters_plan_mode_and_shows_placeholder() {
         let tmp = tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let _visual = EnvGuard::unset("VISUAL");
         let _editor = EnvGuard::unset("EDITOR");
 
@@ -356,7 +356,7 @@ mod tests {
     #[serial]
     async fn plan_is_idempotent_and_preserves_prior_mode() {
         let tmp = tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::AcceptEdits);
         PlanHandler.execute("", &mut ctx).await.unwrap();
@@ -373,7 +373,7 @@ mod tests {
     #[serial]
     async fn approve_restores_prior_mode_and_records_approval() {
         let tmp = tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::AcceptEdits);
         PlanHandler.execute("", &mut ctx).await.unwrap();
@@ -398,11 +398,11 @@ mod tests {
     #[serial]
     async fn show_existing_plan_renders_body() {
         let tmp = tempdir().unwrap();
-        let plan_dir = tmp.path().join(".cc-rust");
+        let plan_dir = tmp.path().join(".allthecodes");
         fs::create_dir_all(&plan_dir).unwrap();
         let plan_path = plan_dir.join("plan.md");
         fs::write(&plan_path, "# My Plan\n\n1. Step one\n").unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("show", &mut ctx).await.unwrap();
@@ -419,7 +419,7 @@ mod tests {
     #[serial]
     async fn unknown_subcommand_prints_usage() {
         let tmp = tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("bogus", &mut ctx).await.unwrap();
@@ -437,7 +437,7 @@ mod tests {
     #[serial]
     async fn path_subcommand_prints_resolved_path() {
         let tmp = tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("path", &mut ctx).await.unwrap();
@@ -454,7 +454,7 @@ mod tests {
     #[serial]
     async fn open_without_editor_creates_template_and_reports() {
         let tmp = tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
         let _visual = EnvGuard::unset("VISUAL");
         let _editor = EnvGuard::unset("EDITOR");
 
@@ -475,7 +475,7 @@ mod tests {
     #[serial]
     async fn classify_previews_explicit_entry() {
         let tmp = tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
 
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler

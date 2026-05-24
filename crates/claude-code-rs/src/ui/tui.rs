@@ -301,9 +301,9 @@ pub async fn run_tui(
         app.sync_status_context_from_state(&app_state);
     }
 
-    // Terminal env config (issue #12) — `CLAUDE_CODE_NO_FLICKER`,
-    // `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE`, `CLAUDE_CODE_DISABLE_MOUSE`,
-    // `CLAUDE_CODE_SCROLL_SPEED`. Cached for the duration of the session.
+    // Terminal env config (issue #12) — `ALLTHECODES_NO_FLICKER`,
+    // `ALLTHECODES_ENABLE_MOUSE_CAPTURE`, `ALLTHECODES_DISABLE_MOUSE`,
+    // `ALLTHECODES_SCROLL_SPEED`. Cached for the duration of the session.
     app.set_terminal_env(terminal_env);
 
     for message in engine.messages() {
@@ -396,7 +396,7 @@ pub async fn run_tui(
 
     loop {
         // Draw the UI only when something changed (dirty flag).
-        // `CLAUDE_CODE_NO_FLICKER=0` bypasses synchronized-update escapes
+        // `ALLTHECODES_NO_FLICKER=0` bypasses synchronized-update escapes
         // (issue #12) for users on terminals that handle them poorly.
         if app.is_dirty() {
             let sync = app.terminal_env().sync_updates;

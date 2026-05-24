@@ -14,7 +14,7 @@
 //! - Diffed against transcript NDJSON for cross-validation
 //! - Fed into compliance/review tooling
 //!
-//! Storage: `~/.cc-rust/audits/<session_id>.audit.json`
+//! Storage: `~/.allthecodes/audits/<session_id>.audit.json`
 
 use std::path::{Path, PathBuf};
 
@@ -107,7 +107,7 @@ pub struct VerifyResult {
 // ---------------------------------------------------------------------------
 
 const FORMAT_VERSION: &str = "1.0.0";
-const EXPORTER_VERSION: &str = concat!("cc-rust/", env!("CARGO_PKG_VERSION"));
+const EXPORTER_VERSION: &str = concat!("allthecodes/", env!("CARGO_PKG_VERSION"));
 const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 // ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000
 
 /// Export a saved session (by ID) as an auditable JSON record.
 ///
-/// If `output_path` is `None`, writes to `~/.cc-rust/audits/<session_id>.audit.json`.
+/// If `output_path` is `None`, writes to `~/.allthecodes/audits/<session_id>.audit.json`.
 /// Returns the path of the written file.
 pub fn export_audit_record(session_id: &str, output_path: Option<&Path>) -> Result<PathBuf> {
     let session_file = load_session_file_raw(session_id)?;

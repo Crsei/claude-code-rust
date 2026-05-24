@@ -10,7 +10,7 @@
 //!   stdout. Chrome exits us by closing stdin.
 //!
 //! In addition to the Chrome side, this host runs a local socket server
-//! (`src/browser/transport.rs`) so that a separate cc-rust process — the MCP
+//! (`src/browser/transport.rs`) so that a separate allthecodes process — the MCP
 //! stdio bridge (`--claude-in-chrome-mcp`, see `mcp_bridge.rs`) — can connect
 //! and forward tool calls. The native host fans tool_request messages from
 //! the socket out to Chrome and fans tool_response messages back.

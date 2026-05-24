@@ -157,7 +157,7 @@ impl Tool for ExitPlanModeTool {
                 },
                 "allowedPrompts": {
                     "type": "array",
-                    "description": "Prompt-based permissions requested by the plan. cc-rust maps explicit Bash patterns and common verification prompts conservatively to transient session allow rules.",
+                    "description": "Prompt-based permissions requested by the plan. allthecodes maps explicit Bash patterns and common verification prompts conservatively to transient session allow rules.",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -468,11 +468,11 @@ fn plan_cwd() -> PathBuf {
 
     #[cfg(test)]
     let fallback = std::env::temp_dir()
-        .join("cc-rust-plan-workflow")
+        .join("allthecodes-plan-workflow")
         .join(plan_test_thread_dir());
     #[cfg(not(test))]
-    let fallback = std::env::temp_dir().join("cc-rust-plan-workflow");
-    let _ = std::fs::create_dir_all(fallback.join(".cc-rust"));
+    let fallback = std::env::temp_dir().join("allthecodes-plan-workflow");
+    let _ = std::fs::create_dir_all(fallback.join(".allthecodes"));
     fallback
 }
 
@@ -582,7 +582,7 @@ mod tests {
     impl PlanCwdGuard {
         fn new() -> Self {
             let dir = tempfile::tempdir().expect("tempdir");
-            std::fs::create_dir_all(dir.path().join(".cc-rust"))
+            std::fs::create_dir_all(dir.path().join(".allthecodes"))
                 .expect("create project config dir");
             let previous = std::env::current_dir().expect("read current dir");
             std::env::set_current_dir(dir.path()).expect("set current dir");

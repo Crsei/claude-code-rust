@@ -65,12 +65,8 @@ pub fn find_agents_md_files(cwd: &Path) -> Vec<PathBuf> {
 
 /// Read the contents of a single project instruction file.
 pub fn load_agents_md(path: &Path) -> Result<String> {
-    std::fs::read_to_string(path).with_context(|| {
-        format!(
-            "Failed to read project instructions at {}",
-            path.display()
-        )
-    })
+    std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read project instructions at {}", path.display()))
 }
 
 /// Find all project instruction files from `cwd` upwards and combine their

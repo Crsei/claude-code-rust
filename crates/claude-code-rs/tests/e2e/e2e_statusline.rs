@@ -36,12 +36,12 @@ struct HeadlessSession {
 }
 
 impl HeadlessSession {
-    fn spawn(cwd: &std::path::Path, cc_rust_home: &std::path::Path) -> Self {
+    fn spawn(cwd: &std::path::Path, allthecodes_home: &std::path::Path) -> Self {
         let mut child = Command::new(headless_bin())
             .arg("--headless")
             .arg("-C")
             .arg(cwd)
-            .env("CC_RUST_HOME", cc_rust_home)
+            .env("ALLTHECODES_HOME", allthecodes_home)
             .env("ANTHROPIC_API_KEY", "")
             .env("AZURE_API_KEY", "")
             .env("OPENAI_API_KEY", "")
@@ -175,7 +175,7 @@ fn cli_init_only_accepts_status_line_command() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -209,7 +209,7 @@ fn cli_init_only_tolerates_malformed_status_line() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -229,7 +229,7 @@ fn cli_init_only_starts_without_status_line_config() {
 
     let project = tempfile::tempdir().expect("project tmpdir");
     let mut cmd = assert_cmd::Command::cargo_bin("claude-code-rs").expect("binary not found");
-    cmd.env("CC_RUST_HOME", dir.path())
+    cmd.env("ALLTHECODES_HOME", dir.path())
         .env("ANTHROPIC_API_KEY", "")
         .env("AZURE_API_KEY", "")
         .env("OPENAI_API_KEY", "")
@@ -243,7 +243,7 @@ fn cli_init_only_starts_without_status_line_config() {
 #[test]
 #[serial]
 fn headless_statusline_payload_surfaces_runtime_snapshot_fields() {
-    let home = tempfile::tempdir().expect("cc-rust home");
+    let home = tempfile::tempdir().expect("allthecodes home");
     std::fs::write(
         home.path().join("settings.json"),
         serde_json::to_string_pretty(&json!({

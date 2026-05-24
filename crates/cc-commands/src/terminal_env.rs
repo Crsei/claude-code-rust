@@ -4,15 +4,15 @@
 //!
 //! | Variable                    | Effect                                             |
 //! |-----------------------------|----------------------------------------------------|
-//! | `CLAUDE_CODE_NO_FLICKER`    | `1` forces synchronized-update escape sequences;   |
+//! | `ALLTHECODES_NO_FLICKER`    | `1` forces synchronized-update escape sequences;   |
 //! |                             | `0` turns them off. Default is on (we already use  |
 //! |                             | them) so this is a way to opt out on terminals     |
 //! |                             | that behave badly.                                 |
-//! | `CLAUDE_CODE_ENABLE_MOUSE_CAPTURE` | `0` turns off TUI mouse capture for wheel |
+//! | `ALLTHECODES_ENABLE_MOUSE_CAPTURE` | `0` turns off TUI mouse capture for wheel |
 //! |                                    | events. Default is on for session scroll. |
-//! | `CLAUDE_CODE_DISABLE_MOUSE`        | Legacy override. `1` keeps native terminal |
+//! | `ALLTHECODES_DISABLE_MOUSE`        | Legacy override. `1` keeps native terminal |
 //! |                                    | mouse handling enabled.                    |
-//! | `CLAUDE_CODE_SCROLL_SPEED`  | Lines per PageUp / PageDown scroll step. Integer,  |
+//! | `ALLTHECODES_SCROLL_SPEED`  | Lines per PageUp / PageDown scroll step. Integer,  |
 //! |                             | clamped to `[1, 50]`. Default: 5.                  |
 //!
 //! Boolean parsing follows the conventional `1|true|yes|on` family,
@@ -24,7 +24,7 @@ use std::env;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalEnvConfig {
     /// Use synchronized-update escape sequences in the render loop. The
-    /// cc-rust TUI emits these by default to reduce tearing; this gate is
+    /// allthecodes TUI emits these by default to reduce tearing; this gate is
     /// here so users on broken terminals can turn them off.
     pub sync_updates: bool,
     /// Whether to skip crossterm mouse capture so native terminal text
@@ -78,18 +78,18 @@ impl TerminalEnvConfig {
         let mut disable_mouse: Option<bool> = None;
         for (k, v) in iter {
             match k.as_ref() {
-                "CLAUDE_CODE_NO_FLICKER" => {
+                "ALLTHECODES_NO_FLICKER" => {
                     if let Some(b) = parse_bool(v.as_ref()) {
                         cfg.sync_updates = b;
                     }
                 }
-                "CLAUDE_CODE_ENABLE_MOUSE_CAPTURE" => {
+                "ALLTHECODES_ENABLE_MOUSE_CAPTURE" => {
                     enable_mouse_capture = parse_bool(v.as_ref());
                 }
-                "CLAUDE_CODE_DISABLE_MOUSE" => {
+                "ALLTHECODES_DISABLE_MOUSE" => {
                     disable_mouse = parse_bool(v.as_ref());
                 }
-                "CLAUDE_CODE_SCROLL_SPEED" => {
+                "ALLTHECODES_SCROLL_SPEED" => {
                     if let Ok(n) = v.as_ref().trim().parse::<u16>() {
                         cfg.scroll_speed = n.clamp(Self::MIN_SCROLL_SPEED, Self::MAX_SCROLL_SPEED);
                     }
@@ -200,20 +200,20 @@ mod tests {
 
     #[test]
     fn no_flicker_0_disables_sync_updates() {
-        let cfg = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_NO_FLICKER", "0")]);
+        let cfg = TerminalEnvConfig::from_pairs(vec![("ALLTHECODES_NO_FLICKER", "0")]);
         assert!(!cfg.sync_updates);
     }
 
     #[test]
     fn no_flicker_1_keeps_sync_updates_on() {
-        let cfg = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_NO_FLICKER", "1")]);
+        let cfg = TerminalEnvConfig::from_pairs(vec![("ALLTHECODES_NO_FLICKER", "1")]);
         assert!(cfg.sync_updates);
     }
 
     #[test]
     fn disable_mouse_accepts_common_truthy() {
         for value in ["1", "true", "YES", "on"] {
-            let cfg = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_DISABLE_MOUSE", value)]);
+            let cfg = TerminalEnvConfig::from_pairs(vec![("ALLTHECODES_DISABLE_MOUSE", value)]);
             assert!(
                 cfg.disable_mouse,
                 "value {:?} should enable disable_mouse",
@@ -226,7 +226,7 @@ mod tests {
     fn enable_mouse_capture_opts_into_mouse_events() {
         for value in ["1", "true", "YES", "on"] {
             let cfg =
-                TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", value)]);
+                TerminalEnvConfig::from_pairs(vec![("ALLTHECODES_ENABLE_MOUSE_CAPTURE", value)]);
             assert!(
                 !cfg.disable_mouse,
                 "value {:?} should enable mouse capture",
@@ -237,38 +237,38 @@ mod tests {
 
     #[test]
     fn legacy_disable_mouse_false_still_enables_mouse_capture() {
-        let cfg = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_DISABLE_MOUSE", "0")]);
+        let cfg = TerminalEnvConfig::from_pairs(vec![("ALLTHECODES_DISABLE_MOUSE", "0")]);
         assert!(!cfg.disable_mouse);
     }
 
     #[test]
     fn explicit_disable_mouse_wins_over_enable_mouse_capture() {
         let cfg = TerminalEnvConfig::from_pairs(vec![
-            ("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "1"),
-            ("CLAUDE_CODE_DISABLE_MOUSE", "1"),
+            ("ALLTHECODES_ENABLE_MOUSE_CAPTURE", "1"),
+            ("ALLTHECODES_DISABLE_MOUSE", "1"),
         ]);
         assert!(cfg.disable_mouse);
     }
 
     #[test]
     fn scroll_speed_parses_and_clamps() {
-        let cfg = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_SCROLL_SPEED", "12")]);
+        let cfg = TerminalEnvConfig::from_pairs(vec![("ALLTHECODES_SCROLL_SPEED", "12")]);
         assert_eq!(cfg.scroll_speed, 12);
 
-        let cfg_hi = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_SCROLL_SPEED", "9999")]);
+        let cfg_hi = TerminalEnvConfig::from_pairs(vec![("ALLTHECODES_SCROLL_SPEED", "9999")]);
         assert_eq!(cfg_hi.scroll_speed, TerminalEnvConfig::MAX_SCROLL_SPEED);
 
-        let cfg_zero = TerminalEnvConfig::from_pairs(vec![("CLAUDE_CODE_SCROLL_SPEED", "0")]);
+        let cfg_zero = TerminalEnvConfig::from_pairs(vec![("ALLTHECODES_SCROLL_SPEED", "0")]);
         assert_eq!(cfg_zero.scroll_speed, TerminalEnvConfig::MIN_SCROLL_SPEED);
     }
 
     #[test]
     fn garbage_values_fall_back_to_defaults() {
         let cfg = TerminalEnvConfig::from_pairs(vec![
-            ("CLAUDE_CODE_NO_FLICKER", "maybe"),
-            ("CLAUDE_CODE_ENABLE_MOUSE_CAPTURE", "later"),
-            ("CLAUDE_CODE_DISABLE_MOUSE", ""),
-            ("CLAUDE_CODE_SCROLL_SPEED", "fast"),
+            ("ALLTHECODES_NO_FLICKER", "maybe"),
+            ("ALLTHECODES_ENABLE_MOUSE_CAPTURE", "later"),
+            ("ALLTHECODES_DISABLE_MOUSE", ""),
+            ("ALLTHECODES_SCROLL_SPEED", "fast"),
         ]);
         assert_eq!(cfg, TerminalEnvConfig::default());
     }
