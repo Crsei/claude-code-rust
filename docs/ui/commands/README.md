@@ -54,7 +54,7 @@
 | `/plan`, `/plan enter`, `/plan open`, `/plan edit`, `/plan approve`, `/plan reject` | [text-and-external.md](text-and-external.md#plan-workflow) and [approval-snapshots.md](approval-snapshots.md#plan-approval) |
 | `/permissions mode plan` | [text-and-external.md](text-and-external.md#permissions-mode-plan) |
 | `/mcp auth start <name>` | [text-and-external.md](text-and-external.md#mcp-auth-start-name) |
-| `/login 2`, `/login 3`, `/login 4`, `/login codex`, `/login 5`, `/login codex-cli`, `/login bedrock`, `/login vertex`, `/login-code <code>` | [text-and-external.md](text-and-external.md#login-subcommands-and-login-code) |
+| `/login claude-ai`, `/login console`, `/login codex-oauth`, `/login codex-cli`, `/login bedrock`, `/login vertex`, `/login-code <code>` | [text-and-external.md](text-and-external.md#login-subcommands-and-login-code) |
 | `/chrome help`, `/chrome reconnect` | [text-and-external.md](text-and-external.md#chrome) |
 | `/hooks open <layer>` | [text-and-external.md](text-and-external.md#hooks-open-layer) |
 | `/keybindings open` | [text-and-external.md](text-and-external.md#keybindings-open) |
@@ -64,4 +64,3 @@
 | `/session` | [text-and-external.md](text-and-external.md#session) |
 | `/resume` | [text-and-external.md](text-and-external.md#resume) |
 | `/logout`, `/clear`, `/tasks stop <id>`, `/tasks delete <id>`, `/team kill|delete|leave`, `/mcp remove <name>`, `/plugin disable|uninstall <id>`, `/permissions reset` | [approval-snapshots.md](approval-snapshots.md#direct-execute-no-confirm) |
-

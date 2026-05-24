@@ -387,9 +387,9 @@
 
 关键期望:
 
-- Claude Code key fills `/login `.
-- OAuth rows submit `/login 2|3|4` and then external URL output handles the next step.
-- Codex CLI submits `/login 5`.
+- Claude Code key fills `/login sk-ant-api03-`.
+- OAuth rows submit `/login claude-ai`, `/login console`, or `/login codex-oauth` and then external URL output handles the next step.
+- Codex CLI submits `/login codex-cli`.
 
 ## Permissions Management
 

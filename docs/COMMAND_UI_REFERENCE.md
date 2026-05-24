@@ -39,8 +39,8 @@
 | `/sandbox` | 无参数打开 `SandboxSurface` | sandbox enabled、mode、network | Enter 会提交 `/sandbox on/off`、`/sandbox mode ...`、`/sandbox network ...` |
 | `/hooks` | 无参数打开 `HooksSurface` | user/project hook settings scope、hook event tree | 面板本身只读；`/hooks open <layer>` 会打开 settings 文件 |
 | `/mcp` | 无参数打开 `McpSurface` | MCP server status/edit/reconnect/remove/add、server kind/settings、tool list/detail | 同时是选择器类；`.mcp.json` approval 另见确认/审批类 |
-| `/login` | 无参数打开 `LoginSurface` | API key、Claude.ai OAuth、Console OAuth、OpenAI Codex OAuth、Codex CLI import | OAuth 会给出外部授权 URL，并用 `/login-code` 完成 |
-| `/permissions` (`/perms`) | 无参数打开 `PermissionsSurface` | permission mode、workspace/user/project/local/session allow/ask/deny rules、session grants | Enter 填充 `/permissions mode ...`、`allow/ask/deny ... --scope`、`session-grant`、`clear-session-grants` 等命令；实际工具审批由权限 dialog 处理 |
+| `/login` | 无参数打开 `LoginSurface` | claude-code/codex/custom profile 切换、Claude.ai/Console/Codex OAuth、Codex CLI import | TUI 提交具名 `/login ...` 命令；OAuth 会给出外部授权 URL，并用 `/login-code` 完成 |
+| `/permissions` (`/perms`) | 无参数打开 `PermissionsSurface` | permission mode、workspace/user/project/local/session allow/ask/deny rules、session grants | Enter 填充 `/permissions mode ...`、`allow/ask/deny ... --scope`、`session-grant`、`clear-session-grants` 等命令；`/permissions full access` 直接映射到 confirmed bypass；实际工具审批由权限 dialog 处理 |
 | `/keybindings` | 当前无专用 `CommandSurface`，默认创建并打开文件 | `~/.cc-rust/keybindings.json` | 通过 `$VISUAL`/`$EDITOR` 打开；command palette 会显示 edit target |
 | `/statusline` | 当前无专用 `CommandSurface`，走文本命令 | `statusLine.command`、enabled、refresh、timeout、padding | 写入 user settings，并同步当前 TUI runtime snapshot |
 | `/plugin` | 当前无专用 `CommandSurface`，走文本命令 | installed/enabled/active plugin 状态 | `/plugin` UI surface 仍是计划项；当前支持 list/status/enable/disable/uninstall |
@@ -68,7 +68,7 @@
 | `/config` | tabbed form + model/theme/effort pickers | Enter 提交 `/config show`、`/config set ...` 等 |
 | `/diff` | diff source/file selector + detail view | Enter 从文件列表进入 detail；`b` 返回列表 |
 | `/hooks` | settings scope tabs + hook event list | Enter 提交 `/hooks list <event>`；`o` 打开当前 scope |
-| `/login` | login method selector | Enter/数字提交 `/login status`、`/login 2` 等 |
+| `/login` | named login/profile selector | Enter/快捷字母提交 `/login status`、`/login claude-code`、`/login codex` 等 |
 | `/mcp` | MCP server list/detail + kind/settings/tool list/tool detail | Enter 按当前 action 提交 status/edit/reconnect/remove；detail panes 展示 redacted settings、transport kind、tools 与 auth/status hints |
 | `/memory` | memory file/scope selector | Enter 按当前 action 提交 edit/show/path/open |
 | `/permissions` (`/perms`) | permission mode/rules/session-grants surface | Enter 填充 mode/rule/session 命令；workspace entry 可生成当前 cwd scope 的 allow/ask/deny rule |
@@ -110,10 +110,10 @@
 
 | 命令 | 外部行为 | 备注 |
 | --- | --- | --- |
-| `/login 2` | 输出 Claude.ai OAuth 授权 URL | 之后用 `/login-code <code>` |
-| `/login 3` | 输出 Console OAuth 授权 URL | Console flow 还会尝试创建/存储 API key |
-| `/login 4` 或 `/login codex` | 输出 OpenAI Codex OAuth 授权 URL | 之后用 `/login-code <code>` |
-| `/login 5` 或 `/login codex-cli` | 读取/刷新 Codex CLI auth | 依赖 `~/.codex/auth.json`，不打开 UI |
+| `/login claude-ai` | 输出 Claude.ai OAuth 授权 URL | 之后用 `/login-code <code>` |
+| `/login console` | 输出 Console OAuth 授权 URL | Console flow 还会尝试创建/存储 API key |
+| `/login codex-oauth` | 输出 OpenAI Codex OAuth 授权 URL | 之后用 `/login-code <code>` |
+| `/login codex-cli` | 读取/刷新 Codex CLI auth | 依赖 `~/.codex/auth.json`，不打开 UI |
 | `/login bedrock` | 提示 AWS Bedrock 环境配置 | 可能要求用户在外部 shell/cloud 环境配置凭据 |
 | `/login vertex` | 提示 GCP Vertex 配置 | 可能要求用户运行 `gcloud auth application-default login` |
 | `/mcp auth start <name>` | 输出 MCP server OAuth 授权 URL | 完成命令是 `/mcp auth complete ...` |

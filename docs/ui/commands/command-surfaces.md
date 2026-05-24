@@ -256,9 +256,9 @@ Left/Right switch action tabs | Up/Down navigate | Enter select | s status | 1-5
 
 关键期望:
 
-- API key 选择填充 `/login `。
-- OAuth 选择提交 `/login 2|3|4` 并输出外部授权 URL。
-- Codex CLI 选择提交 `/login 5`。
+- API key 选择填充 `/login sk-ant-api03-`。
+- OAuth 选择提交 `/login claude-ai`、`/login console`、`/login codex-oauth` 并输出外部授权 URL。
+- Codex CLI 选择提交 `/login codex-cli`。
 
 ## MCP
 

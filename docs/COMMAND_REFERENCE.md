@@ -223,14 +223,17 @@
   - `dontAsk`
 - Mode aliases:
   - `ask` → `default`
+  - `full access` / `full-access` → `bypass`
   - `readonly` → `plan`
 - Notes:
+  - `/permissions full access` is accepted as a TUI-friendly shorthand for `/permissions mode bypass --confirm`
   - `bypass` 还会检查 `is_bypass_permissions_mode_available`
   - 无参数在 Rust TUI 中打开 `PermissionsSurface`，可浏览 mode、workspace/permission rules，并填充常用 `/permissions ...` 命令
   - `allow` / `ask` / `deny` 默认写 user scope；显式 `--session` 只改当前会话
 - Examples:
   - `/permissions`
   - `/permissions mode auto`
+  - `/permissions full access`
   - `/permissions mode readonly`
   - `/permissions allow Bash`
   - `/permissions ask Edit --project`
@@ -461,43 +464,39 @@
 - Syntax:
   - `/login`
   - `/login status`
-  - `/login claude_code`
-  - `/login anthropic_method`
-  - `/login anthropic`
-  - `/login openai_codex`
-  - `/login openai_api`
-  - `/login openai_api sk-...`
+  - `/login claude-code`
+  - `/login claude-ai`
+  - `/login console`
+  - `/login codex`
+  - `/login codex-oauth`
+  - `/login codex-cli`
+  - `/login custom`
+  - `/login openai-api`
+  - `/login openai-api sk-...`
   - `/login sk-ant-...`
   - `/login sk-...`
-  - `/login 1`
-  - `/login 2`
-  - `/login 3`
-  - `/login 4`
-  - `/login 5`
-  - `/login codex`
-  - `/login codex-cli`
   - `/login bedrock`
   - `/login vertex`
   - `/login cloud`
 - Top-level entries:
-  - `claude_code`：Claude Code / Anthropic-compatible API Key、Claude.ai OAuth、Console OAuth
-  - `openai_codex`：OpenAI Codex OAuth / Codex CLI credentials import
-  - `openai_api`：OpenAI Platform API Key，写入 cc-rust 的 OpenAI keychain account
-- Compatibility: `anthropic`、`anthropic_method`、`anthropic-method` 仍等价于 `claude_code`。
-- Meaning of numbered compatibility entries:
-  - `1`：手动粘贴 Claude Code / Anthropic-compatible API Key
-  - `2`：Claude.ai OAuth
-  - `3`：Console OAuth
-  - `4` / `codex`：OpenAI Codex OAuth
-  - `5` / `codex-cli`：检查并尝试导入 / 刷新 `~/.codex/auth.json`
-  - `6` / `bedrock`：当前 REPL 进程启用 AWS Bedrock provider
-  - `7` / `vertex`：当前 REPL 进程启用 GCP Vertex AI provider
+  - `claude-code`：select and persist the Claude Code / Anthropic-compatible auth profile
+  - `claude-ai`：Claude.ai OAuth
+  - `console`：Console OAuth
+  - `codex`：select and persist the OpenAI Codex auth profile
+  - `codex-oauth`：OpenAI Codex OAuth
+  - `codex-cli`：check/import/refresh `~/.codex/auth.json`
+  - `custom`：select an existing `authProfiles.custom` entry
+  - `openai-api`：OpenAI Platform API Key，写入 cc-rust 的 OpenAI keychain account
+- Compatibility: `claude_code`、`anthropic`、`anthropic_method`、`anthropic-method` 仍等价于 `claude-code`；数字 `/login 1/2/3/...` 不再作为入口。
 - Examples:
   - `/login`
   - `/login status`
+  - `/login claude-code`
+  - `/login codex`
+  - `/login custom`
   - `/login sk-ant-api03-...`
-  - `/login openai_api sk-proj-...`
-  - `/login 4`
+  - `/login openai-api sk-proj-...`
+  - `/login codex-oauth`
   - `/login codex-cli`
   - `/login bedrock`
   - `/login vertex`
@@ -509,9 +508,9 @@
   - `/login-code <authorization-code>`
   - `/login-code <redirect-url-containing-code>`
 - Behavior:
-  - 完成由 `/login 2`、`/login 3`、`/login 4` 发起的 OAuth 流程
+  - 完成由 `/login claude-ai`、`/login console`、`/login codex-oauth` 发起的 OAuth 流程
 - Notes:
-  - 如果没有 pending OAuth state，会直接提示先跑 `/login 2/3/4`
+  - 如果没有 pending OAuth state，会直接提示先跑 `/login claude-ai`、`/login console` 或 `/login codex-oauth`
   - 如果传的是整条回调 URL，会自动尝试提取 `code=` 查询参数
 - Examples:
   - `/login-code eyJhbGciOi...`

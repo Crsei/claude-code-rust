@@ -1,11 +1,11 @@
 use crate::harness::API_TIMEOUT;
-use crate::script::{TestKey, TestCase, TestRunner, TestStep};
+use crate::script::{TestCase, TestKey, TestRunner, TestStep};
 use crate::tests::SCRIPTS_LOG_ROOT;
 use std::time::Duration;
 
-/// 测试 1: `/login claude_code` 登录后询问项目结构，检查权限对话框是否弹出，批准后验证正常运行。
+/// 测试 1: `/login claude-code` 登录后询问项目结构，检查权限对话框是否弹出，批准后验证正常运行。
 ///
-/// 流程：启动 TUI（default 权限模式）→ /login claude_code → 输入问题 →
+/// 流程：启动 TUI（default 权限模式）→ /login claude-code → 输入问题 →
 ///       等待权限对话框或响应 → 批准对话框 → 验证输出 → 关闭
 #[test]
 fn script_login_structure_with_permissions() {
@@ -17,7 +17,7 @@ fn script_login_structure_with_permissions() {
         .step(TestStep::SkipTrustGate)
         .step(TestStep::Wait(Duration::from_secs(2)))
         .step(TestStep::Snapshot("initial".into()))
-        .step(TestStep::LoginSwitch("claude_code".into()))
+        .step(TestStep::LoginSwitch("claude-code".into()))
         .step(TestStep::Wait(Duration::from_secs(3)))
         .step(TestStep::Snapshot("after_login".into()))
         .step(TestStep::Input(

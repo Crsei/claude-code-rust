@@ -4,7 +4,9 @@
 //!   /login                  - interactive login (choose method)
 //!   /login status           - show current auth status
 //!   /login sk-...           - store Anthropic/OpenAI API key directly
-//!   /login 1..7             - select login/provider method
+//!   /login claude-code      - select the Claude Code / Anthropic-compatible profile
+//!   /login codex            - select the OpenAI Codex profile
+//!   /login custom           - select an existing custom auth profile
 //!   /login bedrock|vertex   - enable a cloud provider for this process
 
 use anyhow::Result;
@@ -43,14 +45,24 @@ impl CommandHandler for LoginHandler {
         let rest = parts.collect::<Vec<_>>().join(" ");
 
         match head {
-            "claude_code" | "claude-code" | "claude" | "anthropic_method" | "anthropic-method"
+            "claude-code" | "claude_code" | "claude" | "anthropic_method" | "anthropic-method"
             | "anthropic" => {
                 if rest.trim().is_empty() {
-                    Ok(CommandResult::Output(claude_code_login_menu()))
+                    Ok(CommandResult::Output(select_provider_profile(
+                        settings::API_PROVIDER_ANTHROPIC,
+                        Some("native"),
+                        ctx,
+                    )))
                 } else {
                     execute_claude_code_method(&rest, ctx)
                 }
             }
+            "claude-ai" | "claude_ai" => Ok(CommandResult::Output(login_code::start_pending(
+                OAuthMethod::ClaudeAi,
+            ))),
+            "console" => Ok(CommandResult::Output(login_code::start_pending(
+                OAuthMethod::Console,
+            ))),
             "openai_api" | "openai-api" | "openai" => {
                 if rest.trim().is_empty() {
                     Ok(CommandResult::Output(openai_api_prompt()))
@@ -58,23 +70,16 @@ impl CommandHandler for LoginHandler {
                     Ok(CommandResult::Output(store_openai_api_key(&rest, ctx)))
                 }
             }
-            "openai_codex" | "openai-codex" => Ok(CommandResult::Output(start_codex_oauth(ctx))),
-            "1" => Ok(CommandResult::Output(
-                "Paste your Claude Code / Anthropic-compatible API key:\n  /login sk-ant-api03-..."
-                    .to_string(),
+            "openai_codex" | "openai-codex" | "codex" => Ok(CommandResult::Output(
+                select_provider_profile(settings::API_PROVIDER_OPENAI_CODEX, Some("codex"), ctx),
             )),
-            "2" => Ok(CommandResult::Output(login_code::start_pending(
-                OAuthMethod::ClaudeAi,
-            ))),
-            "3" => Ok(CommandResult::Output(login_code::start_pending(
-                OAuthMethod::Console,
-            ))),
-            "4" | "codex" => Ok(CommandResult::Output(start_codex_oauth(ctx))),
-            "5" | "codex-cli" => Ok(CommandResult::Output(check_codex_cli(ctx))),
-            "6" | "bedrock" | "aws" => Ok(CommandResult::Output(enable_bedrock_session())),
-            "7" | "vertex" | "vertex-ai" | "gcp" => {
-                Ok(CommandResult::Output(enable_vertex_session()))
+            "codex-oauth" | "openai-codex-oauth" => {
+                Ok(CommandResult::Output(start_codex_oauth(ctx)))
             }
+            "codex-cli" => Ok(CommandResult::Output(check_codex_cli(ctx))),
+            "custom" => Ok(CommandResult::Output(select_custom_profile(ctx))),
+            "bedrock" | "aws" => Ok(CommandResult::Output(enable_bedrock_session())),
+            "vertex" | "vertex-ai" | "gcp" => Ok(CommandResult::Output(enable_vertex_session())),
             "cloud" | "platform" | "platforms" => Ok(CommandResult::Output(cloud_setup_text())),
             _ => Ok(CommandResult::Output(format!(
                 "Unknown option: \"{}\"\n\n{}",
@@ -87,19 +92,25 @@ impl CommandHandler for LoginHandler {
 
 fn login_menu() -> String {
     "Select login method:\n\
-     \n  claude_code       Claude Code / Anthropic-compatible API Key, Claude.ai OAuth, Console OAuth\
-     \n  openai_codex      OpenAI Codex OAuth / Codex CLI import\
-     \n  openai_api        OpenAI API Key\
-     \n\nCompatibility shortcuts: /login anthropic, /login anthropic_method, /login 1..7, /login codex, /login codex-cli, /login bedrock, /login vertex, /login cloud"
+     \n  claude-code       Select Claude Code / Anthropic-compatible profile\
+     \n  claude-ai         Start Claude.ai OAuth\
+     \n  console           Start Console OAuth\
+     \n  codex             Select OpenAI Codex profile\
+     \n  codex-oauth       Start OpenAI Codex OAuth\
+     \n  codex-cli         Check/import Codex CLI credentials\
+     \n  custom            Select existing custom auth profile\
+     \n  openai-api        Store an OpenAI API key\
+     \n  bedrock           Enable AWS Bedrock for this session\
+     \n  vertex            Enable GCP Vertex AI for this session"
         .to_string()
 }
 
 fn claude_code_login_menu() -> String {
     "Claude Code / Anthropic-compatible login methods:\n\
-     \n  [1] API Key (paste manually)\
-     \n  [2] Claude.ai OAuth (Pro/Max subscription)\
-     \n  [3] Console OAuth (API billing)\
-     \n\nType /login 1, /login 2, /login 3, or paste a key with /login sk-ant-api03-..."
+     \n  api-key           Paste an API key with /login sk-ant-api03-...\
+     \n  claude-ai         Claude.ai OAuth (Pro/Max subscription)\
+     \n  console           Console OAuth (API billing)\
+     \n\nType /login claude-code api-key, /login claude-ai, /login console, or paste a key with /login sk-ant-api03-..."
         .to_string()
 }
 
@@ -109,14 +120,14 @@ fn openai_api_prompt() -> String {
 
 fn execute_claude_code_method(args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
     match args.trim() {
-        "1" | "api" | "api-key" | "api_key" => Ok(CommandResult::Output(
+        "api" | "api-key" | "api_key" => Ok(CommandResult::Output(
             "Paste your Claude Code / Anthropic-compatible API key:\n  /login sk-ant-api03-..."
                 .to_string(),
         )),
-        "2" | "claude" | "claude-ai" | "claude_ai" => Ok(CommandResult::Output(
+        "claude" | "claude-ai" | "claude_ai" => Ok(CommandResult::Output(
             login_code::start_pending(OAuthMethod::ClaudeAi),
         )),
-        "3" | "console" => Ok(CommandResult::Output(login_code::start_pending(
+        "console" => Ok(CommandResult::Output(login_code::start_pending(
             OAuthMethod::Console,
         ))),
         key if key.starts_with("sk-ant-") => {
@@ -409,7 +420,10 @@ fn codex_auth_status_text() -> Option<String> {
         let method = stored.oauth_method.as_deref().unwrap_or_default();
         if method.eq_ignore_ascii_case("openai_codex") {
             return if auth::token::is_token_expired(&stored) {
-                Some("OpenAI Codex OAuth token is expired. Run /login 4 to refresh.".to_string())
+                Some(
+                    "OpenAI Codex OAuth token is expired. Run /login codex-oauth to refresh."
+                        .to_string(),
+                )
             } else {
                 Some("Authenticated: OpenAI Codex OAuth (stored credentials)".to_string())
             };
@@ -422,7 +436,7 @@ fn codex_auth_status_text() -> Option<String> {
             return if auth::codex_cli::is_credential_expired(&cred) {
                 Some(
                     "OpenAI Codex OAuth (from Codex CLI) is expired. \
-                     Run /login 5 to refresh or /login 4 for a fresh login."
+                     Run /login codex-cli to refresh or /login codex-oauth for a fresh login."
                         .to_string(),
                 )
             } else {
@@ -503,6 +517,95 @@ fn start_codex_oauth(ctx: &mut CommandContext) -> String {
     msg
 }
 
+fn select_provider_profile(
+    api_provider: &str,
+    backend: Option<&str>,
+    ctx: &mut CommandContext,
+) -> String {
+    persist_provider_selection(api_provider, backend, ctx).unwrap_or_else(|| {
+        format!(
+            "Selected apiProvider={}{}.",
+            api_provider,
+            backend
+                .map(|value| format!(", backend={value}"))
+                .unwrap_or_default()
+        )
+    })
+}
+
+fn select_custom_profile(ctx: &mut CommandContext) -> String {
+    let path = settings::user_settings_path();
+    let mut raw = if path.exists() {
+        match std::fs::read_to_string(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|txt| serde_json::from_str::<RawSettings>(&txt).map_err(anyhow::Error::from))
+        {
+            Ok(raw) => raw,
+            Err(error) => {
+                return format!("Custom profile was not selected: {error}");
+            }
+        }
+    } else {
+        RawSettings::default()
+    };
+
+    let Some(profile) = raw
+        .auth_profiles
+        .as_ref()
+        .and_then(|profiles| profiles.get(settings::AUTH_PROFILE_CUSTOM))
+        .cloned()
+    else {
+        return "No authProfiles.custom entry is configured. Add one to settings.json, then run /login custom."
+            .to_string();
+    };
+
+    raw.active_auth_profile = Some(settings::AUTH_PROFILE_CUSTOM.to_string());
+    ctx.app_state.settings.active_auth_profile = Some(settings::AUTH_PROFILE_CUSTOM.to_string());
+    ctx.app_state
+        .settings
+        .auth_profiles
+        .insert(settings::AUTH_PROFILE_CUSTOM.to_string(), profile.clone());
+    if let Some(api_provider) = profile.api_provider.as_deref() {
+        ctx.app_state.settings.api_provider = Some(api_provider.to_string());
+        ctx.app_state
+            .settings
+            .sources
+            .insert("apiProvider".to_string(), settings::SettingsSource::User);
+    }
+    if let Some(backend) = profile.backend.as_deref() {
+        ctx.app_state.main_loop_backend = backend.to_string();
+        ctx.app_state.settings.backend = Some(backend.to_string());
+        ctx.app_state
+            .settings
+            .sources
+            .insert("backend".to_string(), settings::SettingsSource::User);
+    }
+    apply_profile_runtime_fields(&profile, ctx);
+    ctx.app_state.settings.sources.insert(
+        "activeAuthProfile".to_string(),
+        settings::SettingsSource::User,
+    );
+    ctx.app_state
+        .settings
+        .sources
+        .insert("authProfiles".to_string(), settings::SettingsSource::User);
+
+    match settings::write_user_settings(&raw) {
+        Ok(path) => format!(
+            "Selected authProfile=custom{} (persisted to {}).",
+            profile
+                .api_provider
+                .as_deref()
+                .map(|value| format!(", apiProvider={value}"))
+                .unwrap_or_default(),
+            path.display()
+        ),
+        Err(error) => format!(
+            "Custom profile selected for this session, but user settings were not updated: {error}"
+        ),
+    }
+}
+
 fn check_codex_cli(ctx: &mut CommandContext) -> String {
     let cred = match auth::codex_cli::read_codex_cli_credential() {
         Ok(Some(c)) => c,
@@ -515,7 +618,7 @@ fn check_codex_cli(ctx: &mut CommandContext) -> String {
             }
             return "Codex CLI auth.json found but not usable \
                     (auth_mode is not chatgpt or tokens are missing). \
-                    Use /login 1 to paste your API key, or /login 4 for OAuth."
+                    Use /login openai-api to paste your API key, or /login codex-oauth for OAuth."
                 .to_string();
         }
         Err(error) => {
@@ -551,7 +654,7 @@ fn check_codex_cli(ctx: &mut CommandContext) -> String {
             msg
         }
         Ok(None) => "Codex CLI token is expired and refresh failed. \
-             Run /login 4 for a fresh OAuth login, or re-login in Codex CLI."
+             Run /login codex-oauth for a fresh OAuth login, or re-login in Codex CLI."
             .to_string(),
         Err(error) => format!("Codex CLI token refresh failed: {error}"),
     }
@@ -639,7 +742,7 @@ fn persist_provider_selection(
             .sources
             .insert("backend".to_string(), settings::SettingsSource::User);
     }
-    let selected_model = if api_provider == settings::API_PROVIDER_OPENAI_CODEX {
+    if api_provider == settings::API_PROVIDER_OPENAI_CODEX {
         let model = resolve_codex_default_model(ctx, &raw);
         let available_models = settings::codex_model_ids();
         let model_capabilities = settings::codex_model_capabilities();
@@ -662,10 +765,8 @@ fn persist_provider_selection(
             "modelCapabilities".to_string(),
             settings::SettingsSource::User,
         );
-        ctx.app_state.settings.model.clone()
-    } else {
-        None
-    };
+    }
+    let selected_model = apply_profile_runtime_fields(&profile, ctx);
     settings::upsert_auth_profile(&mut raw, profile_name, profile, true);
     ctx.app_state.settings.api_provider = Some(api_provider.to_string());
     ctx.app_state.settings.active_auth_profile = Some(profile_name.to_string());
@@ -701,6 +802,42 @@ fn persist_provider_selection(
             error
         )),
     }
+}
+
+fn apply_profile_runtime_fields(
+    profile: &settings::ProviderProfileSettings,
+    ctx: &mut CommandContext,
+) -> Option<String> {
+    if let Some(model) = profile.model.as_deref() {
+        ctx.app_state.main_loop_model = model.to_string();
+        ctx.app_state.settings.model = Some(model.to_string());
+        ctx.app_state
+            .settings
+            .sources
+            .insert("model".to_string(), settings::SettingsSource::User);
+    }
+    if let Some(available_models) = profile.available_models.as_ref() {
+        ctx.app_state.settings.available_models = available_models.clone();
+        ctx.app_state.settings.sources.insert(
+            "availableModels".to_string(),
+            settings::SettingsSource::User,
+        );
+    }
+    if let Some(model_capabilities) = profile.model_capabilities.as_ref() {
+        ctx.app_state.settings.model_capabilities = model_capabilities.clone();
+        ctx.app_state.settings.sources.insert(
+            "modelCapabilities".to_string(),
+            settings::SettingsSource::User,
+        );
+    }
+    if let Some(effort) = profile.model_reasoning_effort.as_deref() {
+        ctx.app_state.settings.model_reasoning_effort = Some(effort.to_string());
+        ctx.app_state.settings.sources.insert(
+            "modelReasoningEffort".to_string(),
+            settings::SettingsSource::User,
+        );
+    }
+    ctx.app_state.settings.model.clone()
 }
 
 fn resolve_codex_default_model(ctx: &CommandContext, raw: &RawSettings) -> String {
@@ -879,27 +1016,31 @@ mod tests {
     #[test]
     fn test_login_menu_contains_options() {
         let menu = login_menu();
-        assert!(menu.contains("claude_code"));
+        assert!(menu.contains("claude-code"));
         assert!(menu.contains("Claude Code / Anthropic-compatible"));
-        assert!(menu.contains("/login anthropic"));
-        assert!(menu.contains("openai_codex"));
-        assert!(menu.contains("openai_api"));
-        assert!(menu.contains("/login 1..7"));
-        assert!(menu.contains("/login codex-cli"));
+        assert!(menu.contains("claude-ai"));
+        assert!(menu.contains("console"));
+        assert!(menu.contains("codex-oauth"));
+        assert!(menu.contains("openai-api"));
+        assert!(!menu.contains("/login 1..7"));
     }
 
     #[test]
     fn test_claude_code_menu_contains_legacy_options() {
         let menu = claude_code_login_menu();
         assert!(menu.contains("Claude Code / Anthropic-compatible"));
-        assert!(menu.contains("[1]"));
-        assert!(menu.contains("[2]"));
-        assert!(menu.contains("[3]"));
+        assert!(menu.contains("api-key"));
+        assert!(menu.contains("claude-ai"));
+        assert!(menu.contains("console"));
         assert!(menu.contains("sk-ant-api03"));
     }
 
     #[tokio::test]
-    async fn test_legacy_anthropic_alias_opens_claude_code_menu() {
+    #[serial_test::serial]
+    async fn test_legacy_anthropic_alias_selects_claude_code_profile() {
+        let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let dir = tempfile::TempDir::new().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
         let mut ctx = test_ctx();
 
         let result = LoginHandler
@@ -909,8 +1050,56 @@ mod tests {
 
         match result {
             CommandResult::Output(text) => {
-                assert!(text.contains("Claude Code / Anthropic-compatible"));
-                assert!(text.contains("[1]"));
+                assert!(text.contains("apiProvider=anthropic"));
+                assert_eq!(
+                    ctx.app_state.settings.active_auth_profile.as_deref(),
+                    Some(settings::AUTH_PROFILE_CLAUDE_CODE)
+                );
+            }
+            _ => panic!("expected output"),
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_named_codex_login_selects_profile_without_oauth() {
+        let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+        let dir = tempfile::TempDir::new().unwrap();
+        let _home = EnvGuard::set("CC_RUST_HOME", dir.path().to_str());
+        let mut ctx = test_ctx();
+
+        let result = LoginHandler
+            .execute("codex", &mut ctx)
+            .await
+            .expect("login command succeeds");
+
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("apiProvider=openai-codex"));
+                assert!(!text.contains("OAuth URL"));
+                assert_eq!(
+                    ctx.app_state.settings.active_auth_profile.as_deref(),
+                    Some(settings::AUTH_PROFILE_CODEX)
+                );
+            }
+            _ => panic!("expected output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_numeric_login_shortcut_is_not_registered() {
+        let mut ctx = test_ctx();
+
+        let result = LoginHandler
+            .execute("2", &mut ctx)
+            .await
+            .expect("login command succeeds");
+
+        match result {
+            CommandResult::Output(text) => {
+                assert!(text.contains("Unknown option"));
+                assert!(text.contains("claude-ai"));
+                assert!(!text.contains("/login 2"));
             }
             _ => panic!("expected output"),
         }
@@ -1051,6 +1240,15 @@ mod tests {
             .and_then(|profiles| profiles.get(settings::AUTH_PROFILE_CLAUDE_CODE))
             .expect("claude_code profile persisted");
         assert_eq!(claude_code.model.as_deref(), Some("deepseek-v4-pro"));
+        assert_eq!(
+            ctx.app_state.main_loop_model.as_str(),
+            "deepseek-v4-pro",
+            "profile selection should update the active runtime model"
+        );
+        assert_eq!(
+            ctx.app_state.settings.model.as_deref(),
+            Some("deepseek-v4-pro")
+        );
         assert_eq!(
             claude_code.base_url.as_deref(),
             Some("https://inferaichat.com")

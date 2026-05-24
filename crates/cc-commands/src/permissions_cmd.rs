@@ -95,6 +95,15 @@ pub struct PermissionsHandler;
 impl CommandHandler for PermissionsHandler {
     async fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
         let parts: Vec<&str> = args.split_whitespace().collect();
+        if parts
+            .first()
+            .is_some_and(|first| !is_permissions_subcommand(first))
+        {
+            if let Some(mode) = parse_permission_mode_shorthand(&parts) {
+                let mode_parts = vec![mode.as_str(), "--confirm"];
+                return handle_mode(&mode_parts, ctx);
+            }
+        }
 
         match parts.first().copied() {
             Some("mode") => handle_mode(&parts[1..], ctx),
@@ -114,10 +123,27 @@ impl CommandHandler for PermissionsHandler {
     }
 }
 
+fn is_permissions_subcommand(value: &str) -> bool {
+    matches!(
+        value,
+        "mode" | "allow" | "ask" | "deny" | "session-grant" | "clear-session-grants" | "reset"
+    )
+}
+
+fn parse_permission_mode_shorthand(parts: &[&str]) -> Option<PermissionMode> {
+    if parts.is_empty() {
+        return None;
+    }
+
+    let token = parts.join(" ");
+    PermissionMode::parse_configured(Some(&token)).ok()
+}
+
 fn usage() -> &'static str {
     "Usage:\n  \
        /permissions                              -- show effective settings + sources\n  \
        /permissions mode <m>                     -- m: default|auto|bypass|plan|acceptEdits|dontAsk\n  \
+       /permissions full access                  -- alias for mode bypass --confirm\n  \
        /permissions allow <rule> [scope]         -- always-allow rule\n  \
        /permissions ask   <rule> [scope]         -- always-ask rule\n  \
        /permissions deny  <rule> [scope]         -- always-deny rule\n  \
@@ -765,6 +791,26 @@ mod tests {
             .await
             .unwrap();
 
+        assert_eq!(
+            ctx.app_state.tool_permission_context.mode,
+            PermissionMode::Bypass
+        );
+    }
+
+    #[tokio::test]
+    async fn test_permissions_full_access_shorthand_sets_confirmed_bypass() {
+        let handler = PermissionsHandler;
+        let mut ctx = test_ctx();
+        ctx.app_state
+            .tool_permission_context
+            .is_bypass_permissions_mode_available = true;
+
+        let result = handler.execute("full access", &mut ctx).await.unwrap();
+        let CommandResult::Output(text) = result else {
+            panic!("expected output")
+        };
+
+        assert!(text.contains("Permission mode set to: bypass"));
         assert_eq!(
             ctx.app_state.tool_permission_context.mode,
             PermissionMode::Bypass

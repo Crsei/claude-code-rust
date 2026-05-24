@@ -360,21 +360,42 @@ impl PtySession {
         }
     }
 
-    /// 等待模型响应完成：状态栏显示 "ready" 且消息计数 > `min_msgs`。
-    pub fn wait_response_done(&self, min_msgs: usize, timeout: Duration) -> bool {
+    /// 等待模型响应完成。
+    ///
+    /// The current footer no longer renders the old `ready | N msgs` contract.
+    /// Treat a response as complete once the TUI has shown a busy state, emitted
+    /// additional output after the submitted prompt, and returned to a non-busy
+    /// screen.
+    pub fn wait_response_done(&self, _min_msgs: usize, timeout: Duration) -> bool {
         let start = Instant::now();
+        std::thread::sleep(Duration::from_millis(150));
+        let baseline_len = self.current_text().len();
+        let mut saw_busy = false;
+        let mut saw_output_after_submit = false;
+
         loop {
             if start.elapsed() > timeout {
                 return false;
             }
+
             let bar = self.status_bar();
-            if bar.contains("ready") {
-                if let Some(count) = parse_msg_count(&bar) {
-                    if count > min_msgs {
-                        return true;
-                    }
-                }
+            let screen = self.current_screen();
+            let busy = response_is_busy(&bar, &screen);
+            if busy {
+                saw_busy = true;
             }
+
+            if self.current_text().len() > baseline_len.saturating_add(8) {
+                saw_output_after_submit = true;
+            }
+
+            if !busy
+                && saw_output_after_submit
+                && (saw_busy || start.elapsed() > Duration::from_secs(2))
+            {
+                return true;
+            }
+
             std::thread::sleep(Duration::from_millis(200));
         }
     }
@@ -537,7 +558,12 @@ impl PtySession {
     }
 
     /// 等待子进程退出并保存到指定目录（不保存 .raw）。
-    pub fn finish_to(mut self, timeout: Duration, test_name: &str, dir: &std::path::Path) -> CapturedOutput {
+    pub fn finish_to(
+        mut self,
+        timeout: Duration,
+        test_name: &str,
+        dir: &std::path::Path,
+    ) -> CapturedOutput {
         let start = Instant::now();
         loop {
             if start.elapsed() > timeout {
@@ -723,6 +749,14 @@ fn is_status_bar_candidate(line: &str) -> bool {
         || trimmed.contains(" msgs")
         || trimmed.contains(" msg");
     has_model_path || has_status
+}
+
+fn response_is_busy(status_bar: &str, screen: &str) -> bool {
+    status_bar.contains("BUSY")
+        || status_bar.contains("tab to queue")
+        || screen.contains("Thinking")
+        || screen.contains("BUSY")
+        || screen.contains("tab to queue")
 }
 
 fn extract_status_from_text(text: &str) -> Option<String> {

@@ -11,34 +11,52 @@ const LOGIN_ACTIONS: &[LoginAction] = &[
         command: LoginCommand::Submit("/login status"),
     },
     LoginAction {
-        shortcut: '1',
+        shortcut: 'c',
+        label: "Claude Code",
+        description: "select the Claude Code / Anthropic-compatible profile",
+        command: LoginCommand::Submit("/login claude-code"),
+    },
+    LoginAction {
+        shortcut: 'k',
         label: "Claude Code key",
         description: "paste a Claude Code / Anthropic-compatible API key",
-        command: LoginCommand::FillPrompt("/login "),
+        command: LoginCommand::FillPrompt("/login sk-ant-api03-"),
     },
     LoginAction {
-        shortcut: '2',
+        shortcut: 'a',
         label: "Claude.ai",
         description: "start Claude.ai OAuth for Pro/Max accounts",
-        command: LoginCommand::Submit("/login 2"),
+        command: LoginCommand::Submit("/login claude-ai"),
     },
     LoginAction {
-        shortcut: '3',
+        shortcut: 'n',
         label: "Console",
         description: "start Console OAuth for API billing",
-        command: LoginCommand::Submit("/login 3"),
+        command: LoginCommand::Submit("/login console"),
     },
     LoginAction {
-        shortcut: '4',
+        shortcut: 'x',
         label: "Codex",
-        description: "start OpenAI Codex OAuth for ChatGPT accounts",
-        command: LoginCommand::Submit("/login 4"),
+        description: "select the OpenAI Codex profile",
+        command: LoginCommand::Submit("/login codex"),
     },
     LoginAction {
-        shortcut: '5',
+        shortcut: 'o',
+        label: "Codex OAuth",
+        description: "start OpenAI Codex OAuth for ChatGPT accounts",
+        command: LoginCommand::Submit("/login codex-oauth"),
+    },
+    LoginAction {
+        shortcut: 'i',
         label: "Codex CLI",
         description: "check or import ~/.codex/auth.json",
-        command: LoginCommand::Submit("/login 5"),
+        command: LoginCommand::Submit("/login codex-cli"),
+    },
+    LoginAction {
+        shortcut: 'u',
+        label: "Custom",
+        description: "select an existing custom auth profile",
+        command: LoginCommand::Submit("/login custom"),
     },
 ];
 
@@ -86,7 +104,7 @@ impl LoginSurface {
             detail_lines.push(String::new());
             detail_lines.push("Next action".to_string());
             detail_lines.push(plain_row("command:", action.command.preview()));
-            if matches!(action.shortcut, '2' | '3' | '4') {
+            if matches!(action.shortcut, 'a' | 'n' | 'o') {
                 detail_lines.push(plain_row(
                     "external:",
                     "OAuth URL is printed after the command starts",
@@ -95,12 +113,12 @@ impl LoginSurface {
             }
         }
         BetterViewPanel::new("Login / Claude Code")
-            .summary("profile=claude_code step=1/3 status=ready")
+            .summary("profiles=claude-code,codex,custom status=ready")
             .sections_title("Steps")
             .sections(sections, self.action_index)
             .detail_title("OAuth details")
             .detail_lines(detail_lines)
-            .footer("Enter start | Up/Down method | 1-5 select | Esc close")
+            .footer("Enter start | Up/Down method | shortcut letter select | Esc close")
             .render()
     }
 

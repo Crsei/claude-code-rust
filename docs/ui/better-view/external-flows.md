@@ -6,7 +6,7 @@
 
 ## OAuth URL Output
 
-适用: `/login 2`、`/login 3`、`/login 4`、`/mcp auth start <name>`
+适用: `/login claude-ai`、`/login console`、`/login codex-oauth`、`/mcp auth start <name>`
 
 ```text
 + External authorization ----------------------------------------------+
@@ -102,4 +102,3 @@
 
 - Do not add QR snapshots for Rust `/session`.
 - If future remote QR support is introduced, it needs a separate explicit design update.
-

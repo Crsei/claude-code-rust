@@ -12,7 +12,7 @@
 |-----------------------------------------------------------------------|
 | Steps                 OAuth details                                   |
 | > Choose method       provider: Claude.ai                             |
-|   Open URL            command: /login 2                               |
+|   Open URL            command: /login claude-ai                       |
 |   Enter code          completion: /login-code <code>                  |
 |                                                                       |
 |                       Next action                                     |
@@ -24,7 +24,7 @@
 
 关键期望:
 
-- Starting OAuth still submits `/login 2|3|4`.
+- Starting OAuth submits `/login claude-ai`, `/login console`, or `/login codex-oauth`.
 - The URL display belongs to external flow output.
 - Code completion remains `/login-code <code>`.
 

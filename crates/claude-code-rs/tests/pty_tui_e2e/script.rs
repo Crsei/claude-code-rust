@@ -55,6 +55,8 @@ pub enum TestStep {
     WaitForAny(Vec<String>, Duration),
     /// 等待状态栏包含指定文本。
     WaitForStatus(String, Duration),
+    /// 等待当前模型响应完成。
+    WaitResponseDone(Duration),
     /// 多行输入（每行依次发送）。
     MultilineInput(Vec<String>),
     /// 跳过 workspace trust gate。
@@ -279,9 +281,17 @@ impl TestReport {
     /// 如果有任何错误，panic 并打印详情。
     pub fn assert_no_errors(&self) {
         if self.errors.is_empty() {
-            eprintln!("[report] {} — ALL {} steps passed", self.test_name, self.steps.len());
+            eprintln!(
+                "[report] {} — ALL {} steps passed",
+                self.test_name,
+                self.steps.len()
+            );
         } else {
-            let mut msg = format!("[report] {} — {} errors:\n", self.test_name, self.errors.len());
+            let mut msg = format!(
+                "[report] {} — {} errors:\n",
+                self.test_name,
+                self.errors.len()
+            );
             for err in &self.errors {
                 msg.push_str(&format!("  {}\n", err));
             }
@@ -299,11 +309,16 @@ impl TestReport {
     pub fn summary(&self) {
         eprintln!("\n=== {} ===", self.test_name);
         eprintln!("Output: {}", self.output_dir.display());
-        eprintln!("{:<4} {:<6} {:<8} {}", "Step", "Time", "Status", "Description");
+        eprintln!(
+            "{:<4} {:<6} {:<8} {}",
+            "Step", "Time", "Status", "Description"
+        );
         eprintln!("{}", "-".repeat(70));
         for s in &self.steps {
             let status = if s.passed { "OK" } else { "FAIL" };
-            let snap = s.snapshot.as_ref()
+            let snap = s
+                .snapshot
+                .as_ref()
                 .map(|p| format!(" → {}", p.file_name().unwrap_or_default().to_string_lossy()))
                 .unwrap_or_default();
             eprintln!(
@@ -329,7 +344,11 @@ impl TestReport {
         if self.errors.is_empty() {
             return;
         }
-        let mut content = format!("Test: {}\nErrors: {}\n\n", self.test_name, self.errors.len());
+        let mut content = format!(
+            "Test: {}\nErrors: {}\n\n",
+            self.test_name,
+            self.errors.len()
+        );
         for err in &self.errors {
             content.push_str(&format!("{}\n", err));
         }
@@ -347,7 +366,9 @@ pub struct TestRunner {
 
 impl TestRunner {
     pub fn new() -> Self {
-        Self { auto_snapshot: true }
+        Self {
+            auto_snapshot: true,
+        }
     }
 
     /// 禁用自动截图（每个非 Snapshot 步骤后不自动截图）。
@@ -370,16 +391,16 @@ impl TestRunner {
         eprintln!("[runner] {} → {}", case.name, output_dir.display());
 
         // 启动 PTY 会话（始终使用真实 API key）
-        let env_refs: Vec<(&str, &str)> = case.env.iter()
+        let env_refs: Vec<(&str, &str)> = case
+            .env
+            .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
         let ws = case.workspace.as_deref().unwrap_or(workspace());
         let mode = case.permission_mode.as_deref().unwrap_or("bypass");
         let args: Vec<&str> = vec!["-C", ws, "--permission-mode", mode];
         let session = PtySession::spawn_with_env(
-            &args,
-            case.cols,
-            case.rows,
+            &args, case.cols, case.rows,
             false, // strip_keys=false：始终使用真实 API key
             &env_refs,
         );
@@ -388,7 +409,10 @@ impl TestRunner {
         let mut errors: Vec<TestError> = Vec::new();
 
         // 自动等待渲染 + 跳过 trust gate（如果步骤中有 SkipTrustGate，跳过自动处理）
-        let has_trust_gate = case.steps.iter().any(|s| matches!(s, TestStep::SkipTrustGate));
+        let has_trust_gate = case
+            .steps
+            .iter()
+            .any(|s| matches!(s, TestStep::SkipTrustGate));
         if !has_trust_gate {
             std::thread::sleep(RENDER_WAIT);
             skip_trust_gate(&session);
@@ -411,7 +435,10 @@ impl TestRunner {
             }
 
             // 自动截图（非 Snapshot 步骤）
-            if self.auto_snapshot && !matches!(step, TestStep::Snapshot(_)) && !matches!(step, TestStep::Wait(_)) {
+            if self.auto_snapshot
+                && !matches!(step, TestStep::Snapshot(_))
+                && !matches!(step, TestStep::Wait(_))
+            {
                 let label = format!("step_{:03}_{}", i + 1, sanitize(&desc));
                 let snap_text = session.snapshot_to(&label, &output_dir);
                 if snapshot_path.is_none() {
@@ -445,9 +472,7 @@ impl TestRunner {
                 session.send_ctrl_d();
                 session.finish_to(case.timeout, session_label, &output_dir)
             }
-            ExitMethod::Kill => {
-                session.finish_to(case.timeout, session_label, &output_dir)
-            }
+            ExitMethod::Kill => session.finish_to(case.timeout, session_label, &output_dir),
         };
 
         let session_log = output_dir.join(format!("{session_label}.log"));
@@ -565,7 +590,10 @@ impl TestRunner {
                 if bar.contains(text.as_str()) {
                     Ok(None)
                 } else {
-                    Err(err(format!("status bar '{}' does not contain '{}'", bar, text)))
+                    Err(err(format!(
+                        "status bar '{}' does not contain '{}'",
+                        bar, text
+                    )))
                 }
             }
 
@@ -584,7 +612,10 @@ impl TestRunner {
                 if found {
                     Ok(None)
                 } else {
-                    Err(err(format!("text '{}' not found within {:.0?}", text, timeout)))
+                    Err(err(format!(
+                        "text '{}' not found within {:.0?}",
+                        text, timeout
+                    )))
                 }
             }
 
@@ -594,7 +625,10 @@ impl TestRunner {
                 if found.is_some() {
                     Ok(None)
                 } else {
-                    Err(err(format!("none of {:?} found within {:.0?}", texts, timeout)))
+                    Err(err(format!(
+                        "none of {:?} found within {:.0?}",
+                        texts, timeout
+                    )))
                 }
             }
 
@@ -603,7 +637,18 @@ impl TestRunner {
                 if found {
                     Ok(None)
                 } else {
-                    Err(err(format!("status '{}' not found within {:.0?}", text, timeout)))
+                    Err(err(format!(
+                        "status '{}' not found within {:.0?}",
+                        text, timeout
+                    )))
+                }
+            }
+
+            TestStep::WaitResponseDone(timeout) => {
+                if session.wait_response_done(0, *timeout) {
+                    Ok(None)
+                } else {
+                    Err(err(format!("response not done within {:.0?}", timeout)))
                 }
             }
 
@@ -668,7 +713,7 @@ impl TestStep {
             TestStep::Wait(d) => format!("wait {:.0?}", d),
             TestStep::Input(s) => format!("input '{}'", truncate(s, 40)),
             TestStep::TypeText(s) => format!("type '{}'", truncate(s, 40)),
-            TestStep::Command(s) => format!("/{}", s),
+            TestStep::Command(s) => format!("/{}", truncate(s, 40)),
             TestStep::Key(k) => k.name().to_string(),
             TestStep::Snapshot(s) => format!("snapshot '{}'", s),
             TestStep::OpenPalette => "open palette".into(),
@@ -680,7 +725,10 @@ impl TestStep {
             TestStep::AssertScreenNotContains(s) => format!("screen !has '{}'", truncate(s, 30)),
             TestStep::WaitForText(s, d) => format!("wait '{}' ({:.0?})", truncate(s, 20), d),
             TestStep::WaitForAny(ss, d) => format!("wait any {:?} ({:.0?})", ss.len(), d),
-            TestStep::WaitForStatus(s, d) => format!("wait status '{}' ({:.0?})", truncate(s, 20), d),
+            TestStep::WaitForStatus(s, d) => {
+                format!("wait status '{}' ({:.0?})", truncate(s, 20), d)
+            }
+            TestStep::WaitResponseDone(d) => format!("wait response done ({:.0?})", d),
             TestStep::MultilineInput(ls) => format!("multiline ({} lines)", ls.len()),
             TestStep::SkipTrustGate => "skip trust".into(),
             TestStep::SetPermission(s) => format!("perm '{}'", s),
@@ -701,7 +749,13 @@ fn truncate(s: &str, max: usize) -> String {
 
 fn sanitize(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .trim_matches('_')
         .to_string()
@@ -714,10 +768,7 @@ mod tests {
     use super::*;
     use crate::model_flow::read_settings;
 
-    const SCRIPTS_LOG_ROOT: &str = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/logs/pty_tui_e2e_scripts"
-    );
+    const SCRIPTS_LOG_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/logs/pty_tui_e2e_scripts");
 
     /// 基础对话验证：读取 settings.json 中的 activeAuthProfile，验证模型回复。
     #[test]
@@ -752,7 +803,7 @@ mod tests {
             .step(TestStep::SkipTrustGate)
             .step(TestStep::Wait(Duration::from_secs(2)))
             .step(TestStep::Snapshot("before_switch".into()))
-            .step(TestStep::LoginSwitch("claude_code".into()))
+            .step(TestStep::LoginSwitch("claude-code".into()))
             .step(TestStep::Wait(Duration::from_secs(3)))
             .step(TestStep::Snapshot("after_login_switch".into()))
             .step(TestStep::AssertStatusBar("deepseek-v4-pro".into()))
@@ -777,8 +828,13 @@ mod tests {
             .step(TestStep::SetPermission("full access".into()))
             .step(TestStep::Wait(Duration::from_secs(2)))
             .step(TestStep::Snapshot("after_permission".into()))
-            .step(TestStep::Input("Use Bash to run: echo PERMISSIONS_TEST_OK".into()))
-            .step(TestStep::WaitForText("PERMISSIONS_TEST_OK".into(), API_TIMEOUT))
+            .step(TestStep::Input(
+                "Use Bash to run: echo PERMISSIONS_TEST_OK".into(),
+            ))
+            .step(TestStep::WaitForText(
+                "PERMISSIONS_TEST_OK".into(),
+                API_TIMEOUT,
+            ))
             .step(TestStep::Snapshot("tool_executed".into()))
             .step(TestStep::Key(TestKey::CtrlC))
             .step(TestStep::Wait(Duration::from_millis(500)))
@@ -794,7 +850,9 @@ mod tests {
         let case = TestCase::new("abort_recover")
             .log_root(SCRIPTS_LOG_ROOT)
             .step(TestStep::SkipTrustGate)
-            .step(TestStep::Input("Write a 2000-word essay about computing.".into()))
+            .step(TestStep::Input(
+                "Write a 2000-word essay about computing.".into(),
+            ))
             .step(TestStep::Wait(Duration::from_secs(3)))
             .step(TestStep::Key(TestKey::CtrlC))
             .step(TestStep::Snapshot("after_abort".into()))
@@ -842,6 +900,7 @@ mod tests {
     fn script_command_palette() {
         let case = TestCase::new("command_palette_flow")
             .log_root(SCRIPTS_LOG_ROOT)
+            .timeout(QUICK_TIMEOUT)
             .step(TestStep::SkipTrustGate)
             .step(TestStep::Wait(Duration::from_millis(500)))
             .step(TestStep::OpenPalette)

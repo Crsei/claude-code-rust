@@ -3,7 +3,8 @@
 //! Usage:
 //!   /login-code <authorization-code>
 //!
-//! This is the second step of the OAuth flow started by `/login 2`, `/login 3`, or `/login 4`.
+//! This is the second step of the OAuth flow started by `/login claude-ai`,
+//! `/login console`, or `/login codex-oauth`.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -22,7 +23,7 @@ struct PendingOAuth {
     state: String,
 }
 
-/// Start a pending OAuth flow. Called from `/login 2` or `/login 3`.
+/// Start a pending OAuth flow. Called from the named `/login ...` OAuth commands.
 ///
 /// Generates PKCE params, stores them, and returns the message with the auth URL.
 pub fn start_pending(method: config::OAuthMethod) -> String {
@@ -59,7 +60,7 @@ impl CommandHandler for LoginCodeHandler {
         if code.is_empty() {
             return Ok(CommandResult::Output(
                 "Usage: /login-code <authorization-code>\n\
-                 Start the OAuth flow first with /login 2, /login 3, or /login 4"
+                 Start the OAuth flow first with /login claude-ai, /login console, or /login codex-oauth"
                     .to_string(),
             ));
         }
@@ -69,7 +70,7 @@ impl CommandHandler for LoginCodeHandler {
             Some(p) => p,
             None => {
                 return Ok(CommandResult::Output(
-                    "No pending OAuth flow. Start one with /login 2, /login 3, or /login 4"
+                    "No pending OAuth flow. Start one with /login claude-ai, /login console, or /login codex-oauth"
                         .to_string(),
                 ));
             }
@@ -89,7 +90,7 @@ impl CommandHandler for LoginCodeHandler {
             Ok(r) => r,
             Err(e) => {
                 return Ok(CommandResult::Output(format!(
-                    "Token exchange failed: {}\n\nPlease retry with /login 2, /login 3, or /login 4",
+                    "Token exchange failed: {}\n\nPlease retry with /login claude-ai, /login console, or /login codex-oauth",
                     e
                 )));
             }
@@ -154,7 +155,7 @@ impl CommandHandler for LoginCodeHandler {
                 Err(e) => {
                     return Ok(CommandResult::Output(format!(
                         "OAuth tokens saved, but API key creation failed: {}\n\
-                         You can retry with /login 3",
+                         You can retry with /login console",
                         e
                     )));
                 }

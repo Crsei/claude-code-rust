@@ -314,16 +314,17 @@ FEATURE_KAIROS=1 claude-code-rs --daemon --port 19836
 |------|------|
 | `/login` | 显示认证菜单 |
 | `/login status` | 查看当前认证状态 |
-| `/login claude_code` | Claude Code / Anthropic-compatible 登录菜单 |
-| `/login anthropic` | 兼容别名，等价于 `/login claude_code` |
+| `/login claude-code` | 切换到 Claude Code / Anthropic-compatible profile |
+| `/login anthropic` | 兼容别名，等价于 `/login claude-code` |
 | `/login sk-ant-...` | 直接保存 Claude Code / Anthropic-compatible API Key |
-| `/login 1` | 手动粘贴 API Key |
-| `/login 2` | Claude.ai OAuth |
-| `/login 3` | Console OAuth |
-| `/login 4` 或 `/login codex` | OpenAI Codex OAuth |
-| `/login 5` 或 `/login codex-cli` | 从 `~/.codex/auth.json` 导入 / 刷新 |
-| `/login 6` 或 `/login bedrock` | 当前会话启用 AWS Bedrock provider 并显示配置状态 |
-| `/login 7` 或 `/login vertex` | 当前会话启用 GCP Vertex AI provider 并显示配置状态 |
+| `/login claude-ai` | Claude.ai OAuth |
+| `/login console` | Console OAuth |
+| `/login codex` | 切换到 OpenAI Codex profile |
+| `/login codex-oauth` | OpenAI Codex OAuth |
+| `/login codex-cli` | 从 `~/.codex/auth.json` 导入 / 刷新 |
+| `/login custom` | 切换到已有 `authProfiles.custom` |
+| `/login bedrock` | 当前会话启用 AWS Bedrock provider 并显示配置状态 |
+| `/login vertex` | 当前会话启用 GCP Vertex AI provider 并显示配置状态 |
 | `/login cloud` | 显示 Bedrock / Vertex 环境变量配置提示 |
 
 ### 6.5 Git / 输出导出

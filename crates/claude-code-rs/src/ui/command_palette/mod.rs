@@ -279,7 +279,7 @@ impl CommandItem {
     }
 
     fn executes_on_exact_palette_match(&self, query: &str) -> bool {
-        self.name == "plan" && query.eq_ignore_ascii_case(&self.name)
+        matches!(self.name.as_str(), "compact" | "plan") && query.eq_ignore_ascii_case(&self.name)
     }
 }
 

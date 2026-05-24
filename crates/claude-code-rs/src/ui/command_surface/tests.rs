@@ -305,22 +305,24 @@ fn login_surface_routes_auth_actions() {
     let mut surface = CommandSurface::Login(LoginSurface { action_index: 0 });
 
     assert!(surface.render().contains("Login / Claude Code"));
-    assert!(surface.render().contains("profile=claude_code"));
+    assert!(surface
+        .render()
+        .contains("profiles=claude-code,codex,custom"));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
         CommandSurfaceOutcome::Submit("/login status".to_string())
     );
 
     surface.handle_key(key(KeyCode::Right));
-    assert!(surface.render().contains("> Claude Code key"));
+    assert!(surface.render().contains("> Claude Code"));
     assert_eq!(
         surface.handle_key(key(KeyCode::Enter)),
-        CommandSurfaceOutcome::FillPrompt("/login ".to_string())
+        CommandSurfaceOutcome::Submit("/login claude-code".to_string())
     );
 
     assert_eq!(
-        surface.handle_key(key(KeyCode::Char('5'))),
-        CommandSurfaceOutcome::Submit("/login 5".to_string())
+        surface.handle_key(key(KeyCode::Char('i'))),
+        CommandSurfaceOutcome::Submit("/login codex-cli".to_string())
     );
 }
 

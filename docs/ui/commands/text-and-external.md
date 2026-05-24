@@ -317,7 +317,7 @@ Complete with:
 
 ## Login Subcommands And Login Code
 
-触发: `/login 2`
+触发: `/login claude-ai`
 
 ```text
 Claude.ai OAuth
@@ -327,7 +327,7 @@ After authorization:
   /login-code <code>
 ```
 
-触发: `/login 3`
+触发: `/login console`
 
 ```text
 Console OAuth
@@ -338,7 +338,7 @@ After authorization:
   /login-code <code>
 ```
 
-触发: `/login 4` 或 `/login codex`
+触发: `/login codex-oauth`
 
 ```text
 OpenAI Codex OAuth
@@ -348,7 +348,7 @@ After authorization:
   /login-code <code>
 ```
 
-触发: `/login 5` 或 `/login codex-cli`
+触发: `/login codex-cli`
 
 ```text
 Codex CLI auth

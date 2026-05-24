@@ -1,5 +1,5 @@
 use crate::harness::API_TIMEOUT;
-use crate::script::{TestKey, TestCase, TestRunner, TestStep};
+use crate::script::{TestCase, TestKey, TestRunner, TestStep};
 use crate::tests::SCRIPTS_LOG_ROOT;
 use std::time::Duration;
 

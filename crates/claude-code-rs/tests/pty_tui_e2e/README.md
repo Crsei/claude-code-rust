@@ -154,7 +154,7 @@ fn switch_profile() {
     let case = TestCase::new("switch_to_claude_code")
         .step(TestStep::SkipTrustGate)
         .step(TestStep::Wait(Duration::from_secs(2)))
-        .step(TestStep::LoginSwitch("claude_code".into()))
+        .step(TestStep::LoginSwitch("claude-code".into()))
         .step(TestStep::Wait(Duration::from_secs(3)))
         .step(TestStep::AssertStatusBar("deepseek-v4-pro".into()))
         .step(TestStep::Snapshot("after_switch".into()));

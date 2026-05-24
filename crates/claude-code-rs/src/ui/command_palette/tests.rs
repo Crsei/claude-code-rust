@@ -66,6 +66,18 @@ fn exact_plan_suggestion_executes_bare_plan_command() {
 }
 
 #[test]
+fn exact_compact_suggestion_executes_bare_compact_command() {
+    let mut palette = CommandPalette::new();
+    palette.sync_from_input("/compact", Path::new("/repo"));
+    let item = palette.filtered[palette.selected].clone();
+
+    match palette.apply_command_suggestion(&item, true).unwrap() {
+        CommandAction::Execute(command) => assert_eq!(command, "/compact"),
+        CommandAction::Insert(command) => panic!("expected execute action, got {command}"),
+    }
+}
+
+#[test]
 fn advisor_is_hidden_from_slash_palette() {
     let mut palette = CommandPalette::new();
     palette.sync_from_input("/advisor", Path::new("/repo"));

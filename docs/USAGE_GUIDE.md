@@ -78,12 +78,12 @@ export ANTHROPIC_API_KEY="sk-ant-api03-..."
 > /login sk-ant-api03-...
 
 # 方式 4: OAuth 登录 (Claude.ai Pro/Max 订阅用户)
-> /login 2
+> /login claude-ai
 # → 打印授权 URL → 浏览器中授权 → 复制 code
 > /login-code eyJhb...
 
 # 方式 5: OAuth 登录 (Console API 计费用户)
-> /login 3
+> /login console
 # → 同上流程，登录后自动创建 API Key 存入 Keychain
 
 # 查看认证状态
@@ -435,10 +435,14 @@ for event in streamed.events:
 
 | 命令 | 说明 |
 |------|------|
-| `/login` | 认证引导 — 选择登录方式 (API Key / Claude.ai OAuth / Console OAuth / cloud providers) |
-| `/login 1` | 直接输入 API Key |
-| `/login 2` | Claude.ai OAuth 登录 (Pro/Max 订阅用户，Bearer Token 模式) |
-| `/login 3` | Console OAuth 登录 (API 计费用户，自动创建 API Key) |
+| `/login` | 认证引导 — 选择具名 profile / OAuth / cloud providers |
+| `/login claude-code` | 切换到 Claude Code / Anthropic-compatible profile |
+| `/login claude-ai` | Claude.ai OAuth 登录 (Pro/Max 订阅用户，Bearer Token 模式) |
+| `/login console` | Console OAuth 登录 (API 计费用户，自动创建 API Key) |
+| `/login codex` | 切换到 OpenAI Codex profile |
+| `/login codex-oauth` | OpenAI Codex OAuth 登录 |
+| `/login codex-cli` | 从 `~/.codex/auth.json` 导入 / 刷新 |
+| `/login custom` | 切换到已有 `authProfiles.custom` |
 | `/login bedrock` | 当前会话启用 AWS Bedrock provider 并显示缺失环境变量 |
 | `/login vertex` | 当前会话启用 GCP Vertex AI provider 并显示缺失环境变量 |
 | `/login-code <code>` | 完成 OAuth 登录 — 粘贴授权后获得的 code |
