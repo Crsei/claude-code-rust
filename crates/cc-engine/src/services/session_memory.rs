@@ -3,7 +3,7 @@
 //!
 //! Memory entries are stored as individual JSON files under `~/.cc-rust/memory/`.
 //! This is complementary to the `session::memdir` module which manages
-//! CLAUDE.md-based memories; this service focuses on structured, searchable
+//! AGENTS.md/CLAUDE.md-based memories; this service focuses on structured, searchable
 //! per-session insights.
 
 use std::path::{Path, PathBuf};

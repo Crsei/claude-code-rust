@@ -9,7 +9,7 @@ use crate::{CommandContext, CommandHandler, CommandResult};
 
 pub struct InitHandler;
 
-const CLAUDE_MD_TEMPLATE: &str = r#"# CLAUDE.md
+const AGENTS_MD_TEMPLATE: &str = r#"# AGENTS.md
 
 Project instructions for cc-rust.
 
@@ -27,11 +27,21 @@ impl CommandHandler for InitHandler {
     async fn execute(&self, _args: &str, ctx: &mut CommandContext) -> Result<CommandResult> {
         let config_dir = ctx.cwd.join(".cc-rust");
         let settings_file = config_dir.join("settings.json");
+        let agents_md = ctx.cwd.join("AGENTS.md");
         let claude_md = ctx.cwd.join("CLAUDE.md");
 
+        // If AGENTS.md already exists, skip. Also skip if CLAUDE.md exists
+        // (user has a legacy instruction file).
+        if agents_md.exists() {
+            return Ok(CommandResult::Output(
+                "AGENTS.md already exists here. Skipping /init to avoid overwriting it."
+                    .to_string(),
+            ));
+        }
         if claude_md.exists() {
             return Ok(CommandResult::Output(
-                "CLAUDE.md already exists here. Skipping /init to avoid overwriting it."
+                "CLAUDE.md already exists here. Skipping /init to avoid overwriting it.\n\
+                 Tip: rename it to AGENTS.md to use the new primary filename."
                     .to_string(),
             ));
         }
@@ -47,10 +57,8 @@ impl CommandHandler for InitHandler {
             skipped.push(settings_file.display().to_string());
         }
 
-        if !claude_md.exists() {
-            fs::write(&claude_md, CLAUDE_MD_TEMPLATE)?;
-            created.push(claude_md.display().to_string());
-        }
+        fs::write(&agents_md, AGENTS_MD_TEMPLATE)?;
+        created.push(agents_md.display().to_string());
 
         let mut lines = vec!["Project initialization complete.".to_string()];
         if !created.is_empty() {
@@ -95,29 +103,61 @@ mod tests {
         }
 
         let settings = tmp.join(".cc-rust").join("settings.json");
-        let claude_md = tmp.join("CLAUDE.md");
+        let agents_md = tmp.join("AGENTS.md");
         assert!(settings.exists());
-        assert!(claude_md.exists());
-        assert!(fs::read_to_string(&claude_md)
+        assert!(agents_md.exists());
+        assert!(fs::read_to_string(&agents_md)
             .unwrap()
             .contains("Project instructions"));
-        assert!(fs::read_to_string(&claude_md).unwrap().contains("cc-rust"));
+        assert!(fs::read_to_string(&agents_md)
+            .unwrap()
+            .contains("cc-rust"));
 
-        fs::write(&claude_md, "# Existing instructions\n").unwrap();
+        fs::write(&agents_md, "# Existing instructions\n").unwrap();
 
         // Existing instructions are user-owned; /init must not rewrite them.
         let result2 = handler.execute("", &mut ctx).await.unwrap();
         match result2 {
+            CommandResult::Output(text) => {
+                assert!(text.contains("AGENTS.md already exists here"));
+                assert!(text.contains("Skipping /init"));
+            }
+            _ => panic!("Expected Output"),
+        }
+        assert_eq!(
+            fs::read_to_string(&agents_md).unwrap(),
+            "# Existing instructions\n"
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn test_init_skips_when_claude_md_exists() {
+        let tmp = std::env::temp_dir().join(format!(
+            "cc_rust_init_claude_skip_{}",
+            uuid::Uuid::new_v4()
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        // Pre-create a CLAUDE.md to simulate a legacy project.
+        fs::write(tmp.join("CLAUDE.md"), "# Legacy instructions\n").unwrap();
+
+        let handler = InitHandler;
+        let mut ctx = test_ctx();
+        ctx.cwd = tmp.clone();
+        let result = handler.execute("", &mut ctx).await.unwrap();
+        match result {
             CommandResult::Output(text) => {
                 assert!(text.contains("CLAUDE.md already exists here"));
                 assert!(text.contains("Skipping /init"));
             }
             _ => panic!("Expected Output"),
         }
-        assert_eq!(
-            fs::read_to_string(&claude_md).unwrap(),
-            "# Existing instructions\n"
-        );
+
+        // AGENTS.md must NOT be created when CLAUDE.md already exists.
+        assert!(!tmp.join("AGENTS.md").exists());
 
         let _ = fs::remove_dir_all(&tmp);
     }

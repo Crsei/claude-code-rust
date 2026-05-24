@@ -6,7 +6,7 @@ expression: normalize_snapshot_text(rendered)
 ┌ /init arguments ───────────────────────────────────────────────────────────────────────────────────────────┐
 │Usage: /init                                                                                                │
 │Example: /init                                                                                              │
-│About: Initialize project config and CLAUDE.md                                                              │
+│About: Initialize project config and AGENTS.md                                                             │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /add-dir
 ┌ /add-dir arguments ────────────────────────────────────────────────────────────────────────────────────────┐
@@ -270,7 +270,7 @@ expression: normalize_snapshot_text(rendered)
 │Usage: /memory <show|edit|add|search|open> [text|scope]                                                     │
 │Example: /memory search auth                                                                                │
 │About: View, search, and quick-open memory/project instructions                                             │
-│Edit: project: ./CLAUDE.md | global: ~/.cc-rust/memory                                                      │
+│Edit: project: ./AGENTS.md | global: ~/.cc-rust/memory                                                     │
 │                                                                                                            │
 │Hint: Ctrl+E pick target                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

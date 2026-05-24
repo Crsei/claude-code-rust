@@ -9,7 +9,7 @@
 //!
 //!   1. Welcome — honoring the display name from onboarding state when
 //!      available so the guide is personalized.
-//!   2. Project overview — derived from `CLAUDE.md` / `README.md` and
+//!   2. Project overview — derived from `AGENTS.md` / `CLAUDE.md` / `README.md`
 //!      the git `origin` URL when present.
 //!   3. Common commands — filtered list of slash commands that belong on
 //!      a new teammate's first page.
@@ -76,7 +76,7 @@ fn help_text() -> String {
         "  /team-onboarding                 print the guide to the REPL",
         "  /team-onboarding save [path]     write to a file (default: ONBOARDING_TEAM.md)",
         "",
-        "The guide pulls from real local state: CLAUDE.md, README.md,",
+        "The guide pulls from real local state: AGENTS.md, README.md,",
         "the skills registry, teams on disk, and onboarding status. It's",
         "not a template — sections are empty-suppressed when they have",
         "nothing to say.",
@@ -120,11 +120,20 @@ fn append_welcome(out: &mut String, onboarding: &OnboardingState) {
 fn append_project_overview(out: &mut String, cwd: &Path) {
     out.push_str("## Project overview\n\n");
 
+    // Prefer AGENTS.md over CLAUDE.md.
+    let agents_md = cwd.join("AGENTS.md");
     let claude_md = cwd.join("CLAUDE.md");
-    if let Ok(contents) = std::fs::read_to_string(&claude_md) {
+    let (md_path, md_label) = if agents_md.exists() {
+        (agents_md, "AGENTS.md")
+    } else if claude_md.exists() {
+        (claude_md, "CLAUDE.md")
+    } else {
+        (agents_md, "AGENTS.md") // default for error case
+    };
+    if let Ok(contents) = std::fs::read_to_string(&md_path) {
         let summary = first_sentences(&strip_yaml_frontmatter(&contents), 5);
         if !summary.trim().is_empty() {
-            out.push_str("From `CLAUDE.md`:\n\n");
+            out.push_str(&format!("From `{}`:\n\n", md_label));
             out.push_str(&quote_block(&summary));
             out.push_str("\n\n");
         }
@@ -295,9 +304,9 @@ fn append_risk_areas(out: &mut String, cwd: &Path, onboarding: &OnboardingState)
         );
     }
 
-    if !cwd.join("CLAUDE.md").exists() {
+    if !cwd.join("AGENTS.md").exists() && !cwd.join("CLAUDE.md").exists() {
         bullets.push(
-            "No `CLAUDE.md` in this project — expectations about tooling \
+            "No `AGENTS.md` in this project — expectations about tooling \
              may be implicit. Adding one helps teammates and the assistant \
              stay aligned."
                 .into(),
@@ -526,15 +535,15 @@ mod tests {
     }
 
     #[test]
-    fn project_overview_picks_up_claude_md() {
+    fn project_overview_picks_up_agents_md() {
         let dir = tempdir().unwrap();
         std::fs::write(
-            dir.path().join("CLAUDE.md"),
+            dir.path().join("AGENTS.md"),
             "---\ntitle: Test\n---\n# Heading\n\nThis project is interesting.\nIt has rules.\n",
         )
         .unwrap();
         let guide = build_guide(dir.path(), &default_state());
-        assert!(guide.contains("From `CLAUDE.md`"));
+        assert!(guide.contains("From `AGENTS.md`"));
         assert!(guide.contains("This project is interesting"));
     }
 
@@ -570,10 +579,10 @@ mod tests {
     }
 
     #[test]
-    fn flags_missing_claude_md() {
+    fn flags_missing_agents_md() {
         let dir = tempdir().unwrap();
         let guide = build_guide(dir.path(), &default_state());
-        assert!(guide.contains("No `CLAUDE.md`"));
+        assert!(guide.contains("No `AGENTS.md`"));
     }
 
     #[test]

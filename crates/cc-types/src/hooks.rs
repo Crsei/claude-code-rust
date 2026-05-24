@@ -1049,7 +1049,7 @@ pub fn get_hook_event_metadata() -> HashMap<HookEvent, HookEventMetadata> {
     m.insert(
         HookEvent::InstructionsLoaded,
         HookEventMetadata {
-            summary: "When AGENTS.md/CLAUDE.md instructions are loaded".into(),
+            summary: "When AGENTS.md (or CLAUDE.md fallback) instructions are loaded".into(),
             description: "Input to command is JSON with file_path and instruction_count.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only".into(),
             matcher_metadata: Some(MatcherMetadata {
                 field_to_match: "file_path".into(),

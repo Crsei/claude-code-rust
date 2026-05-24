@@ -11,14 +11,14 @@ use crate::script::{TestCase, TestKey, TestRunner, TestStep};
 use crate::tests::SCRIPTS_LOG_ROOT;
 use std::time::Duration;
 
-/// T01：/memory 显示 CLAUDE.md 内容或 selector。
+/// T01：/memory 显示 AGENTS.md 内容或 selector。
 ///
 /// 验证无参数 /memory 时显示 selector（分组列出所有 scope 的记忆条目、
-/// auto-memory 状态、CLAUDE.md 文件及目录快捷方式），或显示
-/// "no CLAUDE.md found"。
+/// auto-memory 状态、AGENTS.md 文件及目录快捷方式），或显示
+/// "no AGENTS.md found"。
 #[test]
-fn memory_default_shows_claude_md() {
-    let case = TestCase::new("memory_default_shows_claude_md")
+fn memory_default_shows_agents_md() {
+    let case = TestCase::new("memory_default_shows_agents_md")
         .log_root(SCRIPTS_LOG_ROOT)
         .permission_mode("bypass")
         .step(TestStep::SkipTrustGate)
@@ -34,9 +34,9 @@ fn memory_default_shows_claude_md() {
     TestRunner::new().run(&case).assert_no_errors();
 }
 
-/// T02：/memory path 列出 CLAUDE.md 文件路径与大小。
+/// T02：/memory path 列出 AGENTS.md 文件路径与大小。
 ///
-/// 验证命令列出所有找到的 CLAUDE.md 文件路径及其字节数。
+/// 验证命令列出所有找到的 AGENTS.md 文件路径及其字节数。
 #[test]
 fn memory_path() {
     let case = TestCase::new("memory_path")
@@ -54,9 +54,9 @@ fn memory_path() {
     TestRunner::new().run(&case).assert_no_errors();
 }
 
-/// T03：/memory edit 创建或定位 CLAUDE.md。
+/// T03：/memory edit 创建或定位 AGENTS.md。
 ///
-/// 验证命令创建（若不存在）或定位（若已存在）CLAUDE.md 并返回路径。
+/// 验证命令创建（若不存在）或定位（若已存在）AGENTS.md 并返回路径。
 #[test]
 fn memory_edit() {
     let case = TestCase::new("memory_edit")

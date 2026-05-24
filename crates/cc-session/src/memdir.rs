@@ -1,4 +1,4 @@
-//! Memory directory system — manages CLAUDE.md-based session memories.
+//! Memory directory system — manages AGENTS.md/CLAUDE.md-based session memories.
 //!
 //! Provides reading, writing, and listing of memory entries stored alongside
 //! session data. Memories are key-value pairs persisted as individual files

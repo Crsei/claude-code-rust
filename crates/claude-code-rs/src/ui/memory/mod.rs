@@ -14,10 +14,10 @@ mod tests {
         let cwd = Path::new("C:/repo/project");
         let home = Path::new("C:/Users/alice");
         let mut state = MemoryFileSelectorState::new(vec![
-            MemoryFileOption::new("C:/Users/alice/.cc-rust/CLAUDE.md", MemoryFileKind::User),
-            MemoryFileOption::new("C:/repo/project/CLAUDE.md", MemoryFileKind::Project).missing(),
+            MemoryFileOption::new("C:/Users/alice/.cc-rust/AGENTS.md", MemoryFileKind::User),
+            MemoryFileOption::new("C:/repo/project/AGENTS.md", MemoryFileKind::Project).missing(),
             MemoryFileOption::new("C:/repo/project/docs/AGENTS.md", MemoryFileKind::Nested)
-                .with_parent("C:/repo/project/CLAUDE.md"),
+                .with_parent("C:/repo/project/AGENTS.md"),
             MemoryFileOption::new("C:/Users/alice/.cc-rust/memory", MemoryFileKind::Folder)
                 .with_description("auto-memory folder"),
         ]);
@@ -26,7 +26,7 @@ mod tests {
         let rendered = format!(
             "## selector\n{}\n\n## notification\n{}",
             state.render(cwd, home),
-            render_memory_update_notification(Path::new("C:/repo/project/CLAUDE.md"), cwd, home)
+            render_memory_update_notification(Path::new("C:/repo/project/AGENTS.md"), cwd, home)
         );
 
         insta::assert_snapshot!("memory_surfaces", rendered);

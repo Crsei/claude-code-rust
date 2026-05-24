@@ -58,7 +58,7 @@ pub fn bundled_skills() -> Vec<SkillDefinition> {
             source: SkillSource::Bundled,
             base_dir: None,
             frontmatter: SkillFrontmatter {
-                description: "Save a piece of information to the project's CLAUDE.md instructions."
+                description: "Save a piece of information to the project's AGENTS.md instructions."
                     .to_string(),
                 when_to_use: Some(
                     "When the user wants to save a preference, convention, or instruction for future sessions."
@@ -72,8 +72,8 @@ pub fn bundled_skills() -> Vec<SkillDefinition> {
             },
             prompt_body: concat!(
                 "The user wants you to remember something by saving it to the project's ",
-                "CLAUDE.md file. Read the existing CLAUDE.md (if any), then append the new ",
-                "instruction or information. If CLAUDE.md doesn't exist, create it.\n\n",
+                "AGENTS.md file. Read the existing AGENTS.md (if any), then append the new ",
+                "instruction or information. If AGENTS.md doesn't exist, create it.\n\n",
                 "Information to remember: $ARGUMENTS",
             )
             .to_string(),

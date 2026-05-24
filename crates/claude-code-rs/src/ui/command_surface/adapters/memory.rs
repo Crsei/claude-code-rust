@@ -29,11 +29,13 @@ pub(crate) fn selected_memory_open_command(
 
 pub(crate) fn memory_options(cwd: &Path, home: &Path) -> Vec<MemoryFileOption> {
     let mut options = vec![
-        file_option(home.join("CLAUDE.md"), MemoryFileKind::User),
-        file_option(cwd.join("CLAUDE.md"), MemoryFileKind::Project),
+        file_option(home.join("AGENTS.md"), MemoryFileKind::User),
+        file_option(cwd.join("AGENTS.md"), MemoryFileKind::Project),
     ];
-    for path in cc_config::claude_md::find_claude_md_files(cwd) {
-        if path != cwd.join("CLAUDE.md") {
+    for path in cc_config::claude_md::find_agents_md_files(cwd) {
+        let project_agents = cwd.join("AGENTS.md");
+        let project_claude = cwd.join("CLAUDE.md");
+        if path != project_agents && path != project_claude {
             options.push(file_option(path, MemoryFileKind::Nested));
         }
     }

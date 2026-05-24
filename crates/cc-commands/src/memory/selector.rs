@@ -32,10 +32,10 @@ pub(super) fn selector(ctx: &CommandContext) -> Result<CommandResult> {
     ));
     lines.push(String::new());
 
-    // CLAUDE.md files at the top, unnumbered because they're content-only.
-    let md_files = config_claude_md::find_claude_md_files(cwd);
+    // AGENTS.md / CLAUDE.md files at the top, unnumbered because they're content-only.
+    let md_files = config_claude_md::find_agents_md_files(cwd);
     if !md_files.is_empty() {
-        lines.push(format!("CLAUDE.md files ({}):", md_files.len()));
+        lines.push(format!("AGENTS.md files ({}):", md_files.len()));
         for p in &md_files {
             lines.push(format!("  {}", p.display()));
         }

@@ -140,8 +140,8 @@ fn option_label(option: &MemoryFileOption, cwd: &Path, home: &Path) -> String {
 
 fn default_description(option: &MemoryFileOption) -> String {
     match option.kind {
-        MemoryFileKind::User => "Saved in ~/.cc-rust/CLAUDE.md".to_string(),
-        MemoryFileKind::Project => "Saved in ./CLAUDE.md".to_string(),
+        MemoryFileKind::User => "Saved in ~/.cc-rust/AGENTS.md".to_string(),
+        MemoryFileKind::Project => "Saved in ./AGENTS.md".to_string(),
         MemoryFileKind::Nested => "@-imported".to_string(),
         MemoryFileKind::Folder => "folder".to_string(),
     }
@@ -158,15 +158,15 @@ mod tests {
     #[test]
     fn selected_path_tracks_selected_index() {
         let mut state = MemoryFileSelectorState::new(vec![
-            MemoryFileOption::new("/repo/CLAUDE.md", MemoryFileKind::Project),
-            MemoryFileOption::new("/home/me/.cc-rust/CLAUDE.md", MemoryFileKind::User),
+            MemoryFileOption::new("/repo/AGENTS.md", MemoryFileKind::Project),
+            MemoryFileOption::new("/home/me/.cc-rust/AGENTS.md", MemoryFileKind::User),
         ]);
 
-        assert_eq!(state.selected_path(), Some(Path::new("/repo/CLAUDE.md")));
+        assert_eq!(state.selected_path(), Some(Path::new("/repo/AGENTS.md")));
         state.move_next();
         assert_eq!(
             state.selected_path(),
-            Some(Path::new("/home/me/.cc-rust/CLAUDE.md"))
+            Some(Path::new("/home/me/.cc-rust/AGENTS.md"))
         );
     }
 }

@@ -8,7 +8,7 @@
 //!   1. Static sections (cacheable before DYNAMIC_BOUNDARY)
 //!   2. DYNAMIC_BOUNDARY marker
 //!   3. Dynamic sections (session-specific, via prompt_sections registry)
-//!   4. CLAUDE.md context injection
+//!   4. AGENTS.md (or CLAUDE.md fallback) context injection
 //!   5. Memory context injection
 //!   6. Append prompt (if any)
 
@@ -96,7 +96,7 @@ fn doing_tasks_section() -> String {
 /// Corresponds to TS: `getActionsSection()`
 fn actions_section() -> &'static str {
     "# Executing actions with care\n\n\
-Carefully consider the reversibility and blast radius of actions. Generally you can freely take local, reversible actions like editing files or running tests. But for actions that are hard to reverse, affect shared systems beyond your local environment, or could otherwise be risky or destructive, check with the user before proceeding. The cost of pausing to confirm is low, while the cost of an unwanted action (lost work, unintended messages sent, deleted branches) can be very high. For actions like these, consider the context, the action, and user instructions, and by default transparently communicate the action and ask for confirmation before proceeding. This default can be changed by user instructions - if explicitly asked to operate more autonomously, then you may proceed without confirmation, but still attend to the risks and consequences when taking actions. A user approving an action (like a git push) once does NOT mean that they approve it in all contexts, so unless actions are authorized in advance in durable instructions like CLAUDE.md files, always confirm first. Authorization stands for the scope specified, not beyond. Match the scope of your actions to what was actually requested.\n\n\
+Carefully consider the reversibility and blast radius of actions. Generally you can freely take local, reversible actions like editing files or running tests. But for actions that are hard to reverse, affect shared systems beyond your local environment, or could otherwise be risky or destructive, check with the user before proceeding. The cost of pausing to confirm is low, while the cost of an unwanted action (lost work, unintended messages sent, deleted branches) can be very high. For actions like these, consider the context, the action, and user instructions, and by default transparently communicate the action and ask for confirmation before proceeding. This default can be changed by user instructions - if explicitly asked to operate more autonomously, then you may proceed without confirmation, but still attend to the risks and consequences when taking actions. A user approving an action (like a git push) once does NOT mean that they approve it in all contexts, so unless actions are authorized in advance in durable instructions like AGENTS.md files, always confirm first. Authorization stands for the scope specified, not beyond. Match the scope of your actions to what was actually requested.\n\n\
 Examples of the kind of risky actions that warrant user confirmation:\n\
 - Destructive operations: deleting files/branches, dropping database tables, killing processes, rm -rf, overwriting uncommitted changes\n\
 - Hard-to-reverse operations: force-pushing (can also overwrite upstream), git reset --hard, amending published commits, removing or downgrading packages/dependencies, modifying CI/CD pipelines\n\
@@ -729,17 +729,17 @@ pub fn build_system_prompt_with_memory_contexts(
         }
     }
 
-    // ── CLAUDE.md context injection (always, even with custom prompt) ──
+    // ── AGENTS.md context injection (always, even with custom prompt) ──
     let cwd_path = Path::new(cwd);
-    match claude_md::build_claude_md_context(cwd_path) {
+    match claude_md::build_agents_md_context(cwd_path) {
         Ok(context) if !context.is_empty() => {
             debug!(
                 cwd = cwd,
                 context_len = context.len(),
-                "injecting CLAUDE.md context into system prompt"
+                "injecting AGENTS.md context into system prompt"
             );
             parts.push(format!(
-                "# Project Instructions (CLAUDE.md)\n\n\
+                "# Project Instructions (AGENTS.md)\n\n\
                  IMPORTANT: These instructions OVERRIDE any default behavior \
                  and you MUST follow them exactly as written.\n\n\
                  {}",
@@ -747,13 +747,13 @@ pub fn build_system_prompt_with_memory_contexts(
             ));
         }
         Ok(_) => {
-            debug!(cwd = cwd, "no CLAUDE.md files found");
+            debug!(cwd = cwd, "no AGENTS.md files found");
         }
         Err(e) => {
             debug!(
                 cwd = cwd,
                 error = %e,
-                "failed to load CLAUDE.md context, continuing without it"
+                "failed to load AGENTS.md context, continuing without it"
             );
         }
     }
@@ -1318,11 +1318,11 @@ mod tests {
     }
 
     #[test]
-    fn test_claude_md_injection() {
+    fn test_agents_md_injection() {
         prompt_sections::clear_cache();
         let dir = std::env::temp_dir().join(format!("sysprompt_test_{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
-        let md_path = dir.join("CLAUDE.md");
+        let md_path = dir.join("AGENTS.md");
         fs::write(&md_path, "# Rules\nUse snake_case.").unwrap();
 
         let cwd = dir.to_str().unwrap();

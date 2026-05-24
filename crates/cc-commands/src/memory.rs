@@ -1,13 +1,13 @@
 //! `/memory` command - default entry point is a memory selector that
 //! surfaces auto-memory state and exposes every scope (global, project,
-//! team, auto) together with the nearest CLAUDE.md files.
+//! team, auto) together with the nearest AGENTS.md (or CLAUDE.md) files.
 //!
 //! Subcommands (issue #45):
 //!   (no args)  - Print the selector (grouped listing of every scope +
 //!                 auto-memory header + directory shortcuts)
-//!   show       - Display CLAUDE.md content
-//!   path       - Show CLAUDE.md file locations
-//!   edit       - Create/locate CLAUDE.md for editing
+//!   show       - Display AGENTS.md content
+//!   path       - Show AGENTS.md file locations
+//!   edit       - Create/locate AGENTS.md for editing
 //!   list       - List memdir entries across every scope
 //!   get <key>  - Read a memdir entry
 //!   set <key> <value> [--global|--team|--auto] [--category=<cat>]
@@ -104,10 +104,10 @@ impl CommandHandler for MemoryHandler {
             _ => Ok(CommandResult::Output(
                 "Usage: /memory [show|path|edit|list|get|set|rm|search|auto|open]\n\n\
                  (no args)           - Interactive memory selector (default)\n\n\
-                 CLAUDE.md:\n\
-                 \x20 show           - Display current CLAUDE.md content\n\
-                 \x20 path           - Show CLAUDE.md file locations\n\
-                 \x20 edit           - Create/locate CLAUDE.md for editing\n\n\
+                 AGENTS.md (project instructions):\n\
+                 \x20 show           - Display current AGENTS.md content\n\
+                 \x20 path           - Show AGENTS.md file locations\n\
+                 \x20 edit           - Create/locate AGENTS.md for editing\n\n\
                  Memory entries:\n\
                  \x20 list                       - List entries across all scopes\n\
                  \x20 get <key>                  - Read an entry (searches all scopes)\n\
@@ -141,7 +141,7 @@ fn parse_scope_flag(flag: &str) -> MemoryScope {
 }
 
 // ---------------------------------------------------------------------------
-// CLAUDE.md subcommands
+// AGENTS.md subcommands
 // ---------------------------------------------------------------------------
 
 fn list_entries(ctx: &CommandContext) -> Result<CommandResult> {

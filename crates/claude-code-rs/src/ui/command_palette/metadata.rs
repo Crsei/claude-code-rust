@@ -295,7 +295,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
                 "/memory open global".to_string(),
             ],
             edit_targets: vec![
-                EditTarget::new("project", cwd.join("CLAUDE.md"), cwd, "open project"),
+                EditTarget::new("project", cwd.join("AGENTS.md"), cwd, "open project"),
                 EditTarget::new(
                     "global",
                     cc_config::paths::memory_dir_global(),

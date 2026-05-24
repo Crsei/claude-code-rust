@@ -18,7 +18,7 @@ pub struct MemorySurface {
 impl MemorySurface {
     pub(crate) fn new(cwd: &Path) -> Self {
         let home = cc_config::paths::data_root();
-        let project_memory = cwd.join("CLAUDE.md");
+        let project_memory = cwd.join("AGENTS.md");
         let options = memory_options(cwd, &home)
             .into_iter()
             .map(|option| {
