@@ -7,12 +7,12 @@
 
 use std::sync::atomic::Ordering;
 
+use allthecodes_engine::lifecycle::QueryEngine;
+use allthecodes_engine::types::app_state::AppState;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use allthecodes_engine::lifecycle::QueryEngine;
-use allthecodes_engine::types::app_state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::{info, warn};
@@ -345,7 +345,8 @@ async fn command(
         }
     };
     let metadata = allthecodes_commands::command_metadata(&all_commands);
-    let Some((cmd_idx, args)) = allthecodes_commands::parse_command_input_in(&raw, &metadata) else {
+    let Some((cmd_idx, args)) = allthecodes_commands::parse_command_input_in(&raw, &metadata)
+    else {
         return Json(json!({ "status": "error", "message": format!("unknown command: {raw}") }));
     };
 
@@ -622,9 +623,9 @@ mod tests {
 
     use super::*;
     use crate::webhook::webhook_github;
-    use axum::body::Bytes;
     use allthecodes_types::message::CompactMetadata;
     use allthecodes_types::sdk::{SdkApiRetry, SdkCompactBoundary, SdkToolUseSummary};
+    use axum::body::Bytes;
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
 
@@ -661,8 +662,12 @@ mod tests {
             init_plugins: || {},
             active_tools: Vec::new,
             commands: Vec::new,
-            command_dispatcher: || Arc::new(allthecodes_types::commands::NoopCommandDispatcher::new()),
-            command_executor: || Arc::new(allthecodes_engine::command_runtime::NoopCommandExecutor::new()),
+            command_dispatcher: || {
+                Arc::new(allthecodes_types::commands::NoopCommandDispatcher::new())
+            },
+            command_executor: || {
+                Arc::new(allthecodes_engine::command_runtime::NoopCommandExecutor::new())
+            },
             route_github_pr_activity: test_route_github_pr_activity,
         });
     }

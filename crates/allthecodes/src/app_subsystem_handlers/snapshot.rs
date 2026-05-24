@@ -73,7 +73,10 @@ fn mcp_discovery_error_status(err: anyhow::Error) -> McpServerStatusInfo {
 
 fn discover_mcp_runtime_configs_with_diagnostics(
     cwd: &Path,
-) -> anyhow::Result<(Vec<allthecodes_mcp::McpServerConfig>, Vec<McpServerStatusInfo>)> {
+) -> anyhow::Result<(
+    Vec<allthecodes_mcp::McpServerConfig>,
+    Vec<McpServerStatusInfo>,
+)> {
     let scoped = allthecodes_mcp::discovery::discover_mcp_servers_scoped(cwd)?;
     let mut configs: Vec<allthecodes_mcp::McpServerConfig> = Vec::new();
     let mut diagnostics = Vec::new();
@@ -142,7 +145,9 @@ fn build_mcp_server_info(
             allthecodes_mcp::McpConnectionState::Pending => ("pending".to_string(), None),
             allthecodes_mcp::McpConnectionState::Connected => ("connected".to_string(), None),
             allthecodes_mcp::McpConnectionState::Disconnected => ("disconnected".to_string(), None),
-            allthecodes_mcp::McpConnectionState::Error(error) => ("error".to_string(), Some(error.clone())),
+            allthecodes_mcp::McpConnectionState::Error(error) => {
+                ("error".to_string(), Some(error.clone()))
+            }
         };
         let server_info = (!client.server_info.name.is_empty()).then(|| McpServerInfoBrief {
             name: client.server_info.name.clone(),
@@ -261,18 +266,20 @@ pub(super) fn discover_plugin_skills_for_handlers() -> Vec<allthecodes_skills::S
 
     for contributed in allthecodes_plugins::discover_plugin_skill_definitions() {
         let source = allthecodes_skills::SkillSource::Plugin(contributed.plugin_id.clone());
-        let mut skill =
-            match allthecodes_skills::loader::load_skill_from_file_path(&contributed.path, source) {
-                Some(skill) => skill,
-                None => {
-                    tracing::warn!(
-                        plugin = %contributed.plugin_id,
-                        path = %contributed.path.display(),
-                        "Plugin: failed to load contributed skill file"
-                    );
-                    continue;
-                }
-            };
+        let mut skill = match allthecodes_skills::loader::load_skill_from_file_path(
+            &contributed.path,
+            source,
+        ) {
+            Some(skill) => skill,
+            None => {
+                tracing::warn!(
+                    plugin = %contributed.plugin_id,
+                    path = %contributed.path.display(),
+                    "Plugin: failed to load contributed skill file"
+                );
+                continue;
+            }
+        };
 
         skill.name = contributed.name;
         if let Some(desc) = contributed.description {

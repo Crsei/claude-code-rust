@@ -321,8 +321,9 @@ pub async fn run_tui(
         app.set_voice_controller(voice_controller);
 
         let app_state = engine.app_state();
-        let lang =
-            allthecodes_voice::language::normalize_language_for_stt(app_state.settings.language.as_deref());
+        let lang = allthecodes_voice::language::normalize_language_for_stt(
+            app_state.settings.language.as_deref(),
+        );
         let voice_supported = matches!(
             allthecodes_commands::voice_cmd::current_feasibility(),
             allthecodes_voice::Feasibility::Ready { .. }

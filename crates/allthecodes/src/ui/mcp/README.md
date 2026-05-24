@@ -16,6 +16,6 @@
 
 ### 测试/构建验证
 ```bash
-cargo test -p claude-code-rs ui::mcp
+cargo test -p allthecodes ui::mcp
 cargo build --workspace --release
 ```

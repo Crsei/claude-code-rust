@@ -1,4 +1,4 @@
-//! Pure multi-agent navigation state for the cc-rust TUI.
+//! Pure multi-agent navigation state for the allthecodes TUI.
 
 use std::collections::BTreeMap;
 
@@ -260,10 +260,13 @@ impl AgentNavigationState {
             } else {
                 " "
             };
-            let state = self
-                .runtime_info(&entry.thread_id)
-                .map(|runtime| runtime.status.label())
-                .unwrap_or(if entry.is_closed { "closed" } else { "active" });
+            let state = if entry.is_closed {
+                "closed"
+            } else {
+                self.runtime_info(&entry.thread_id)
+                    .map(|runtime| runtime.status.label())
+                    .unwrap_or("active")
+            };
             let role = entry.agent_role.as_deref().unwrap_or("default");
             lines.push(format!(
                 "{current} {:<18} {:<7} role={} thread={}",

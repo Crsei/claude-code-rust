@@ -1148,7 +1148,8 @@ mod tests {
         clear_skills();
         let tmp = tempfile::tempdir().unwrap();
         let user_dir = tmp.path().join("user-skills");
-        let project_skill_dir = allthecodes_config::paths::project_skills_dir(tmp.path()).join("review");
+        let project_skill_dir =
+            allthecodes_config::paths::project_skills_dir(tmp.path()).join("review");
         std::fs::create_dir_all(&project_skill_dir).unwrap();
         std::fs::write(
             project_skill_dir.join("SKILL.md"),

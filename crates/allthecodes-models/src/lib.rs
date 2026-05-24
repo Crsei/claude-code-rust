@@ -1,4 +1,4 @@
-//! Shared model metadata for cc-rust.
+//! Shared model metadata for allthecodes.
 
 pub mod aliases;
 pub mod mapping;

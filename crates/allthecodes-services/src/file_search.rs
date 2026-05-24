@@ -7,8 +7,8 @@
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{anyhow, Result};
 use allthecodes_ipc_protocol::{BackendMessage, FileSearchMatch};
+use anyhow::{anyhow, Result};
 use tracing::{debug, warn};
 
 const DEFAULT_MAX_RESULTS: usize = 500;

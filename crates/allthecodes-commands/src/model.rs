@@ -8,10 +8,10 @@
 //! this fork talks to several upstream vendors. Users can supply full model
 //! identifiers; `availableModels` (from settings) gates which IDs are accepted.
 
-use anyhow::Result;
-use async_trait::async_trait;
 use allthecodes_config::runtime_settings::SettingsJson;
 use allthecodes_config::settings::{self, RawSettings};
+use anyhow::Result;
+use async_trait::async_trait;
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 
@@ -501,7 +501,8 @@ mod tests {
             .auth_profiles
             .insert("codex".to_string(), profile);
         ctx.app_state.settings.available_models = allthecodes_config::settings::codex_model_ids();
-        ctx.app_state.settings.model_capabilities = allthecodes_config::settings::codex_model_capabilities();
+        ctx.app_state.settings.model_capabilities =
+            allthecodes_config::settings::codex_model_capabilities();
     }
 
     #[tokio::test]
@@ -533,7 +534,10 @@ mod tests {
             }
             _ => panic!("Expected Output result"),
         }
-        assert_eq!(ctx.app_state.main_loop_model, allthecodes_models::SOTA_MODEL_ID);
+        assert_eq!(
+            ctx.app_state.main_loop_model,
+            allthecodes_models::SOTA_MODEL_ID
+        );
     }
 
     #[tokio::test]
@@ -552,8 +556,14 @@ mod tests {
 
     #[test]
     fn test_resolve_alias() {
-        assert_eq!(resolve_model_alias("SOTA"), allthecodes_models::SOTA_MODEL_ID);
-        assert_eq!(resolve_model_alias("mota"), allthecodes_models::MOTA_MODEL_ID);
+        assert_eq!(
+            resolve_model_alias("SOTA"),
+            allthecodes_models::SOTA_MODEL_ID
+        );
+        assert_eq!(
+            resolve_model_alias("mota"),
+            allthecodes_models::MOTA_MODEL_ID
+        );
         assert_eq!(resolve_model_alias("opus"), "opus");
         assert_eq!(resolve_model_alias("unknown"), "unknown");
     }
@@ -667,7 +677,10 @@ mod tests {
             CommandResult::Output(text) => assert!(text.contains("Model changed")),
             _ => panic!("Expected Output"),
         }
-        assert_eq!(ctx.app_state.main_loop_model, allthecodes_models::SOTA_MODEL_ID);
+        assert_eq!(
+            ctx.app_state.main_loop_model,
+            allthecodes_models::SOTA_MODEL_ID
+        );
     }
 
     #[tokio::test]

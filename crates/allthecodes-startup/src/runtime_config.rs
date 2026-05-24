@@ -83,7 +83,10 @@ pub fn build_tool_permission_context(
 
     // Iterate lowest -> highest priority so /permissions show prints them
     // in a stable order; the matcher itself treats sources uniformly.
-    let layers: [(SettingsSource, Option<&allthecodes_config::settings::RawSettings>); 4] = [
+    let layers: [(
+        SettingsSource,
+        Option<&allthecodes_config::settings::RawSettings>,
+    ); 4] = [
         (SettingsSource::Managed, loaded.managed.as_ref()),
         (SettingsSource::User, loaded.user.as_ref()),
         (SettingsSource::Project, loaded.project.as_ref()),

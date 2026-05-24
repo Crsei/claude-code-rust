@@ -1,5 +1,7 @@
 use allthecodes_shell_command::fallback;
-use allthecodes_shell_command::model::{DiagnosticSeverity, ParseMode, ReadOnlyResult, ShellDialect};
+use allthecodes_shell_command::model::{
+    DiagnosticSeverity, ParseMode, ReadOnlyResult, ShellDialect,
+};
 
 /// Check if a path contains a vulnerable UNC path that could leak credentials.
 ///

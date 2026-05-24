@@ -694,10 +694,12 @@ impl Tool for ExitWorktreeTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use allthecodes_engine::types::tool::ToolAppState;
     use allthecodes_engine::worktree_hooks::{WORKTREE_CREATE_EVENT, WORKTREE_REMOVE_EVENT};
-    use allthecodes_types::hooks::{HookEventConfig, HookOutput, HookRunner, HooksMap, NoopHookRunner};
+    use allthecodes_types::hooks::{
+        HookEventConfig, HookOutput, HookRunner, HooksMap, NoopHookRunner,
+    };
+    use async_trait::async_trait;
     use parking_lot::RwLock;
     use serde_json::{json, Value};
     use serial_test::serial;

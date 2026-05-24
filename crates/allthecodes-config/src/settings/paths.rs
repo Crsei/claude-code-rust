@@ -64,7 +64,8 @@ pub fn managed_settings_path() -> PathBuf {
 }
 
 /// Return the path to the nearest ancestor project settings directory
-/// (`.allthecodes/`) or `None`.
+/// (`.allthecodes/`, with a legacy project directory as a read-compatible fallback) or
+/// `None`.
 fn find_project_dir(cwd: &Path) -> Option<PathBuf> {
     let mut dir = cwd.to_path_buf();
     loop {
@@ -72,13 +73,18 @@ fn find_project_dir(cwd: &Path) -> Option<PathBuf> {
         if candidate.is_dir() {
             return Some(candidate);
         }
+        let legacy = dir.join(".cc-rust");
+        if legacy.is_dir() {
+            return Some(legacy);
+        }
         if !dir.pop() {
             return None;
         }
     }
 }
 
-/// Search `cwd` and its ancestors for `.allthecodes/settings.json`.
+/// Search `cwd` and its ancestors for `.allthecodes/settings.json`, then
+/// legacy project settings.
 pub(crate) fn find_project_config(cwd: &Path) -> Option<PathBuf> {
     let mut dir = cwd.to_path_buf();
     loop {
@@ -86,19 +92,27 @@ pub(crate) fn find_project_config(cwd: &Path) -> Option<PathBuf> {
         if candidate.exists() {
             return Some(candidate);
         }
+        let legacy = dir.join(".cc-rust").join("settings.json");
+        if legacy.exists() {
+            return Some(legacy);
+        }
         if !dir.pop() {
             return None;
         }
     }
 }
 
-/// Search for `.allthecodes/settings.local.json`.
+/// Search for `.allthecodes/settings.local.json`, then legacy local project settings.
 pub(crate) fn find_local_config(cwd: &Path) -> Option<PathBuf> {
     let mut dir = cwd.to_path_buf();
     loop {
         let candidate = dir.join(".allthecodes").join("settings.local.json");
         if candidate.exists() {
             return Some(candidate);
+        }
+        let legacy = dir.join(".cc-rust").join("settings.local.json");
+        if legacy.exists() {
+            return Some(legacy);
         }
         if !dir.pop() {
             return None;

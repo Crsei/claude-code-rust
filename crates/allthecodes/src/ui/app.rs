@@ -386,7 +386,7 @@ impl App {
 
     fn debug_snapshot_body(&self) -> String {
         let mut body = String::new();
-        body.push_str("# cc-rust TUI debug snapshot\n\n");
+        body.push_str("# allthecodes TUI debug snapshot\n\n");
         body.push_str(&format!(
             "exported_at: {}\n",
             chrono::Local::now().to_rfc3339()

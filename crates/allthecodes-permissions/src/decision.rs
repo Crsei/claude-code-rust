@@ -17,16 +17,18 @@
 //! Rule sources (priority descending — used by `/permissions show` only;
 //! the rule engine treats them uniformly):
 //!   1. Managed (enterprise / policy)
-//!   2. Project (.cc-rust/settings.json)
-//!   3. Local   (.cc-rust/settings.local.json)
-//!   4. User    (~/.cc-rust/settings.json)
+//!   2. Project (.allthecodes/settings.json)
+//!   3. Local   (.allthecodes/settings.local.json)
+//!   4. User    (~/.allthecodes/settings.json)
 //!   5. CLI     (--permission-mode et al.)
 //!   6. Session (transient grants)
 
 use serde_json::Value;
 
 use super::rules;
-use allthecodes_types::permissions::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
+use allthecodes_types::permissions::{
+    PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource,
+};
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -81,7 +83,7 @@ pub enum AutoClassifierVerdict {
 
 /// Result produced by an Auto mode transcript classifier.
 ///
-/// cc-rust does not yet run Bun's LLM classifier in this crate. This type is
+/// allthecodes does not yet run Bun's LLM classifier in this crate. This type is
 /// the permission-layer adapter: callers can pass a real transcript
 /// classifier result here, while the existing no-classifier path keeps the
 /// historical Auto mode fallback behavior.

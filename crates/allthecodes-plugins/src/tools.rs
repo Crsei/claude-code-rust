@@ -73,7 +73,10 @@ impl PluginToolWrapper {
         app_state.tool_permission_context
     }
 
-    fn has_rule_for_tool(rules: &allthecodes_tools::tool::ToolPermissionRulesBySource, tool: &str) -> bool {
+    fn has_rule_for_tool(
+        rules: &allthecodes_tools::tool::ToolPermissionRulesBySource,
+        tool: &str,
+    ) -> bool {
         rules
             .values()
             .any(|entries| entries.iter().any(|entry| entry == tool))

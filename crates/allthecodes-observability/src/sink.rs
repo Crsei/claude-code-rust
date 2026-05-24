@@ -96,7 +96,7 @@ impl std::fmt::Debug for AuditSink {
 }
 
 struct SinkInner {
-    /// Path: `~/.cc-rust/runs/<session_id>/`
+    /// Path: `~/.allthecodes/runs/<session_id>/`
     runs_dir: PathBuf,
     /// Writer handle (behind a mutex for flush coordination).
     writer: Mutex<Option<std::io::BufWriter<std::fs::File>>>,
@@ -113,7 +113,7 @@ impl AuditSink {
     /// - `<runs_dir>/artifacts/`
     ///
     /// `runs_dir` is the per-session output directory (resolved by the caller,
-    /// typically `~/.cc-rust/runs/<session_id>/`). Injecting it here keeps this
+    /// typically `~/.allthecodes/runs/<session_id>/`). Injecting it here keeps this
     /// crate free of any dependency on the root config module.
     ///
     /// Returns `Ok(sink)` even if the directory cannot be created (sink becomes

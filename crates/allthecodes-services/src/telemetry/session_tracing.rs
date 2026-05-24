@@ -84,7 +84,7 @@ pub struct SessionTracer {
     ///     made per-session (e.g., adjusting sampling rate for long-running
     ///     sessions, or checking `TelemetryConfig::enabled` before recording
     ///     events in the tracer). Not currently referenced in method bodies.
-    /// Owner: https://github.com/Crsei/claude-code-rust/issues (telemetry)
+    /// Owner: https://github.com/Crsei/allthecodes/issues (telemetry)
     /// Removal: When a method body references `self.config` for sampling or
     ///     feature-gating, remove this allow-dead-code.
     #[allow(dead_code)]

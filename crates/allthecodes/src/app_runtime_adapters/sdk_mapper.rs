@@ -198,7 +198,7 @@ pub fn handle_sdk_message(
                 let hooks_map = engine.app_state().hooks;
                 tokio::spawn(async move {
                     allthecodes_tools::hooks::fire_notification_hook(
-                        "cc-rust",
+                        "allthecodes",
                         "Response ready",
                         &hooks_map,
                     )
@@ -221,9 +221,9 @@ fn maybe_send_plan_workflow_from_tool_result(content: &ToolResultContent, sink: 
     let Some(record_value) = value.get("plan_workflow") else {
         return;
     };
-    let Ok(record) =
-        serde_json::from_value::<allthecodes_types::plan_workflow::PlanWorkflowRecord>(record_value.clone())
-    else {
+    let Ok(record) = serde_json::from_value::<allthecodes_types::plan_workflow::PlanWorkflowRecord>(
+        record_value.clone(),
+    ) else {
         return;
     };
 

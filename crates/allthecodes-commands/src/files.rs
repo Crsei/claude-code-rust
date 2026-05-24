@@ -57,7 +57,8 @@ fn extract_referenced_files(messages: &[Message]) -> BTreeSet<String> {
 
         // Also check for attachment messages referencing edited files.
         if let Message::Attachment(att) = msg {
-            if let allthecodes_types::message::Attachment::EditedTextFile { path } = &att.attachment {
+            if let allthecodes_types::message::Attachment::EditedTextFile { path } = &att.attachment
+            {
                 files.insert(path.clone());
             }
         }

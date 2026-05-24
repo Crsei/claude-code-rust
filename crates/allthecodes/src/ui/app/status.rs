@@ -158,7 +158,9 @@ impl App {
 
 const _: fn(&App) -> StatusLineRunner = App::status_line_runner;
 
-fn remote_indicator_label(state: &allthecodes_engine::types::app_state::AppState) -> Option<String> {
+fn remote_indicator_label(
+    state: &allthecodes_engine::types::app_state::AppState,
+) -> Option<String> {
     if !state.kairos_active {
         return Some("off".to_string());
     }

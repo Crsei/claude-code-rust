@@ -250,8 +250,6 @@ cargo test -p allthecodes --test pty_ui
 
 - `crates/allthecodes/src/ui/components/welcome.rs`：欢迎页 `cc-rust` -> `allthecodes`。
 - `ui/app/render.rs`、`ui/prompt_input.rs`：`Message cc-rust` -> `Message allthecodes`。
-- `ui/command_surface/surfaces/login.rs`：`Login / Claude Code` -> `Login / allthecodes`。
-- `ui/command_palette/metadata.rs`：保留 `/login claude-code` 示例；周边产品文案可改为 `allthecodes`。
 - `ui/permissions/bypass_permissions_mode_dialog.rs`：权限警告品牌名。
 - `ui/tui/export.rs`、`ui/app.rs`：debug/export 文件名和标题。
 - `ui/memory/**`、`ui/mcp/**`、`ui/hooks/**`、`ui/agents/**`：`.allthecodes`、`AGENTS.md` 展示。

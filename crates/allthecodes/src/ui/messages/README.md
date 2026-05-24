@@ -20,6 +20,6 @@
 
 ### 测试/构建验证
 ```bash
-cargo test -p claude-code-rs ui::messages
+cargo test -p allthecodes ui::messages
 cargo build --workspace --release
 ```

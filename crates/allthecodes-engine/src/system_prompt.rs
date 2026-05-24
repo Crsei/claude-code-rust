@@ -83,7 +83,7 @@ fn doing_tasks_section() -> String {
         "If the user asks for help or wants to give feedback inform them of the following:",
     ];
     let help_subitems = [
-        "/help: Get help with using cc-rust",
+        "/help: Get help with using allthecodes",
         "To give feedback, users should report the issue at https://github.com/anthropics/claude-code/issues",
     ];
     format!(
@@ -1417,7 +1417,7 @@ mod tests {
         ));
         fs::create_dir_all(&dir).unwrap();
         fs::create_dir_all(&home).unwrap();
-        let _home_guard = EnvGuard::set_path("CC_RUST_HOME", &home);
+        let _home_guard = EnvGuard::set_path("ALLTHECODES_HOME", &home);
 
         allthecodes_session::memdir::write_memory(
             "build-insight",

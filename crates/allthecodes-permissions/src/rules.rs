@@ -13,7 +13,9 @@
 
 use crate::bash_matcher;
 use crate::path_validation;
-use allthecodes_types::permissions::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
+use allthecodes_types::permissions::{
+    PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource,
+};
 use allthecodes_utils::bash::{parse_command, split_compound_command};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -87,7 +89,10 @@ pub fn is_accept_edits_tool_call(
         return false;
     }
 
-    let cwd = allthecodes_bootstrap::PROCESS_STATE.read().original_cwd.clone();
+    let cwd = allthecodes_bootstrap::PROCESS_STATE
+        .read()
+        .original_cwd
+        .clone();
     accept_edits_bash_command_is_safe(command, &cwd, ctx)
 }
 

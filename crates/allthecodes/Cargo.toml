@@ -2,7 +2,7 @@
 name = "allthecodes"
 version = "0.1.0"
 edition = "2021"
-description = "cc-rust CLI"
+description = "allthecodes CLI"
 build = "build.rs"
 
 # ============================================================

@@ -6,9 +6,9 @@
 //! This is the second step of the OAuth flow started by `/login claude-ai`,
 //! `/login console`, or `/login codex-oauth`.
 
+use allthecodes_config::settings::{self, RawSettings};
 use anyhow::Result;
 use async_trait::async_trait;
-use allthecodes_config::settings::{self, RawSettings};
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 use allthecodes_auth::oauth::{client, config, pkce};
@@ -326,7 +326,9 @@ fn resolve_codex_default_model(ctx: &CommandContext, raw: &RawSettings) -> Strin
                     profile
                         .env
                         .as_ref()
-                        .and_then(|env| env.get(allthecodes_api::api::client::OPENAI_CODEX_MODEL_ENV))
+                        .and_then(|env| {
+                            env.get(allthecodes_api::api::client::OPENAI_CODEX_MODEL_ENV)
+                        })
                         .or(profile.model.as_ref())
                 })
                 .map(|value| value.trim().to_string())

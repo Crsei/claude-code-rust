@@ -5,10 +5,10 @@
 
 use std::time::Duration;
 
-use anyhow::Result;
 use allthecodes_gateway::{
     AdapterProvider, AdapterStatus, AdapterTestMessage, GatewayDiagnostic, RunEvent, RunId, RunMeta,
 };
+use anyhow::Result;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;

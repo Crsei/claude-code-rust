@@ -4,7 +4,7 @@
 //! - Linux (and WSL2): looks for `bwrap` on `$PATH`
 //! - macOS: looks for `/usr/bin/sandbox-exec`
 //! - Windows: always `Unavailable`; upstream sandboxing does not expose a
-//!   Windows OS-level primitive, so cc-rust keeps Rust-level policy checks
+//!   Windows OS-level primitive, so allthecodes keeps Rust-level policy checks
 //!
 //! Called once per sandbox construction and cached in
 //! [`crate::sandbox::SandboxPolicy`].

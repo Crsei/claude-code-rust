@@ -5,7 +5,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 const LOG_RETENTION_DAYS: u64 = 7;
 
 /// Delete log files older than `retention_days` in the given directory.
-/// Only removes files matching the `cc-rust.log.YYYY-MM-DD` pattern.
+/// Only removes files matching the `allthecodes.log.YYYY-MM-DD` pattern.
 fn cleanup_old_logs(log_dir: &std::path::Path, retention_days: u64) {
     let cutoff =
         std::time::SystemTime::now() - std::time::Duration::from_secs(retention_days * 86400);

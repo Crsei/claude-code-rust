@@ -1,8 +1,8 @@
 [package]
-name = "claude-code-rs"
+name = "allthecodes"
 version = "0.1.0"
 edition = "2024"
-description = "Claude Code CLI - Rust implementation"
+description = "allthecodes CLI - Rust implementation"
 
 [dependencies]
 # ============================================================

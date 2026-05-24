@@ -2,12 +2,12 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
 use allthecodes_config::settings::AutoModeSettings;
 use allthecodes_permissions::decision::{
     AutoClassifierDecision, AutoClassifierStage, AutoClassifierVerdict,
 };
+use anyhow::{anyhow, Context, Result};
+use async_trait::async_trait;
 use regex::Regex;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -129,7 +129,8 @@ impl SafetyClassifierRequest {
         match self.tool_name.as_str() {
             "Bash" => allthecodes_permissions::dangerous::is_dangerous_command(&command).is_some(),
             "PowerShell" => {
-                allthecodes_permissions::dangerous::is_dangerous_powershell_command(&command).is_some()
+                allthecodes_permissions::dangerous::is_dangerous_powershell_command(&command)
+                    .is_some()
             }
             _ => false,
         }
@@ -618,8 +619,8 @@ fn shell_command_from_input(input: &Value) -> Option<String> {
 mod tests {
     use std::sync::Mutex;
 
-    use anyhow::bail;
     use allthecodes_config::settings::AutoModeSettings;
+    use anyhow::bail;
 
     use super::*;
 

@@ -798,7 +798,7 @@ pub fn get_all_commands() -> Vec<Command> {
         command(
             "init",
             &[],
-            "Initialize project config and CLAUDE.md",
+            "Initialize project config and AGENTS.md",
             init::InitHandler,
         ),
         command(
@@ -1119,7 +1119,10 @@ impl DefaultCommandDispatcher {
 }
 
 impl allthecodes_types::commands::CommandDispatcher for DefaultCommandDispatcher {
-    fn parse_command_input(&self, input: &str) -> Option<allthecodes_types::commands::ParsedCommand> {
+    fn parse_command_input(
+        &self,
+        input: &str,
+    ) -> Option<allthecodes_types::commands::ParsedCommand> {
         parse_command_input_in(input, &self.commands)
             .map(|(index, args)| allthecodes_types::commands::ParsedCommand { index, args })
     }
@@ -1205,9 +1208,10 @@ async fn execute_dynamic_command(
                 Some(ctx.session_id.as_str()),
             );
             let messages = match prepared {
-                allthecodes_skills::invocation::PreparedSkillInvocation::Inline { new_messages, .. } => {
-                    new_messages
-                }
+                allthecodes_skills::invocation::PreparedSkillInvocation::Inline {
+                    new_messages,
+                    ..
+                } => new_messages,
                 allthecodes_skills::invocation::PreparedSkillInvocation::Fork { .. } => {
                     vec![allthecodes_skills::invocation::make_skill_message(
                         &skill,

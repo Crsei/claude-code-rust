@@ -23,7 +23,7 @@ pub fn init_langfuse() -> anyhow::Result<Option<SdkTracer>> {
 
     let slot = LANGFUSE_PROVIDER.get_or_init(|| Mutex::new(None));
     if let Some(provider) = slot.lock().clone() {
-        return Ok(Some(provider.tracer("cc-rust-langfuse")));
+        return Ok(Some(provider.tracer("allthecodes-langfuse")));
     }
 
     let public_key = env_var("LANGFUSE_PUBLIC_KEY").expect("checked above");
@@ -46,7 +46,7 @@ pub fn init_langfuse() -> anyhow::Result<Option<SdkTracer>> {
 
     let resource = Resource::builder()
         .with_attributes([
-            KeyValue::new("service.name", "cc-rust"),
+            KeyValue::new("service.name", "allthecodes"),
             KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
             KeyValue::new("deployment.environment", environment),
         ])
@@ -75,7 +75,7 @@ pub fn init_langfuse() -> anyhow::Result<Option<SdkTracer>> {
             .build()
     };
 
-    let tracer = provider.tracer("cc-rust-langfuse");
+    let tracer = provider.tracer("allthecodes-langfuse");
     *slot.lock() = Some(provider);
     Ok(Some(tracer))
 }

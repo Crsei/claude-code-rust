@@ -16,6 +16,6 @@
 
 ### 测试/构建验证
 ```bash
-cargo test -p claude-code-rs ui::command_palette
+cargo test -p allthecodes ui::command_palette
 cargo build --workspace --release
 ```

@@ -1,6 +1,8 @@
 use crate::protocol;
+use allthecodes_gateway::{
+    GatewayStore, RunEvent, RunEventKind, RunId, RunStatus, SessionKeyPolicy,
+};
 use anyhow::{Context, Result};
-use allthecodes_gateway::{GatewayStore, RunEvent, RunEventKind, RunId, RunStatus, SessionKeyPolicy};
 use serde_json::Value;
 
 pub(super) fn append_gateway_sdk_event(

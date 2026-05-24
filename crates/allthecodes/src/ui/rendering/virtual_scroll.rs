@@ -255,7 +255,9 @@ impl VirtualScroll {
 mod tests {
     use super::*;
     use crate::ui::theme::Theme;
-    use allthecodes_types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
+    use allthecodes_types::message::{
+        AssistantMessage, ContentBlock, Message, MessageContent, UserMessage,
+    };
 
     fn user(text: &str) -> Message {
         Message::User(UserMessage {

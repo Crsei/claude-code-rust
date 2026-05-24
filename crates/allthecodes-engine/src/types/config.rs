@@ -45,15 +45,28 @@ impl QueryGates {
     ) -> Self {
         let env: std::collections::HashMap<String, String> = iter.into_iter().collect();
         Self {
-            streaming_tool_execution: env_flag_enabled(&env, "CC_RUST_STREAMING_TOOL_EXECUTION"),
-            emit_tool_use_summaries: env_flag_enabled(&env, "CC_RUST_EMIT_TOOL_USE_SUMMARIES"),
+            streaming_tool_execution: env_flag_enabled(
+                &env,
+                "ALLTHECODES_STREAMING_TOOL_EXECUTION",
+                "CC_RUST_STREAMING_TOOL_EXECUTION",
+            ),
+            emit_tool_use_summaries: env_flag_enabled(
+                &env,
+                "ALLTHECODES_EMIT_TOOL_USE_SUMMARIES",
+                "CC_RUST_EMIT_TOOL_USE_SUMMARIES",
+            ),
             fast_mode_enabled,
         }
     }
 }
 
-fn env_flag_enabled(env: &std::collections::HashMap<String, String>, name: &str) -> bool {
+fn env_flag_enabled(
+    env: &std::collections::HashMap<String, String>,
+    name: &str,
+    legacy_name: &str,
+) -> bool {
     env.get(name)
+        .or_else(|| env.get(legacy_name))
         .map(|value| flag_value_enabled(value))
         .unwrap_or(false)
 }
@@ -155,11 +168,11 @@ mod tests {
             true,
             [
                 (
-                    "CC_RUST_STREAMING_TOOL_EXECUTION".to_string(),
+                    "ALLTHECODES_STREAMING_TOOL_EXECUTION".to_string(),
                     "yes".to_string(),
                 ),
                 (
-                    "CC_RUST_EMIT_TOOL_USE_SUMMARIES".to_string(),
+                    "ALLTHECODES_EMIT_TOOL_USE_SUMMARIES".to_string(),
                     "ON".to_string(),
                 ),
             ],
@@ -176,11 +189,11 @@ mod tests {
             false,
             [
                 (
-                    "CC_RUST_STREAMING_TOOL_EXECUTION".to_string(),
+                    "ALLTHECODES_STREAMING_TOOL_EXECUTION".to_string(),
                     "enabled".to_string(),
                 ),
                 (
-                    "CC_RUST_EMIT_TOOL_USE_SUMMARIES".to_string(),
+                    "ALLTHECODES_EMIT_TOOL_USE_SUMMARIES".to_string(),
                     "0".to_string(),
                 ),
             ],

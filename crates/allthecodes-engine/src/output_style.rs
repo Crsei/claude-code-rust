@@ -7,8 +7,9 @@
 //! Per issue #9 scope:
 //!   - Built-in styles (`Default` / `Explanatory` / `Learning`) are
 //!     supported and emit a dedicated `# Output Style` section.
-//!   - Custom styles are loaded from `<cwd>/.cc-rust/output-styles/<name>.md`
-//!     or `~/.cc-rust/output-styles/<name>.md` (first match wins).
+//!   - Custom styles are loaded from `<cwd>/.allthecodes/output-styles/<name>.md`
+//!     or `~/.allthecodes/output-styles/<name>.md` (first match wins), with
+//!     legacy project styles as read-only fallback.
 //!   - `keep-coding-instructions` is NOT implemented (would gate the
 //!     default coding-prompt sections, which is out of scope for this
 //!     iteration).
@@ -155,6 +156,10 @@ fn candidate_paths(name: &str, cwd: &Path) -> Vec<PathBuf> {
     let safe_name = sanitize_name(name);
     let mut out = Vec::new();
     out.push(
+        cwd.join(".allthecodes/output-styles")
+            .join(format!("{}.md", safe_name)),
+    );
+    out.push(
         cwd.join(".cc-rust/output-styles")
             .join(format!("{}.md", safe_name)),
     );
@@ -251,7 +256,7 @@ mod tests {
     #[test]
     fn custom_style_loaded_from_project_dir() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let styles_dir = dir.path().join(".cc-rust/output-styles");
+        let styles_dir = dir.path().join(".allthecodes/output-styles");
         fs::create_dir_all(&styles_dir).unwrap();
         fs::write(
             styles_dir.join("brevity.md"),
@@ -264,6 +269,23 @@ mod tests {
             OutputStyle::Custom { name, body } => {
                 assert_eq!(name, "brevity");
                 assert!(body.contains("ruthlessly concise"));
+            }
+            other => panic!("expected Custom, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn custom_style_loaded_from_legacy_project_dir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let styles_dir = dir.path().join(".cc-rust/output-styles");
+        fs::create_dir_all(&styles_dir).unwrap();
+        fs::write(styles_dir.join("legacy.md"), "Legacy fallback style.").unwrap();
+
+        let style = resolve("legacy", dir.path());
+        match style {
+            OutputStyle::Custom { name, body } => {
+                assert_eq!(name, "legacy");
+                assert_eq!(body, "Legacy fallback style.");
             }
             other => panic!("expected Custom, got {:?}", other),
         }

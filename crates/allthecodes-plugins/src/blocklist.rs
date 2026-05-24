@@ -152,7 +152,9 @@ fn pattern_matches(pattern: &str, value: &str) -> bool {
 pub static GLOBAL_BLOCKLIST: LazyLock<PluginBlocklist> = LazyLock::new(PluginBlocklist::new);
 
 /// Convert `allthecodes_config::mdm::settings::BlocklistEntry` to our local type.
-pub fn from_config_blocklist(entries: &[allthecodes_config::mdm::BlocklistEntry]) -> Vec<BlocklistEntry> {
+pub fn from_config_blocklist(
+    entries: &[allthecodes_config::mdm::BlocklistEntry],
+) -> Vec<BlocklistEntry> {
     entries
         .iter()
         .map(|e| BlocklistEntry {
@@ -163,7 +165,9 @@ pub fn from_config_blocklist(entries: &[allthecodes_config::mdm::BlocklistEntry]
 }
 
 /// Convert `allthecodes_config::mdm::settings::AllowlistEntry` to our local type.
-pub fn from_config_allowlist(entries: &[allthecodes_config::mdm::AllowlistEntry]) -> Vec<BlocklistEntry> {
+pub fn from_config_allowlist(
+    entries: &[allthecodes_config::mdm::AllowlistEntry],
+) -> Vec<BlocklistEntry> {
     entries
         .iter()
         .map(|e| BlocklistEntry {

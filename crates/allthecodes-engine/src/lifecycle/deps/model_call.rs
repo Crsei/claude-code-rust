@@ -100,9 +100,9 @@ pub(crate) fn record_request_snapshot(
             return;
         }
     };
-    if let Err(error) =
-        allthecodes_session::request_snapshot::record_api_request_snapshot(session_id, provider, &value)
-    {
+    if let Err(error) = allthecodes_session::request_snapshot::record_api_request_snapshot(
+        session_id, provider, &value,
+    ) {
         tracing::warn!(session_id, %provider, %error, "failed to record API request snapshot");
     }
 }
@@ -188,7 +188,8 @@ impl QueryEngineDeps {
 
         let request = build_messages_request(&params);
         record_request_snapshot(&self.session_id, client.langfuse_provider_name(), &request);
-        if allthecodes_api::api::client::is_env_truthy("CC_RUST_EXACT_TOKEN_DIAGNOSTICS")
+        if (allthecodes_api::api::client::is_env_truthy("ALLTHECODES_EXACT_TOKEN_DIAGNOSTICS")
+            || allthecodes_api::api::client::is_env_truthy("CC_RUST_EXACT_TOKEN_DIAGNOSTICS"))
             && client.supports_exact_token_count()
         {
             match client.count_token_usage_exact(&request).await {

@@ -37,7 +37,7 @@ pub struct AgentTool;
 
 /// Upstream-compatible alias for [`AgentTool`].
 ///
-/// Claude Code's TypeScript surface exposes this capability as `Task`; cc-rust
+/// Claude Code's TypeScript surface exposes this capability as `Task`; allthecodes
 /// historically exposed it as `Agent`. Keeping both names lets providers that
 /// emit the upstream name still execute the same subagent runtime.
 pub struct TaskAgentTool;
@@ -81,7 +81,9 @@ fn resolve_model_alias(alias: &str, fallback: &str) -> Result<String> {
         return Ok(fallback.to_string());
     }
     if allthecodes_models::is_removed_legacy_model_alias(trimmed) {
-        bail!(allthecodes_models::removed_legacy_model_alias_error(trimmed));
+        bail!(allthecodes_models::removed_legacy_model_alias_error(
+            trimmed
+        ));
     }
     Ok(allthecodes_models::resolve_model_alias(trimmed))
 }
@@ -488,7 +490,9 @@ fn tool_matches_spec(tool_name: &str, spec: &str) -> bool {
 /// When `ipc` is provided (sender + agent_id), intermediate streaming events
 /// are forwarded through the agent IPC channel via [`sdk_to_agent_event`].
 async fn collect_stream_result(
-    stream: std::pin::Pin<Box<dyn futures::Stream<Item = allthecodes_types::sdk::SdkMessage> + Send>>,
+    stream: std::pin::Pin<
+        Box<dyn futures::Stream<Item = allthecodes_types::sdk::SdkMessage> + Send>,
+    >,
     ipc: Option<(&allthecodes_types::agent_channel::AgentSender, &str)>,
 ) -> (String, bool) {
     use allthecodes_types::sdk::SdkMessage;
@@ -526,7 +530,9 @@ async fn collect_stream_result(
         // Forward intermediate events to IPC when a sender is available
         if let Some((tx, agent_id)) = ipc {
             if let Some(agent_event) = sdk_to_agent_event(&msg, agent_id) {
-                let _ = tx.send(allthecodes_types::agent_channel::AgentIpcEvent::Agent(agent_event));
+                let _ = tx.send(allthecodes_types::agent_channel::AgentIpcEvent::Agent(
+                    agent_event,
+                ));
             }
         }
     }

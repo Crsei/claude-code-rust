@@ -1,8 +1,0 @@
----
-source: crates/claude-code-rs/src/ui/skills/mod.rs
-expression: rendered
----
-Skills (1)
-filter: review
-> code-review        enabled  Review diffs for regressions
-  source: built-in

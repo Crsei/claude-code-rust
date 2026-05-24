@@ -197,7 +197,9 @@ fn make_assistant_msg(
     })
 }
 
-fn make_user_replay(blocks: Vec<crate::types::message::ContentBlock>) -> allthecodes_types::sdk::SdkMessage {
+fn make_user_replay(
+    blocks: Vec<crate::types::message::ContentBlock>,
+) -> allthecodes_types::sdk::SdkMessage {
     allthecodes_types::sdk::SdkMessage::UserReplay(allthecodes_types::sdk::SdkUserReplay {
         content: String::new(),
         session_id: "s1".into(),
@@ -346,47 +348,50 @@ fn test_sdk_to_agent_event_tool_result_blocks_shows_placeholder() {
 
 #[test]
 fn test_sdk_to_agent_event_user_replay_no_blocks_returns_none() {
-    let msg = allthecodes_types::sdk::SdkMessage::UserReplay(allthecodes_types::sdk::SdkUserReplay {
-        content: "hello".into(),
-        session_id: "s1".into(),
-        uuid: Uuid::nil(),
-        timestamp: 0,
-        is_replay: false,
-        is_synthetic: false,
-        tool_use_result: None,
-        source_tool_assistant_uuid: None,
-        content_blocks: None,
-    });
+    let msg =
+        allthecodes_types::sdk::SdkMessage::UserReplay(allthecodes_types::sdk::SdkUserReplay {
+            content: "hello".into(),
+            session_id: "s1".into(),
+            uuid: Uuid::nil(),
+            timestamp: 0,
+            is_replay: false,
+            is_synthetic: false,
+            tool_use_result: None,
+            source_tool_assistant_uuid: None,
+            content_blocks: None,
+        });
     assert!(sdk_to_agent_event(&msg, "a1").is_none());
 }
 
 #[test]
 fn test_sdk_to_agent_event_system_init_returns_none() {
-    let msg = allthecodes_types::sdk::SdkMessage::SystemInit(allthecodes_types::sdk::SystemInitMessage {
-        tools: vec![],
-        model: "test".into(),
-        permission_mode: "default".into(),
-        session_id: "s1".into(),
-        uuid: Uuid::nil(),
-    });
+    let msg =
+        allthecodes_types::sdk::SdkMessage::SystemInit(allthecodes_types::sdk::SystemInitMessage {
+            tools: vec![],
+            model: "test".into(),
+            permission_mode: "default".into(),
+            session_id: "s1".into(),
+            uuid: Uuid::nil(),
+        });
     assert!(sdk_to_agent_event(&msg, "a1").is_none());
 }
 
 #[test]
 fn test_sdk_to_agent_event_stream_message_start_returns_none() {
-    let msg = allthecodes_types::sdk::SdkMessage::StreamEvent(allthecodes_types::sdk::SdkStreamEvent {
-        event: crate::types::message::StreamEvent::MessageStart {
-            usage: crate::types::message::Usage {
-                input_tokens: 0,
-                output_tokens: 0,
-                reasoning_output_tokens: 0,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0,
+    let msg =
+        allthecodes_types::sdk::SdkMessage::StreamEvent(allthecodes_types::sdk::SdkStreamEvent {
+            event: crate::types::message::StreamEvent::MessageStart {
+                usage: crate::types::message::Usage {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    reasoning_output_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
             },
-        },
-        session_id: "s1".into(),
-        uuid: Uuid::nil(),
-    });
+            session_id: "s1".into(),
+            uuid: Uuid::nil(),
+        });
     assert!(sdk_to_agent_event(&msg, "a1").is_none());
 }
 

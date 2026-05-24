@@ -1,6 +1,6 @@
 //! Claude model ID mapping across providers (first-party, Bedrock, Vertex).
 //!
-//! cc-rust uses first-party Claude model IDs internally. AWS Bedrock and GCP
+//! allthecodes uses first-party Claude model IDs internally. AWS Bedrock and GCP
 //! Vertex AI require provider-specific model strings.
 
 /// A single Claude model's IDs across providers.

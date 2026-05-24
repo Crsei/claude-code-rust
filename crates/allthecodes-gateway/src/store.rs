@@ -50,7 +50,7 @@ impl GatewayStore {
             GatewayError::io(
                 "store_create_failed",
                 "The gateway could not create the run directory.",
-                "Check permissions for the cc-rust gateway runs directory.",
+                "Check permissions for the allthecodes gateway runs directory.",
                 &run_dir,
                 &error,
             )
@@ -207,7 +207,7 @@ impl GatewayStore {
                 GatewayDiagnostic::new(
                     "store_path_escape",
                     "The gateway persistence paths are outside the gateway root.",
-                    "Keep gateway runs, adapters, and webhooks under the cc-rust gateway directory.",
+                    "Keep gateway runs, adapters, and webhooks under the allthecodes gateway directory.",
                 )
                 .with_context(error),
             )
@@ -225,7 +225,7 @@ impl GatewayStore {
                 GatewayError::io(
                     "store_create_failed",
                     "The gateway could not create its persistence directory.",
-                    "Check permissions for the cc-rust gateway directory.",
+                    "Check permissions for the allthecodes gateway directory.",
                     path,
                     &error,
                 )

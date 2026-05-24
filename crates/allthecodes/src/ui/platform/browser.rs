@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn ensure_and_open_creates_template_when_missing() {
-        let dir = std::env::temp_dir().join(format!("cc-rust-browser-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("allthecodes-browser-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("config.json");
         // Keep editor empty so the helper returns NoEditor without spawning.

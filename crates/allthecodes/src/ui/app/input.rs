@@ -810,7 +810,9 @@ impl App {
         }
     }
 
-    pub(super) fn active_keybinding_contexts(&self) -> Vec<allthecodes_keybindings::context::Context> {
+    pub(super) fn active_keybinding_contexts(
+        &self,
+    ) -> Vec<allthecodes_keybindings::context::Context> {
         if self.selected_message.is_some() {
             return vec![
                 allthecodes_keybindings::context::Context::MessageActions,
@@ -1070,7 +1072,8 @@ impl App {
                         .map(|voice| voice.state())
                         .unwrap_or(allthecodes_voice::VoiceState::Idle)
                     {
-                        allthecodes_voice::VoiceState::Idle | allthecodes_voice::VoiceState::Error(_) => {
+                        allthecodes_voice::VoiceState::Idle
+                        | allthecodes_voice::VoiceState::Error(_) => {
                             self.begin_push_to_talk();
                         }
                         allthecodes_voice::VoiceState::Recording => self.end_push_to_talk(),
@@ -1257,7 +1260,8 @@ impl App {
 
 fn selectable_by_mode(message: &allthecodes_types::message::Message, user_only: bool) -> bool {
     if user_only {
-        matches!(message, allthecodes_types::message::Message::User(_)) && is_selectable_message(message)
+        matches!(message, allthecodes_types::message::Message::User(_))
+            && is_selectable_message(message)
     } else {
         is_selectable_message(message)
     }
@@ -1271,7 +1275,8 @@ fn is_selectable_message(message: &allthecodes_types::message::Message) -> bool 
                 && message_copy_text(message).trim() != "[Request interrupted by user]"
         }
         allthecodes_types::message::Message::Assistant(assistant) => !assistant.content.is_empty(),
-        allthecodes_types::message::Message::System(_) | allthecodes_types::message::Message::Attachment(_) => true,
+        allthecodes_types::message::Message::System(_)
+        | allthecodes_types::message::Message::Attachment(_) => true,
         allthecodes_types::message::Message::Progress(_) => false,
     }
 }

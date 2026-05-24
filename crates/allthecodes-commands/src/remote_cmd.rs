@@ -6,12 +6,12 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{OnceLock, RwLock};
 
-use anyhow::{Context, Result};
-use async_trait::async_trait;
 use allthecodes_gateway::{
     AdapterProvider, AdapterState, AdapterStatus, GatewayConfig, GatewayDiagnostic,
     GatewayPersistence, GatewayStore, RunEvent, RunId, RunMeta, SessionKeyPolicy,
 };
+use anyhow::{Context, Result};
+use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -616,8 +616,9 @@ mod tests {
     async fn runs_lists_local_gateway_store() {
         let temp = tempfile::tempdir().unwrap();
         let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
-        let store =
-            allthecodes_gateway::GatewayStore::default_with_policy(allthecodes_gateway::SessionKeyPolicy::default());
+        let store = allthecodes_gateway::GatewayStore::default_with_policy(
+            allthecodes_gateway::SessionKeyPolicy::default(),
+        );
         let created = store.create_run(request()).unwrap().meta().run_id.clone();
 
         let mut ctx = ctx();

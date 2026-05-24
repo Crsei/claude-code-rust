@@ -13,7 +13,9 @@ use allthecodes_types::message::{
     AssistantMessage, ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage,
     SystemSubtype, UserMessage,
 };
-use allthecodes_types::permission_events::{HookPermissionDecisionEvent, PermissionDecisionDebugEvent};
+use allthecodes_types::permission_events::{
+    HookPermissionDecisionEvent, PermissionDecisionDebugEvent,
+};
 use allthecodes_types::sdk::SdkMessage;
 use futures::StreamExt;
 use std::sync::Arc;

@@ -108,7 +108,9 @@ fn categorize_source(source: &PluginSource) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use allthecodes_config::mdm::{ManagedPolicy, PluginInstallPolicy, PluginSource as PolicyPluginSource};
+    use allthecodes_config::mdm::{
+        ManagedPolicy, PluginInstallPolicy, PluginSource as PolicyPluginSource,
+    };
 
     fn make_policy_with_sources(sources: Vec<PolicyPluginSource>) -> ManagedPolicy {
         ManagedPolicy {

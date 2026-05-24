@@ -2,8 +2,8 @@
 
 use std::io;
 
-use async_trait::async_trait;
 use allthecodes_ipc_protocol::{BackendMessage, FrontendMessage};
+use async_trait::async_trait;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 use crate::{IpcFrame, IpcReader, IpcTransport, IpcWriter};

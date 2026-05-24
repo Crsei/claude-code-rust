@@ -1,7 +1,7 @@
 // test infrastructure — upstream audio-device boundary; voice capture routed through allthecodes_voice instead
 //! Audio-device compatibility surface for the Codex TUI layout.
 //!
-//! cc-rust currently routes voice capture through `allthecodes_voice`, whose default
+//! allthecodes currently routes voice capture through `allthecodes_voice`, whose default
 //! backend is intentionally unsupported. This module keeps the Codex-shaped
 //! `audio_device` boundary available to UI code while reporting that runtime
 //! truth explicitly.

@@ -1,6 +1,6 @@
-//! Chat-widget adapter for the existing cc-rust [`super::app::App`].
+//! Chat-widget adapter for the existing allthecodes [`super::app::App`].
 //!
-//! Upstream Codex keeps most TUI state in `chatwidget.rs`; cc-rust already has
+//! Upstream Codex keeps most TUI state in `chatwidget.rs`; allthecodes already has
 //! that state in `app.rs`. This module provides the documented file boundary
 //! without duplicating the full app implementation.
 

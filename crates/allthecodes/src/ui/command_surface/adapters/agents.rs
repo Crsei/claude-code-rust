@@ -12,7 +12,9 @@ pub(crate) fn agent_entry_to_ui(
             allthecodes_ipc_protocol::subsystem_types::AgentDefinitionSource::Builtin => {
                 AgentSource::BuiltIn
             }
-            allthecodes_ipc_protocol::subsystem_types::AgentDefinitionSource::User => AgentSource::User,
+            allthecodes_ipc_protocol::subsystem_types::AgentDefinitionSource::User => {
+                AgentSource::User
+            }
             allthecodes_ipc_protocol::subsystem_types::AgentDefinitionSource::Project => {
                 AgentSource::Project
             }
@@ -29,9 +31,15 @@ pub(crate) fn agent_entry_to_ui(
     agent.filename = entry.filename;
     agent.base_dir = entry.file_path;
     agent.memory = entry.memory.map(|memory| match memory {
-        allthecodes_ipc_protocol::subsystem_types::AgentMemoryScope::User => UiAgentMemoryScope::User,
-        allthecodes_ipc_protocol::subsystem_types::AgentMemoryScope::Project => UiAgentMemoryScope::Project,
-        allthecodes_ipc_protocol::subsystem_types::AgentMemoryScope::Local => UiAgentMemoryScope::Local,
+        allthecodes_ipc_protocol::subsystem_types::AgentMemoryScope::User => {
+            UiAgentMemoryScope::User
+        }
+        allthecodes_ipc_protocol::subsystem_types::AgentMemoryScope::Project => {
+            UiAgentMemoryScope::Project
+        }
+        allthecodes_ipc_protocol::subsystem_types::AgentMemoryScope::Local => {
+            UiAgentMemoryScope::Local
+        }
     });
     agent.effort = entry.effort;
     agent.permission_mode = entry.permission_mode.map(|mode| format!("{mode:?}"));

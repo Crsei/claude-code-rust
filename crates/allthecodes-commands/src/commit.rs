@@ -55,15 +55,17 @@ impl CommandHandler for CommitHandler {
             lines.push("Please review the changes and create a git commit. Stage the relevant files and write a clear commit message summarizing the changes.".to_string());
 
             let prompt = lines.join("\n");
-            let msg = allthecodes_types::message::Message::User(allthecodes_types::message::UserMessage {
-                uuid: uuid::Uuid::new_v4(),
-                role: "user".to_string(),
-                content: allthecodes_types::message::MessageContent::Text(prompt),
-                timestamp: chrono::Utc::now().timestamp(),
-                is_meta: false,
-                tool_use_result: None,
-                source_tool_assistant_uuid: None,
-            });
+            let msg = allthecodes_types::message::Message::User(
+                allthecodes_types::message::UserMessage {
+                    uuid: uuid::Uuid::new_v4(),
+                    role: "user".to_string(),
+                    content: allthecodes_types::message::MessageContent::Text(prompt),
+                    timestamp: chrono::Utc::now().timestamp(),
+                    is_meta: false,
+                    tool_use_result: None,
+                    source_tool_assistant_uuid: None,
+                },
+            );
             Ok(CommandResult::Query(vec![msg]))
         } else {
             // Message provided — commit directly

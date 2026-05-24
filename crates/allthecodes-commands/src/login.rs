@@ -9,9 +9,9 @@
 //!   /login custom           - select an existing custom auth profile
 //!   /login bedrock|vertex   - enable a cloud provider for this process
 
+use allthecodes_config::settings::{self, RawSettings};
 use anyhow::Result;
 use async_trait::async_trait;
-use allthecodes_config::settings::{self, RawSettings};
 
 use super::login_code;
 use crate::{CommandContext, CommandHandler, CommandResult};
@@ -349,8 +349,10 @@ fn vertex_status_text() -> String {
         .ok()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
-    let region =
-        allthecodes_api::api::vertex::resolve_region_for_model_with_default(Some(&model), &default_region);
+    let region = allthecodes_api::api::vertex::resolve_region_for_model_with_default(
+        Some(&model),
+        &default_region,
+    );
     let project_id = allthecodes_api::api::vertex::resolve_project_id()
         .unwrap_or_else(|| "missing (set ANTHROPIC_VERTEX_PROJECT_ID)".to_string());
     let token_source = vertex_token_source();
@@ -860,7 +862,9 @@ fn resolve_codex_default_model(ctx: &CommandContext, raw: &RawSettings) -> Strin
                     profile
                         .env
                         .as_ref()
-                        .and_then(|env| env.get(allthecodes_api::api::client::OPENAI_CODEX_MODEL_ENV))
+                        .and_then(|env| {
+                            env.get(allthecodes_api::api::client::OPENAI_CODEX_MODEL_ENV)
+                        })
                         .or(profile.model.as_ref())
                 })
                 .map(|value| value.trim().to_string())
@@ -1142,7 +1146,9 @@ mod tests {
 
         let text = enable_vertex_session();
 
-        assert!(allthecodes_api::api::client::is_env_truthy("ALLTHECODES_USE_VERTEX"));
+        assert!(allthecodes_api::api::client::is_env_truthy(
+            "ALLTHECODES_USE_VERTEX"
+        ));
         assert!(!allthecodes_api::api::client::is_env_truthy(
             "ALLTHECODES_USE_BEDROCK"
         ));

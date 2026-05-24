@@ -4,8 +4,8 @@ use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use allthecodes_ipc_protocol::BackendMessage;
+use async_trait::async_trait;
 use parking_lot::Mutex;
 
 use crate::{IpcFrame, IpcReader, IpcTransport, IpcWriter};

@@ -1,6 +1,6 @@
 //! Tooltip text provider.
 //!
-//! The filename intentionally follows the existing cc-rust placeholder
+//! The filename intentionally follows the existing allthecodes placeholder
 //! (`tooltops.rs`). It maps the Codex `tooltips.rs` responsibility into this
 //! crate without requiring the upstream `tooltips.txt` resource.
 

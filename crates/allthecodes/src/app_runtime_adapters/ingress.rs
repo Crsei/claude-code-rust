@@ -23,7 +23,9 @@ use crate::ui::shell_history_completion::ShellHistoryCompletionProvider;
 use crate::ui::slack_channel_completion::SlackChannelCompletionProvider;
 use allthecodes_ipc::runtime::SessionRuntime;
 use allthecodes_ipc_client::sink::FrontendSink;
-use allthecodes_ipc_protocol::protocol::{CompletionItemDTO, InstallProgress, LspRecommendationDTO};
+use allthecodes_ipc_protocol::protocol::{
+    CompletionItemDTO, InstallProgress, LspRecommendationDTO,
+};
 use allthecodes_ipc_protocol::{BackendMessage, ConversationMessage, FrontendMessage};
 
 // ---------------------------------------------------------------------------
@@ -58,7 +60,8 @@ pub(crate) async fn dispatch(
             }
 
             let app_state = engine.app_state();
-            let classifier = allthecodes_commands::plan_workflow::classify_plan_entry(&text, &app_state);
+            let classifier =
+                allthecodes_commands::plan_workflow::classify_plan_entry(&text, &app_state);
             if classifier.should_enter {
                 match crate::plan_workflow::enter_engine_plan_mode(
                     engine,
@@ -177,7 +180,8 @@ pub(crate) async fn dispatch(
             debug!("headless: MCP command: {:?}", command);
             let cwd = std::path::Path::new(engine.cwd());
             let msgs =
-                allthecodes_ipc::subsystem_handlers::handle_mcp_command_with_runtime(command, cwd).await;
+                allthecodes_ipc::subsystem_handlers::handle_mcp_command_with_runtime(command, cwd)
+                    .await;
             let _ = sink.send_many(msgs);
         }
         FrontendMessage::PluginCommand { command } => {
@@ -318,8 +322,10 @@ pub(crate) async fn dispatch(
                 .into_iter()
                 .map(|plugin| plugin.id)
                 .collect();
-            let mut recommendations =
-                allthecodes_lsp_service::generate_recommendations(std::path::Path::new(&cwd), &installed);
+            let mut recommendations = allthecodes_lsp_service::generate_recommendations(
+                std::path::Path::new(&cwd),
+                &installed,
+            );
             if let Some(language) = language.as_ref() {
                 recommendations.retain(|rec| {
                     rec.languages
@@ -469,7 +475,9 @@ fn to_conversation_message(message: &Message) -> Option<ConversationMessage> {
                     .to_string(),
                 ),
                 allthecodes_types::message::SystemSubtype::Warning => Some("warning".to_string()),
-                allthecodes_types::message::SystemSubtype::ApiError { .. } => Some("error".to_string()),
+                allthecodes_types::message::SystemSubtype::ApiError { .. } => {
+                    Some("error".to_string())
+                }
                 _ => Some("info".to_string()),
             };
 
@@ -588,7 +596,8 @@ async fn handle_slash_command(
         if command_name == "team" {
             if let Some(tc) = ctx.app_state.team_context.as_ref() {
                 if !tc.team_name.is_empty() {
-                    let events = allthecodes_ipc::agent_handlers::build_team_status_events(&tc.team_name);
+                    let events =
+                        allthecodes_ipc::agent_handlers::build_team_status_events(&tc.team_name);
                     let _ = sink.send_many(events);
                 }
             }

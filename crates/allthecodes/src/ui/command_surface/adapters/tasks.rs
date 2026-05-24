@@ -119,7 +119,9 @@ pub(crate) fn ui_task_state_from_tool_status(status: allthecodes_tasks::TaskStat
         | allthecodes_tasks::TaskStatus::Recoverable => UiTaskState::Running,
         allthecodes_tasks::TaskStatus::Completed => UiTaskState::Succeeded,
         allthecodes_tasks::TaskStatus::Failed => UiTaskState::Failed,
-        allthecodes_tasks::TaskStatus::Cancelled | allthecodes_tasks::TaskStatus::Stopped => UiTaskState::Canceled,
+        allthecodes_tasks::TaskStatus::Cancelled | allthecodes_tasks::TaskStatus::Stopped => {
+            UiTaskState::Canceled
+        }
     }
 }
 

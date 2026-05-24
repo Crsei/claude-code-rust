@@ -234,10 +234,7 @@ mod tests {
 
         assert_eq!(snapshot.module, "skills");
         assert_eq!(snapshot.name, "skills_menu");
-        assert_eq!(
-            snapshot.source,
-            "crates/allthecodes/src/ui/skills/mod.rs"
-        );
+        assert_eq!(snapshot.source, "crates/allthecodes/src/ui/skills/mod.rs");
         assert_eq!(snapshot.expression.as_deref(), Some("rendered"));
         assert_eq!(snapshot.body, "Skills\n> code-review");
     }
@@ -245,7 +242,7 @@ mod tests {
     #[test]
     fn writes_flat_snapshot_review_folder() {
         let root = std::env::temp_dir().join(format!(
-            "cc-rust-ui-snapshot-export-test-{}",
+            "allthecodes-ui-snapshot-export-test-{}",
             std::process::id()
         ));
         if root.exists() {

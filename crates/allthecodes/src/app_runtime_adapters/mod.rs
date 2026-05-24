@@ -33,7 +33,9 @@ pub fn ensure_installed() {
     INSTALL.call_once(|| {
         allthecodes_ipc::agent_handlers::set_runtime_host(Arc::new(RootAgentHost));
         allthecodes_ipc::subsystem_handlers::set_runtime_host(Arc::new(RootSubsystemHost));
-        allthecodes_services::agent_definitions::set_runtime_host(Arc::new(RootAgentDefinitionsHost));
+        allthecodes_services::agent_definitions::set_runtime_host(Arc::new(
+            RootAgentDefinitionsHost,
+        ));
         allthecodes_tools::system_status::set_runtime_host(Arc::new(RootSystemStatusHost));
         let mut adapters = allthecodes_engine::agent_runtime::agent_runtime_adapters();
         adapters.builtin_agents = Arc::new(RootAgentDefinitionRegistry);
@@ -64,13 +66,16 @@ impl allthecodes_engine::agent_runtime::BuiltinAgentRegistry for RootAgentDefini
     }
 
     fn builtin_agent_prompt(&self, name: &str) -> Option<String> {
-        allthecodes_services::agent_definitions::builtin::builtin_agent_prompt(name).map(ToOwned::to_owned)
+        allthecodes_services::agent_definitions::builtin::builtin_agent_prompt(name)
+            .map(ToOwned::to_owned)
     }
 }
 
 struct RootAgentDefinitionsHost;
 
-impl allthecodes_services::agent_definitions::AgentDefinitionsRuntimeHost for RootAgentDefinitionsHost {
+impl allthecodes_services::agent_definitions::AgentDefinitionsRuntimeHost
+    for RootAgentDefinitionsHost
+{
     fn build_mcp_server_info_list(&self) -> Vec<McpServerStatusInfo> {
         crate::app_subsystem_handlers::build_mcp_server_info_list()
     }
@@ -84,9 +89,11 @@ impl AgentRuntimeHost for RootAgentHost {
     }
 
     fn agent_output(&self, agent_id: &str) -> Option<AgentTaskOutput> {
-        allthecodes_engine::agent::supervisor::output_for_agent(agent_id).map(|task| AgentTaskOutput {
-            id: task.id,
-            output: task.output,
+        allthecodes_engine::agent::supervisor::output_for_agent(agent_id).map(|task| {
+            AgentTaskOutput {
+                id: task.id,
+                output: task.output,
+            }
         })
     }
 
@@ -124,7 +131,8 @@ impl AgentRuntimeHost for RootAgentHost {
     }
 
     fn team_members(&self, team_name: &str) -> Result<Vec<TeamMemberInfo>, String> {
-        let tf = allthecodes_teams::helpers::read_team_file(team_name).map_err(|e| e.to_string())?;
+        let tf =
+            allthecodes_teams::helpers::read_team_file(team_name).map_err(|e| e.to_string())?;
         Ok(tf
             .members
             .iter()
@@ -133,9 +141,11 @@ impl AgentRuntimeHost for RootAgentHost {
                 agent_name: m.name.clone(),
                 role: m.agent_type.clone(),
                 is_active: m.is_active.unwrap_or(true),
-                unread_messages: allthecodes_teams::mailbox::read_unread_messages(&m.name, team_name)
-                    .map(|v| v.len())
-                    .unwrap_or(0),
+                unread_messages: allthecodes_teams::mailbox::read_unread_messages(
+                    &m.name, team_name,
+                )
+                .map(|v| v.len())
+                .unwrap_or(0),
             })
             .collect())
     }
@@ -423,9 +433,11 @@ fn install_root_subsystem_event_sinks(event_tx: tokio::sync::broadcast::Sender<S
     let skills_tx = event_tx.clone();
     allthecodes_skills::set_event_callback(move |e| {
         let adapted = match e {
-            allthecodes_skills::SkillSubsystemEvent::SkillsLoaded { count } => SubsystemEvent::Skill(
-                allthecodes_ipc_protocol::subsystem_events::SkillEvent::SkillsLoaded { count },
-            ),
+            allthecodes_skills::SkillSubsystemEvent::SkillsLoaded { count } => {
+                SubsystemEvent::Skill(
+                    allthecodes_ipc_protocol::subsystem_events::SkillEvent::SkillsLoaded { count },
+                )
+            }
         };
         let _ = skills_tx.send(adapted);
     });
@@ -473,11 +485,13 @@ fn install_root_subsystem_event_sinks(event_tx: tokio::sync::broadcast::Sender<S
                     server_name,
                     resources: resources
                         .into_iter()
-                        .map(|r| allthecodes_ipc_protocol::subsystem_types::McpResourceInfo {
-                            uri: r.uri,
-                            name: Some(r.name),
-                            mime_type: r.mime_type,
-                        })
+                        .map(
+                            |r| allthecodes_ipc_protocol::subsystem_types::McpResourceInfo {
+                                uri: r.uri,
+                                name: Some(r.name),
+                                mime_type: r.mime_type,
+                            },
+                        )
                         .collect(),
                 },
             ),
@@ -505,14 +519,20 @@ fn install_root_subsystem_event_sinks(event_tx: tokio::sync::broadcast::Sender<S
     allthecodes_plugins::set_event_sink(Some(Arc::new(move |event| {
         let adapted = match event {
             allthecodes_plugins::PluginSubsystemEvent::Reloaded { count, had_error } => {
-                SubsystemEvent::Plugin(allthecodes_ipc_protocol::subsystem_events::PluginEvent::Reloaded {
-                    count,
-                    had_error,
-                })
+                SubsystemEvent::Plugin(
+                    allthecodes_ipc_protocol::subsystem_events::PluginEvent::Reloaded {
+                        count,
+                        had_error,
+                    },
+                )
             }
-            allthecodes_plugins::PluginSubsystemEvent::RefreshNeeded { reason } => SubsystemEvent::Plugin(
-                allthecodes_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded { reason },
-            ),
+            allthecodes_plugins::PluginSubsystemEvent::RefreshNeeded { reason } => {
+                SubsystemEvent::Plugin(
+                    allthecodes_ipc_protocol::subsystem_events::PluginEvent::RefreshNeeded {
+                        reason,
+                    },
+                )
+            }
             allthecodes_plugins::PluginSubsystemEvent::StatusChanged {
                 plugin_id,
                 name,
@@ -532,26 +552,31 @@ fn install_root_subsystem_event_sinks(event_tx: tokio::sync::broadcast::Sender<S
                 plugin_id,
                 name,
                 version,
-            } => {
-                SubsystemEvent::Plugin(allthecodes_ipc_protocol::subsystem_events::PluginEvent::Installed {
+            } => SubsystemEvent::Plugin(
+                allthecodes_ipc_protocol::subsystem_events::PluginEvent::Installed {
                     plugin_id,
                     name,
                     version,
-                })
-            }
+                },
+            ),
             allthecodes_plugins::PluginSubsystemEvent::Updated {
                 plugin_id,
                 name,
                 old_version: _old,
                 new_version,
-            } => SubsystemEvent::Plugin(allthecodes_ipc_protocol::subsystem_events::PluginEvent::Updated {
-                plugin_id,
-                name,
-                version: new_version,
-            }),
+            } => SubsystemEvent::Plugin(
+                allthecodes_ipc_protocol::subsystem_events::PluginEvent::Updated {
+                    plugin_id,
+                    name,
+                    version: new_version,
+                },
+            ),
             allthecodes_plugins::PluginSubsystemEvent::Uninstalled { plugin_id, name } => {
                 SubsystemEvent::Plugin(
-                    allthecodes_ipc_protocol::subsystem_events::PluginEvent::Uninstalled { plugin_id, name },
+                    allthecodes_ipc_protocol::subsystem_events::PluginEvent::Uninstalled {
+                        plugin_id,
+                        name,
+                    },
                 )
             }
             allthecodes_plugins::PluginSubsystemEvent::ValidationFailed { plugin_id, errors } => {
@@ -576,7 +601,9 @@ fn install_root_subsystem_event_sinks(event_tx: tokio::sync::broadcast::Sender<S
     })));
 
     allthecodes_mcp::discovery::set_plugin_hook(allthecodes_plugins::discover_plugin_mcp_servers);
-    allthecodes_mcp::discovery::set_scoped_plugin_hook(allthecodes_plugins::discover_plugin_mcp_servers_scoped);
+    allthecodes_mcp::discovery::set_scoped_plugin_hook(
+        allthecodes_plugins::discover_plugin_mcp_servers_scoped,
+    );
     allthecodes_mcp::discovery::set_ide_hook(allthecodes_lsp_service::ide::selected_ide_mcp_config);
 }
 

@@ -13,7 +13,7 @@ use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::time::Duration;
 
-/// The Swift script cache directory (under ~/.cc-rust/cache/swift/).
+/// The Swift script cache directory (under ~/.allthecodes/cache/swift/).
 #[cfg(target_os = "macos")]
 fn cache_dir() -> PathBuf {
     let home = std::env::var("CC_RUST_HOME")

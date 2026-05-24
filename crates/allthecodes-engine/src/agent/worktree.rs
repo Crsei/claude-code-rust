@@ -669,7 +669,7 @@ mod tests {
         assert_eq!(branch_name, "agent-worktree-abcd1234");
     }
 
-    /// Worktree path must be under the cc-rust worktree root with matching suffix.
+    /// Worktree path must be under the allthecodes worktree root with matching suffix.
     #[test]
     fn test_worktree_path_format() {
         let short_id = "abcd1234";

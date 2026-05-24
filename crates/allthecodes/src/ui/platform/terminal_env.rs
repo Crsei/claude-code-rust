@@ -24,7 +24,7 @@ use std::env;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalEnvConfig {
     /// Use synchronized-update escape sequences in the render loop. The
-    /// cc-rust TUI emits these by default to reduce tearing; this gate is
+    /// allthecodes TUI emits these by default to reduce tearing; this gate is
     /// here so users on broken terminals can turn them off.
     pub sync_updates: bool,
     /// Whether to skip crossterm mouse capture so native terminal text

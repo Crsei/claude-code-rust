@@ -99,7 +99,9 @@ pub fn gateway_routes() -> axum::Router {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use allthecodes_gateway::{BusyPolicy, RemoteSource, RemoteTransport, RunPolicy, RunRequest, RunStatus};
+    use allthecodes_gateway::{
+        BusyPolicy, RemoteSource, RemoteTransport, RunPolicy, RunRequest, RunStatus,
+    };
     use serial_test::serial;
 
     #[test]

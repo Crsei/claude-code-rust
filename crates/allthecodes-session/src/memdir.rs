@@ -183,7 +183,9 @@ impl MemoryScope {
 pub fn memory_dir(scope: MemoryScope, cwd: &Path) -> Result<PathBuf> {
     match scope {
         MemoryScope::Global => Ok(allthecodes_config::paths::memory_dir_global()),
-        MemoryScope::Project => Ok(allthecodes_config::paths::project_allthecodes_dir(cwd).join("memory")),
+        MemoryScope::Project => {
+            Ok(allthecodes_config::paths::project_allthecodes_dir(cwd).join("memory"))
+        }
         MemoryScope::Team => Ok(allthecodes_config::paths::team_memory_dir(cwd)),
         MemoryScope::Auto => Ok(allthecodes_config::paths::auto_memory_dir()),
     }

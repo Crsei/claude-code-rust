@@ -1,8 +1,8 @@
 //! `/coordinator` command -- activate coordinator mode and bind a team.
 
+use allthecodes_config::features::{self, Feature, FeatureFlags};
 use anyhow::Result;
 use async_trait::async_trait;
-use allthecodes_config::features::{self, Feature, FeatureFlags};
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 

@@ -2,7 +2,7 @@
 name = "allthecodes-compact"
 version = "0.1.0"
 edition = "2021"
-description = "Conversation-history compaction pipeline for cc-rust"
+description = "Conversation-history compaction pipeline for allthecodes"
 
 [dependencies]
 serde = { workspace = true }

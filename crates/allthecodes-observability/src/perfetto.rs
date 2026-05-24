@@ -1,7 +1,7 @@
 //! Perfetto trace export -- POSTPONED (non-P0).
 //!
 //! Perfetto is a platform-wide tracing framework (perfetto.dev) that could be
-//! used to export cc-rust runtime spans for offline analysis in
+//! used to export allthecodes runtime spans for offline analysis in
 //! perfetto-ui / trace-viewer.
 //!
 //! This module is intentionally empty. Implementation is deferred until the

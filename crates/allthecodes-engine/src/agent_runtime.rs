@@ -9,10 +9,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::types::tool::Tool;
-use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use allthecodes_tasks::{TaskCreateOptions, TaskEntry, TaskRuntimeHandle, TaskStatus};
 use allthecodes_types::agent_types::AgentNode;
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -242,7 +242,9 @@ impl AgentTreeRuntime for InMemoryAgentTreeRuntime {
 }
 
 pub trait BuiltinAgentRegistry: Send + Sync {
-    fn builtin_agent_entries(&self) -> Vec<allthecodes_ipc_protocol::subsystem_types::AgentDefinitionEntry>;
+    fn builtin_agent_entries(
+        &self,
+    ) -> Vec<allthecodes_ipc_protocol::subsystem_types::AgentDefinitionEntry>;
     fn builtin_agent_prompt(&self, name: &str) -> Option<String>;
 }
 
@@ -250,7 +252,9 @@ pub trait BuiltinAgentRegistry: Send + Sync {
 struct BuiltinAgentRegistryImpl;
 
 impl BuiltinAgentRegistry for BuiltinAgentRegistryImpl {
-    fn builtin_agent_entries(&self) -> Vec<allthecodes_ipc_protocol::subsystem_types::AgentDefinitionEntry> {
+    fn builtin_agent_entries(
+        &self,
+    ) -> Vec<allthecodes_ipc_protocol::subsystem_types::AgentDefinitionEntry> {
         crate::agent::builtin_agents::builtin_agent_entries()
     }
 
@@ -423,7 +427,8 @@ pub fn active_agent_count() -> usize {
     adapters().read().agent_tree.active_count()
 }
 
-pub fn builtin_agent_entries() -> Vec<allthecodes_ipc_protocol::subsystem_types::AgentDefinitionEntry> {
+pub fn builtin_agent_entries(
+) -> Vec<allthecodes_ipc_protocol::subsystem_types::AgentDefinitionEntry> {
     adapters().read().builtin_agents.builtin_agent_entries()
 }
 

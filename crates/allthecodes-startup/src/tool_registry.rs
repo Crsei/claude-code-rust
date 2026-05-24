@@ -60,7 +60,10 @@ pub fn get_tools_for_active_session() -> Tools {
 
 /// Get tools filtered for a concrete runtime policy.
 pub fn get_tools_for_policy(policy: ToolPolicy) -> Tools {
-    allthecodes_tools::registry::get_tools_for_policy_with_providers(&root_tool_registry_providers(), policy)
+    allthecodes_tools::registry::get_tools_for_policy_with_providers(
+        &root_tool_registry_providers(),
+        policy,
+    )
 }
 
 /// Filter an existing tool set for a runtime policy.

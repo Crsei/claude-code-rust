@@ -27,7 +27,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use allthecodes_types::agent_events::{AgentCommand, AgentEvent, TeamCommand, TeamEvent};
-use allthecodes_types::permission_events::{HookPermissionDecisionEvent, PermissionDecisionDebugEvent};
+use allthecodes_types::permission_events::{
+    HookPermissionDecisionEvent, PermissionDecisionDebugEvent,
+};
 use allthecodes_types::plan_workflow::PlanWorkflowRecord;
 
 use crate::subsystem_events::{
@@ -111,7 +113,7 @@ pub enum FrontendMessage {
     ///
     /// Frontend-facing counterpart of the upstream
     /// `ui/examples/upstream-patterns/src/utils/ripgrep.ts`
-    /// helper — cc-rust's frontend has no direct filesystem access, so
+    /// helper - allthecodes' frontend has no direct filesystem access, so
     /// the backend runs `rg` on its behalf. The backend responds with a
     /// single [`BackendMessage::FileSearchResult`] keyed on
     /// `request_id`; long searches are truncated once

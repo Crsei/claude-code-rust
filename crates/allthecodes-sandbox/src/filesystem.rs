@@ -4,7 +4,7 @@
 //! - `/absolute/path` — absolute path
 //! - `~/relative` — relative to `$HOME`
 //! - `./relative` or bare `relative` — relative to the project root (or
-//!   the enclosing `~/.cc-rust/` for user settings)
+//!   the enclosing `~/.allthecodes/` for user settings)
 //!
 //! We also accept the legacy `//absolute/path` form for backward
 //! compatibility, matching the TS implementation.

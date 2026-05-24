@@ -26,7 +26,9 @@ pub fn maybe_init(dir: impl AsRef<Path>) -> std::io::Result<()> {
 }
 
 pub fn maybe_init_from_env() -> std::io::Result<bool> {
-    let Some(dir) = std::env::var_os("CC_RUST_TUI_SESSION_LOG_DIR") else {
+    let Some(dir) = std::env::var_os("ALLTHECODES_TUI_SESSION_LOG_DIR")
+        .or_else(|| std::env::var_os("CC_RUST_TUI_SESSION_LOG_DIR"))
+    else {
         return Ok(false);
     };
     maybe_init(PathBuf::from(dir))?;
@@ -82,13 +84,19 @@ mod tests {
 
     #[test]
     fn env_init_reports_absent_env() {
-        let previous = std::env::var_os("CC_RUST_TUI_SESSION_LOG_DIR");
+        let previous_new = std::env::var_os("ALLTHECODES_TUI_SESSION_LOG_DIR");
+        let previous_legacy = std::env::var_os("CC_RUST_TUI_SESSION_LOG_DIR");
         unsafe {
+            std::env::remove_var("ALLTHECODES_TUI_SESSION_LOG_DIR");
             std::env::remove_var("CC_RUST_TUI_SESSION_LOG_DIR");
         }
         let result = maybe_init_from_env().expect("env init");
         unsafe {
-            match previous {
+            match previous_new {
+                Some(value) => std::env::set_var("ALLTHECODES_TUI_SESSION_LOG_DIR", value),
+                None => std::env::remove_var("ALLTHECODES_TUI_SESSION_LOG_DIR"),
+            }
+            match previous_legacy {
                 Some(value) => std::env::set_var("CC_RUST_TUI_SESSION_LOG_DIR", value),
                 None => std::env::remove_var("CC_RUST_TUI_SESSION_LOG_DIR"),
             }

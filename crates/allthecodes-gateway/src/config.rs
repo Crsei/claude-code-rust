@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Gateway-local persistence locations. All defaults stay under
-/// `allthecodes_config::paths::data_root()` so cc-rust never writes to upstream
+/// `allthecodes_config::paths::data_root()` so allthecodes never writes to upstream
 /// Claude/Codex directories.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

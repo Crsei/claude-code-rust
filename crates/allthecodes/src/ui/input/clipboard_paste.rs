@@ -204,7 +204,7 @@ fn write_png_bytes_to_temp(bytes: &[u8]) -> Result<(PathBuf, PastedImageInfo), P
     }
 
     let tmp = tempfile::Builder::new()
-        .prefix("cc-rust-clipboard-")
+        .prefix("allthecodes-clipboard-")
         .suffix(".png")
         .tempfile()
         .map_err(|e| PasteImageError::IoError(e.to_string()))?;

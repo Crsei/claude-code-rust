@@ -1,4 +1,4 @@
-# AGENTS.md - cc-rust (Full Build)
+# AGENTS.md - allthecodes (Full Build)
 
 This file provides guidance to Codex when working with the Rust port in `rust/`.
 
@@ -16,14 +16,14 @@ This file provides guidance to Codex when working with the Rust port in `rust/`.
 
 ## Path Isolation (Critical)
 
-cc-rust 和原版 Codex (TypeScript) 共存于同一台机器上，**所有持久化路径必须隔离**：
+allthecodes 和原版 Codex (TypeScript) 共存于同一台机器上，**所有持久化路径必须隔离**：
 
-| 用途 | 原版 Codex | cc-rust (本项目) |
+| 用途 | 原版 Codex | allthecodes (本项目) |
 |------|-----------------|-----------------|
-| 全局数据目录 | `~/.Codex/` | `~/.cc-rust/` |
-| 项目配置 | `.Codex/settings.json` | `.cc-rust/settings.json` |
-| 项目技能 | `.Codex/skills/` | `.cc-rust/skills/` |
-| Keychain 服务名 | `"Codex"` | `"cc-rust"` |
+| 全局数据目录 | `~/.Codex/` | `~/.allthecodes/` |
+| 项目配置 | `.Codex/settings.json` | `.allthecodes/settings.json` |
+| 项目技能 | `.Codex/skills/` | `.allthecodes/skills/` |
+| Keychain 服务名 | `"Codex"` | `"allthecodes"` |
 | 项目指令文件 | `AGENTS.md` | `AGENTS.md` (共享) |
 
 ## Cargo / Build
@@ -58,10 +58,10 @@ inside this repo should follow the repository-selected toolchain.
 
 Known build warnings on this machine:
 
-- `npm` is not installed, so the `claude-code-rs` build script skips web-ui
+- `npm` is not installed, so the `allthecodes` build script skips web-ui
   dependency installation as a warning.
 - `cc-browser/src/mcp_bridge.rs` currently has an unused `Context` import.
-- `crates/claude-code-rs/src/tools/exec/process_control.rs` currently has an
+- `crates/allthecodes/src/tools/exec/process_control.rs` currently has an
   unused Unix `CommandExt` import.
 
 
@@ -130,7 +130,7 @@ rust/
 │   ├── daemon/              daemon + Team Memory 代理
 │   ├── web/                 Web 模式静态资源与路由支持
 │   ├── services/            tool_use_summary / session_memory / prompt_suggestion / lsp_lifecycle
-│   ├── crates/claude-code-rs/src/ui/  Rust TUI (ratatui + crossterm)
+│   ├── crates/allthecodes/src/ui/  Rust TUI (ratatui + crossterm)
 │   ├── utils/               工具函数
 │   └── shutdown.rs          优雅关闭
 └── docs/
@@ -144,7 +144,7 @@ rust/
 
 Rust TUI 通过 `--headless` 模式与 Rust 后端通信:
 - Rust 端: `src/ipc/protocol.rs` (协议类型) + `src/ipc/headless.rs` (事件循环)
-- 这里仅指 `crates/claude-code-rs/src/ui/` 中的 Rust TUI；不要再引入其他非 Rust TUI 的表述
+- 这里仅指 `crates/allthecodes/src/ui/` 中的 Rust TUI；不要再引入其他非 Rust TUI 的表述
 
 ### 已移除的模块 (完整版有)
 
@@ -163,10 +163,10 @@ analytics, remote
 ApiClient::from_backend()
   ├─ native  → auth::resolve_auth()
   │            ├─ ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN
-  │            └─ ~/.cc-rust/credentials.json / 系统 Keychain ("cc-rust")
+  │            └─ ~/.allthecodes/credentials.json / 系统 Keychain ("allthecodes", fallback "cc-rust")
   └─ codex   → auth::resolve_codex_auth_token()
                ├─ OPENAI_CODEX_AUTH_TOKEN
-               ├─ ~/.cc-rust/credentials.json
+               ├─ ~/.allthecodes/credentials.json
                └─ ~/.codex/auth.json
 ```
 
@@ -175,6 +175,6 @@ ApiClient::from_backend()
 - 每次写完代码，编译过后查有没有 warning，解决 warning（必须保证未使用的都在代码中起作用），然后构建相应的 e2e test
 - Rust TUI 已知问题记录在 `docs/KNOWN_ISSUES.md`，用户反馈的问题追加到该文件
 - Codex backend 当前行为看 `docs/codex-backend.md`；历史调研笔记已归档到 `docs/archive/implemented/codex-agent.md`
-- 注意目前阶段修改 UI 代码只修改 `crates/claude-code-rs/src/ui/` 端的代码
+- 注意目前阶段修改 UI 代码只修改 `crates/allthecodes/src/ui/` 端的代码
 - Windows 环境下如果 `omx explore` 的只读 harness 不可用，直接用 PowerShell + `rg` 做等价只读定位，不要把它当成仓库问题
 - 文档更新按任务拆分，每完成一个文档更新任务就单独 commit；commit 描述保持一句话，直接说明这次提交的目的即可

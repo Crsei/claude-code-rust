@@ -54,7 +54,10 @@ pub fn start_runner(config: InProcessRunnerConfig) -> tokio::task::JoinHandle<()
     let handle = tokio::spawn(async move {
         if let Err(e) = run_teammate(config).await {
             warn!(agent_id = %agent_id, error = %e, "teammate runner exited with error");
-            release_teammate_tasks(&identity, allthecodes_tasks::TeammateTaskExitReason::Terminated);
+            release_teammate_tasks(
+                &identity,
+                allthecodes_tasks::TeammateTaskExitReason::Terminated,
+            );
             InProcessBackend::mark_task_failed(&task_id, e.to_string());
         }
     });

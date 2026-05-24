@@ -4,10 +4,10 @@ use std::convert::Infallible;
 use std::pin::Pin;
 use std::time::Duration;
 
+use allthecodes_types::sdk::SdkMessage;
 use axum::http::{header, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
-use allthecodes_types::sdk::SdkMessage;
 use futures::{Stream, StreamExt};
 
 pub const WEB_UI_UNBUNDLED_MESSAGE: &str =

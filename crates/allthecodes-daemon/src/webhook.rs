@@ -124,13 +124,15 @@ async fn handle_deliver_only_webhook(
             source,
             idempotency_key,
         }) => deliver_webhook_event(&route, event, prompt, source, idempotency_key),
-        Ok(allthecodes_gateway::webhook::WebhookRouteOutcome::Run { request, event }) => Json(json!({
-            "status": "received",
-            "source": route.provider.as_source_client(),
-            "routeId": route.route_id,
-            "event": event,
-            "prompt": request.prompt,
-        })),
+        Ok(allthecodes_gateway::webhook::WebhookRouteOutcome::Run { request, event }) => {
+            Json(json!({
+                "status": "received",
+                "source": route.provider.as_source_client(),
+                "routeId": route.route_id,
+                "event": event,
+                "prompt": request.prompt,
+            }))
+        }
         Err(error) => webhook_error(error),
     }
 }
@@ -144,7 +146,10 @@ fn submit_webhook_run(
     let policy = allthecodes_gateway::GatewayPolicy::default();
     let config = allthecodes_gateway::GatewayConfig::default();
     let runner = allthecodes_gateway::GatewayRunner::new(
-        allthecodes_gateway::GatewayStore::new(config.persistence, allthecodes_gateway::SessionKeyPolicy::default()),
+        allthecodes_gateway::GatewayStore::new(
+            config.persistence,
+            allthecodes_gateway::SessionKeyPolicy::default(),
+        ),
         policy.clone(),
     );
     let snapshot = allthecodes_gateway::BusySnapshot {

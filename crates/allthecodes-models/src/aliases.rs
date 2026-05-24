@@ -1,4 +1,4 @@
-//! Neutral public model aliases for cc-rust.
+//! Neutral public model aliases for allthecodes.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModelAlias {

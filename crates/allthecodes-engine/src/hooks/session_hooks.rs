@@ -86,11 +86,13 @@ impl SessionHookStore {
             .find(|m| m.matcher == matcher && m.skill_root.as_deref() == skill_root.as_deref());
 
         if let Some(matcher_group) = existing {
-            matcher_group.hooks.push(allthecodes_types::hooks::SessionHookEntry {
-                hook,
-                function_hook: None,
-                on_hook_success,
-            });
+            matcher_group
+                .hooks
+                .push(allthecodes_types::hooks::SessionHookEntry {
+                    hook,
+                    function_hook: None,
+                    on_hook_success,
+                });
         } else {
             matchers.push(allthecodes_types::hooks::SessionHookMatcher {
                 matcher: matcher.to_string(),
@@ -124,16 +126,18 @@ impl SessionHookStore {
         let existing = matchers.iter_mut().find(|m| m.matcher == matcher);
 
         if let Some(matcher_group) = existing {
-            matcher_group.hooks.push(allthecodes_types::hooks::SessionHookEntry {
-                hook: HookEntry::Command {
-                    command: String::new(),
-                    timeout: function_hook.timeout,
-                    shell: None,
-                    if_condition: None,
-                },
-                function_hook: Some(function_hook),
-                on_hook_success: None,
-            });
+            matcher_group
+                .hooks
+                .push(allthecodes_types::hooks::SessionHookEntry {
+                    hook: HookEntry::Command {
+                        command: String::new(),
+                        timeout: function_hook.timeout,
+                        shell: None,
+                        if_condition: None,
+                    },
+                    function_hook: Some(function_hook),
+                    on_hook_success: None,
+                });
         } else {
             matchers.push(allthecodes_types::hooks::SessionHookMatcher {
                 matcher: matcher.to_string(),

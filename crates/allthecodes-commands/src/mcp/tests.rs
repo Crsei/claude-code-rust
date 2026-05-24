@@ -48,7 +48,9 @@ impl Drop for EnvGuard {
 struct RuntimeMcpGuard;
 
 impl RuntimeMcpGuard {
-    fn install(manager: std::sync::Arc<tokio::sync::Mutex<allthecodes_mcp::manager::McpManager>>) -> Self {
+    fn install(
+        manager: std::sync::Arc<tokio::sync::Mutex<allthecodes_mcp::manager::McpManager>>,
+    ) -> Self {
         allthecodes_mcp::runtime::clear_for_tests();
         allthecodes_mcp::runtime::install_manager(manager);
         Self
@@ -406,7 +408,9 @@ async fn mcp_reconnect_uses_runtime_manager() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
     let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
-    let manager = std::sync::Arc::new(tokio::sync::Mutex::new(allthecodes_mcp::manager::McpManager::new()));
+    let manager = std::sync::Arc::new(tokio::sync::Mutex::new(
+        allthecodes_mcp::manager::McpManager::new(),
+    ));
     let _runtime = RuntimeMcpGuard::install(manager.clone());
     std::fs::write(
         home.path().join("settings.json"),

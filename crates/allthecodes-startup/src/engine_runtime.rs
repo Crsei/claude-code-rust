@@ -2,12 +2,12 @@
 
 use std::sync::{Arc, Once};
 
-use anyhow::Result;
-use async_trait::async_trait;
 use allthecodes_engine::agent_runtime::{
     AgentTaskStore, AgentToolRegistry, DashboardEmitter, TeammateSpawner,
 };
 use allthecodes_tasks::{TaskCreateOptions, TaskEntry, TaskRuntimeHandle, TaskStatus};
+use anyhow::Result;
+use async_trait::async_trait;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -35,7 +35,9 @@ impl TeammateSpawner for RootTeammateSpawner {
         input: Value,
         ctx: &allthecodes_engine::types::tool::ToolUseContext,
         parent: &allthecodes_types::message::AssistantMessage,
-        on_progress: Option<Box<dyn Fn(allthecodes_engine::types::tool::ToolProgress) + Send + Sync>>,
+        on_progress: Option<
+            Box<dyn Fn(allthecodes_engine::types::tool::ToolProgress) + Send + Sync>,
+        >,
     ) -> Result<allthecodes_engine::types::tool::ToolResult> {
         allthecodes_teams::team_spawn::TeamSpawnTool
             .call(input, ctx, parent, on_progress)

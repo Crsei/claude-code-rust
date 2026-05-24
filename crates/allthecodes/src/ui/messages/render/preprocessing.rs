@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use allthecodes_types::message::{Attachment, ContentBlock, Message, MessageContent, SystemSubtype};
+use allthecodes_types::message::{
+    Attachment, ContentBlock, Message, MessageContent, SystemSubtype,
+};
 
 use super::context::{MessageRenderOptions, RenderableMessage};
 use super::grouping::{is_api_error_message, tool_result_id, tool_use_id};

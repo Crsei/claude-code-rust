@@ -26,7 +26,8 @@ pub(super) async fn handle_list(ctx: &CommandContext) -> Result<CommandResult> {
     let browser_count = entries
         .iter()
         .filter(|e| {
-            e.browser_mcp.unwrap_or(false) || allthecodes_browser::detection::is_browser_server(&e.name)
+            e.browser_mcp.unwrap_or(false)
+                || allthecodes_browser::detection::is_browser_server(&e.name)
         })
         .count();
 
@@ -154,8 +155,12 @@ async fn build_status_from_discovery(cwd: &std::path::Path) -> Vec<McpServerStat
             if let Some(client) = manager.as_ref().and_then(|m| m.clients.get(&cfg.name)) {
                 let (state, error) = match &client.state {
                     allthecodes_mcp::McpConnectionState::Pending => ("pending".to_string(), None),
-                    allthecodes_mcp::McpConnectionState::Connected => ("connected".to_string(), None),
-                    allthecodes_mcp::McpConnectionState::Disconnected => ("disconnected".to_string(), None),
+                    allthecodes_mcp::McpConnectionState::Connected => {
+                        ("connected".to_string(), None)
+                    }
+                    allthecodes_mcp::McpConnectionState::Disconnected => {
+                        ("disconnected".to_string(), None)
+                    }
                     allthecodes_mcp::McpConnectionState::Error(error) => {
                         ("error".to_string(), Some(error.clone()))
                     }

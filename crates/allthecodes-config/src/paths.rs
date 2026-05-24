@@ -4,8 +4,12 @@
 //! through this module. The resolution chain is:
 //!
 //! 1. `ALLTHECODES_HOME` env var (trim non-empty) → use as-is.
-//! 2. `dirs::home_dir().join(".allthecodes")`.
-//! 3. `std::env::temp_dir().join("allthecodes")` (non-persistent, warns once).
+//! 2. Legacy `CC_RUST_HOME` env var (trim non-empty) → read-compatible home.
+//! 3. `dirs::home_dir().join(".allthecodes")` when it exists.
+//! 4. Legacy project home when the new directory does
+//!    not exist.
+//! 5. `dirs::home_dir().join(".allthecodes")` for new installs.
+//! 6. `std::env::temp_dir().join("allthecodes")` (non-persistent, warns once).
 //!
 //! Functions return `PathBuf` unconditionally; they never fail. Creation of
 //! the directory is the caller's responsibility.
@@ -27,8 +31,25 @@ pub fn data_root() -> PathBuf {
         }
     }
 
+    if let Ok(legacy_override_dir) = std::env::var("CC_RUST_HOME") {
+        if !legacy_override_dir.trim().is_empty() {
+            tracing::warn!("CC_RUST_HOME is deprecated; set ALLTHECODES_HOME instead.");
+            return PathBuf::from(legacy_override_dir);
+        }
+    }
+
     if let Some(home) = dirs::home_dir() {
-        return home.join(".allthecodes");
+        let new_root = home.join(".allthecodes");
+        let legacy_root = home.join(".cc-rust");
+        if new_root.exists() || !legacy_root.exists() {
+            return new_root;
+        }
+        tracing::warn!(
+            legacy_path = %legacy_root.display(),
+            new_path = %new_root.display(),
+            "using legacy cc-rust data root; new writes should migrate to allthecodes."
+        );
+        return legacy_root;
     }
 
     let tmp = std::env::temp_dir().join("allthecodes");
@@ -199,6 +220,11 @@ pub fn project_allthecodes_dir(cwd: &Path) -> PathBuf {
     cwd.join(".allthecodes")
 }
 
+/// Deprecated project-local settings root retained for read-only fallbacks.
+pub fn project_legacy_cc_rust_dir(cwd: &Path) -> PathBuf {
+    cwd.join(".cc-rust")
+}
+
 /// `{cwd}/.allthecodes/skills/` — project-local skill packages.
 pub fn project_skills_dir(cwd: &Path) -> PathBuf {
     project_allthecodes_dir(cwd).join("skills")
@@ -322,6 +348,7 @@ mod tests {
         let root = data_root();
         assert!(
             root.ends_with(".allthecodes")
+                || root.ends_with(".cc-rust")
                 || root
                     .file_name()
                     .map(|n| n == "allthecodes")
@@ -338,6 +365,7 @@ mod tests {
         let root = data_root();
         assert!(
             root.ends_with(".allthecodes")
+                || root.ends_with(".cc-rust")
                 || root
                     .file_name()
                     .map(|n| n == "allthecodes")

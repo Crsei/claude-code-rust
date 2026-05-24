@@ -66,7 +66,7 @@ pub async fn apply_skill_improvement(skill_name: &str, _updates: &[SkillUpdate])
 
     // TODO: Full implementation:
     //
-    // 1. Read skill file from .cc-rust/skills/{skill_name}/SKILL.md
+    // 1. Read skill file from .allthecodes/skills/{skill_name}/SKILL.md
     // 2. Build LLM prompt with current content + suggested updates
     // 3. Call queryModelWithoutStreaming (via cc-api)
     // 4. Parse <updated_file> tags

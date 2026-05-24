@@ -40,8 +40,11 @@ pub(crate) fn memory_options(cwd: &Path, home: &Path) -> Vec<MemoryFileOption> {
         }
     }
     options.extend([
-        MemoryFileOption::new(allthecodes_config::paths::auto_memory_dir(), MemoryFileKind::Folder)
-            .with_description("auto-memory folder"),
+        MemoryFileOption::new(
+            allthecodes_config::paths::auto_memory_dir(),
+            MemoryFileKind::Folder,
+        )
+        .with_description("auto-memory folder"),
         MemoryFileOption::new(
             allthecodes_config::paths::team_memory_dir(cwd),
             MemoryFileKind::Folder,

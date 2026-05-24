@@ -14,7 +14,9 @@ use crate::ui::permissions::rules::workspace_tab::render_workspace_tab;
 use crate::ui::permissions::rules::{PermissionRule, RecentDenial, WorkspaceDirectory};
 use crate::ui::permissions::utils::{PermissionDecision, PermissionScope};
 use allthecodes_engine::types::app_state::AppState;
-use allthecodes_engine::types::tool::{PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource};
+use allthecodes_engine::types::tool::{
+    PermissionMode, ToolPermissionContext, ToolPermissionRulesBySource,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionsSurface {

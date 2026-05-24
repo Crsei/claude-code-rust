@@ -18,6 +18,6 @@
 
 ### 测试/构建验证
 ```bash
-cargo test -p claude-code-rs ui::overlays
+cargo test -p allthecodes ui::overlays
 cargo build --workspace --release
 ```

@@ -943,7 +943,8 @@ fn settings_runtime_env_is_visible_to_anthropic_provider_detection() {
         ("ANTHROPIC_MODEL".to_string(), "deepseek-v4-pro".to_string()),
     ]);
 
-    let report = allthecodes_config::settings::apply_runtime_env(&env).expect("settings env applies");
+    let report =
+        allthecodes_config::settings::apply_runtime_env(&env).expect("settings env applies");
     let client = ApiClient::from_auth_result()
         .expect("auth resolution should not error")
         .expect("settings env should build a client");
@@ -991,8 +992,8 @@ fn startup_settings_env_overrides_inherited_anthropic_provider_env() {
         ("ANTHROPIC_MODEL".to_string(), "deepseek-v4-pro".to_string()),
     ]);
 
-    let report =
-        allthecodes_config::settings::apply_startup_runtime_env(&env).expect("settings env applies");
+    let report = allthecodes_config::settings::apply_startup_runtime_env(&env)
+        .expect("settings env applies");
     let client = ApiClient::from_auth_result()
         .expect("auth resolution should not error")
         .expect("settings env should build a client");
@@ -1129,7 +1130,9 @@ fn active_codex_profile_env_builds_codex_client() {
             "codex".to_string(),
             allthecodes_config::settings::ProviderProfileSettings {
                 backend: Some("codex".to_string()),
-                api_provider: Some(allthecodes_config::settings::API_PROVIDER_OPENAI_CODEX.to_string()),
+                api_provider: Some(
+                    allthecodes_config::settings::API_PROVIDER_OPENAI_CODEX.to_string(),
+                ),
                 model: Some("gpt-5.4".to_string()),
                 base_url: Some("https://example.com/codex/".to_string()),
                 api_key: Some("codex-profile-token".to_string()),
@@ -1193,7 +1196,9 @@ fn active_custom_profile_env_builds_anthropic_compatible_client() {
             "custom".to_string(),
             allthecodes_config::settings::ProviderProfileSettings {
                 backend: Some("native".to_string()),
-                api_provider: Some(allthecodes_config::settings::API_PROVIDER_ANTHROPIC.to_string()),
+                api_provider: Some(
+                    allthecodes_config::settings::API_PROVIDER_ANTHROPIC.to_string(),
+                ),
                 model: Some("deepseek-v4-pro".to_string()),
                 base_url: Some("https://compatible.example.com/anthropic".to_string()),
                 env: Some(HashMap::from([(
@@ -1793,7 +1798,9 @@ fn test_active_anthropic_profile_ignores_inherited_codex_token() {
             "claude_code".to_string(),
             allthecodes_config::settings::ProviderProfileSettings {
                 backend: Some("native".to_string()),
-                api_provider: Some(allthecodes_config::settings::API_PROVIDER_ANTHROPIC.to_string()),
+                api_provider: Some(
+                    allthecodes_config::settings::API_PROVIDER_ANTHROPIC.to_string(),
+                ),
                 model: Some("deepseek-v4-pro".to_string()),
                 base_url: Some("https://compatible.example.com/anthropic".to_string()),
                 env: Some(HashMap::from([(
@@ -2417,8 +2424,14 @@ fn regression_prompt_cache_marker_serializes_in_anthropic_body() {
 #[test]
 fn test_prompt_cache_policy_defaults_do_not_add_ttl_or_global() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let saved = save_env(&["ALLTHECODES_PROMPT_CACHE_TTL", "ALLTHECODES_PROMPT_CACHE_GLOBAL"]);
-    clear_env(&["ALLTHECODES_PROMPT_CACHE_TTL", "ALLTHECODES_PROMPT_CACHE_GLOBAL"]);
+    let saved = save_env(&[
+        "ALLTHECODES_PROMPT_CACHE_TTL",
+        "ALLTHECODES_PROMPT_CACHE_GLOBAL",
+    ]);
+    clear_env(&[
+        "ALLTHECODES_PROMPT_CACHE_TTL",
+        "ALLTHECODES_PROMPT_CACHE_GLOBAL",
+    ]);
 
     let mut body = serde_json::json!({
         "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
@@ -2478,7 +2491,10 @@ fn test_compatible_anthropic_body_strips_cache_and_thinking_extensions() {
 #[test]
 fn test_prompt_cache_policy_adds_ttl_and_global_only_when_capable() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let saved = save_env(&["ALLTHECODES_PROMPT_CACHE_TTL", "ALLTHECODES_PROMPT_CACHE_GLOBAL"]);
+    let saved = save_env(&[
+        "ALLTHECODES_PROMPT_CACHE_TTL",
+        "ALLTHECODES_PROMPT_CACHE_GLOBAL",
+    ]);
     std::env::set_var("ALLTHECODES_PROMPT_CACHE_TTL", "1h");
     std::env::set_var("ALLTHECODES_PROMPT_CACHE_GLOBAL", "1");
 

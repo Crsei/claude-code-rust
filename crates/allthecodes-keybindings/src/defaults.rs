@@ -141,7 +141,7 @@ pub const DEFAULTS: &[Default] = &[
     // Voice dictation (issue #13). Hold Ctrl+Space to capture audio;
     // release to transcribe. Ctrl+Space is chosen over bare Space so the
     // space bar still types a space. The user can rebind via
-    // `~/.cc-rust/keybindings.json` → `voice:pushToTalk`.
+    // `~/.allthecodes/keybindings.json` -> `voice:pushToTalk`.
     Default {
         context: Context::Chat,
         chord: "ctrl+space",

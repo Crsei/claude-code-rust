@@ -292,11 +292,13 @@ fn build_output_config(
 }
 
 fn default_cache_marker() -> serde_json::Value {
-    allthecodes_api::api::client::prompt_cache_marker_value(allthecodes_api::api::client::PromptCachePolicy {
-        enabled: true,
-        ttl_1h: false,
-        global_scope: false,
-    })
+    allthecodes_api::api::client::prompt_cache_marker_value(
+        allthecodes_api::api::client::PromptCachePolicy {
+            enabled: true,
+            ttl_1h: false,
+            global_scope: false,
+        },
+    )
 }
 
 fn build_system_prompt_blocks(parts: &[String]) -> (Option<Vec<serde_json::Value>>, usize) {
@@ -421,12 +423,14 @@ fn add_cache_marker_to_message_content(message: &mut serde_json::Value) -> bool 
 }
 
 fn prompt_cache_diagnostic(message: &'static str) {
-    if allthecodes_api::api::client::is_env_truthy("CC_RUST_PROMPT_CACHE_BREAK_DETECTION") {
+    if allthecodes_api::api::client::is_env_truthy("ALLTHECODES_PROMPT_CACHE_BREAK_DETECTION")
+        || allthecodes_api::api::client::is_env_truthy("CC_RUST_PROMPT_CACHE_BREAK_DETECTION")
+    {
         tracing::debug!(message, "prompt cache break detection");
     }
 }
 
-/// Some OpenAI-compatible providers cap `max_tokens` below cc-rust's default
+/// Some OpenAI-compatible providers cap `max_tokens` below allthecodes' default
 /// 16384. Rather than rely on provider-side errors surfacing as a blown
 /// response, clamp at build time so the first request also succeeds.
 pub(crate) fn clamp_max_tokens_for_model(requested: usize, model: &str) -> usize {

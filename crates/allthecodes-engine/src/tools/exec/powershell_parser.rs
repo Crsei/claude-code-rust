@@ -14,12 +14,12 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 const POWERSHELL_PARSE_TIMEOUT: Duration = Duration::from_millis(5_000);
-const POWERSHELL_PARSE_INPUT_ENV: &str = "CC_RUST_POWERSHELL_PARSE_INPUT";
+const POWERSHELL_PARSE_INPUT_ENV: &str = "ALLTHECODES_POWERSHELL_PARSE_INPUT";
 
 const POWERSHELL_AST_METADATA_SCRIPT: &str = r#"
 $tokens = $null
 $parseErrors = $null
-$source = $env:CC_RUST_POWERSHELL_PARSE_INPUT
+$source = $env:ALLTHECODES_POWERSHELL_PARSE_INPUT
 $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$parseErrors)
 
 function Convert-ElementType($node) {

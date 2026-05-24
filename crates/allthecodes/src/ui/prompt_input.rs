@@ -504,13 +504,13 @@ mod tests {
             60,
             PromptInputRenderContext {
                 hint: None,
-                placeholder: Some("Message cc-rust"),
+                placeholder: Some("Message allthecodes"),
                 mode_indicator: Some("INS"),
             },
         );
 
         assert!(rendered.starts_with(">"));
-        assert!(rendered.contains("Message cc-rust"));
+        assert!(rendered.contains("Message allthecodes"));
         assert!(rendered.contains("[INS]"));
     }
 

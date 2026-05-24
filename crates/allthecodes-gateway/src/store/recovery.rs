@@ -39,7 +39,7 @@ impl GatewayStore {
             GatewayError::io(
                 "store_read_failed",
                 "The gateway could not read the runs directory.",
-                "Check permissions for the cc-rust gateway runs directory.",
+                "Check permissions for the allthecodes gateway runs directory.",
                 &self.persistence.runs_dir,
                 &error,
             )
@@ -48,7 +48,7 @@ impl GatewayStore {
                 GatewayError::io(
                     "store_read_failed",
                     "The gateway could not read a run directory entry.",
-                    "Check permissions for the cc-rust gateway runs directory.",
+                    "Check permissions for the allthecodes gateway runs directory.",
                     &self.persistence.runs_dir,
                     &error,
                 )

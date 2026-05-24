@@ -417,7 +417,7 @@ impl App {
         } else if self.vim.enabled {
             "Press i to insert, / for commands, Ctrl+R for history"
         } else {
-            "Message cc-rust, / for commands"
+            "Message allthecodes, / for commands"
         }
     }
 
@@ -729,7 +729,7 @@ fn render_workspace_trust_prompt(
             " project, or work from your team). If not, take a moment to review what's in this folder first.",
         ),
         Line::from(""),
-        Line::from(" cc-rust can read, edit, and execute files here."),
+        Line::from(" allthecodes can read, edit, and execute files here."),
         Line::from(""),
         Line::from(Span::styled(
             " Security guide",

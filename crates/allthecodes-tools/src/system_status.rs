@@ -2,9 +2,9 @@
 
 use std::sync::{Arc, OnceLock};
 
+use allthecodes_ipc_protocol::subsystem_types::*;
 use anyhow::Result;
 use async_trait::async_trait;
-use allthecodes_ipc_protocol::subsystem_types::*;
 use serde_json::{json, Value};
 
 use crate::tool::{Tool, ToolProgress, ToolResult, ToolUseContext, ValidationResult};

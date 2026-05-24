@@ -33,7 +33,9 @@ use super::types::{AbortReason, UsageTrackingExt};
 use super::QueryEngine;
 
 fn model_assisted_memory_recall_enabled() -> bool {
-    std::env::var("CC_RUST_MODEL_ASSISTED_MEMORY_RECALL")
+    std::env::var("ALLTHECODES_MODEL_ASSISTED_MEMORY_RECALL")
+        .or_else(|_| std::env::var("CC_RUST_MODEL_ASSISTED_MEMORY_RECALL"))
+        .or_else(|_| std::env::var("ALLTHECODES_MODEL_MEMORY_RECALL"))
         .or_else(|_| std::env::var("CC_RUST_MODEL_MEMORY_RECALL"))
         .map(|value| is_truthy_model_assisted_memory_recall_value(&value))
         .unwrap_or(false)
@@ -47,7 +49,8 @@ fn is_truthy_model_assisted_memory_recall_value(value: &str) -> bool {
 }
 
 fn model_assisted_memory_recall_timeout() -> Duration {
-    let millis = std::env::var("CC_RUST_MODEL_ASSISTED_MEMORY_RECALL_TIMEOUT_MS")
+    let millis = std::env::var("ALLTHECODES_MODEL_ASSISTED_MEMORY_RECALL_TIMEOUT_MS")
+        .or_else(|_| std::env::var("CC_RUST_MODEL_ASSISTED_MEMORY_RECALL_TIMEOUT_MS"))
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|millis| *millis > 0)
@@ -102,7 +105,8 @@ async fn build_model_assisted_memory_context(
         return Ok(Some((String::new(), Vec::new())));
     }
 
-    let api_client = match allthecodes_api::api::client::ApiClient::from_backend(Some(backend_name)) {
+    let api_client = match allthecodes_api::api::client::ApiClient::from_backend(Some(backend_name))
+    {
         Some(client) => client,
         None => return Ok(None),
     };
@@ -433,7 +437,8 @@ async fn build_submit_system_prompt(
         )
     };
 
-    let ignore_memory = allthecodes_session::memdir::query_requests_memory_ignore(&memory_query_text);
+    let ignore_memory =
+        allthecodes_session::memdir::query_requests_memory_ignore(&memory_query_text);
     let session_memory_context = if ignore_memory {
         None
     } else {

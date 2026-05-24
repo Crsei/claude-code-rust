@@ -7,9 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
+use allthecodes_config::settings;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use allthecodes_config::settings;
 use serde_json::{json, Value};
 use tracing::debug;
 

@@ -1,4 +1,4 @@
-//! Team coordination data types shared across cc-rust crates.
+//! Team coordination data types shared across allthecodes crates.
 //!
 //! Only the *pure data* types that `AppState` needs live here. Runtime
 //! machinery (backend, mailbox, runner, protocol, in-process task state) has a

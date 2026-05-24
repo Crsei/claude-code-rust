@@ -207,7 +207,8 @@ mod tests {
             .auth_profiles
             .insert("codex".to_string(), profile);
         ctx.app_state.settings.available_models = allthecodes_config::settings::codex_model_ids();
-        ctx.app_state.settings.model_capabilities = allthecodes_config::settings::codex_model_capabilities();
+        ctx.app_state.settings.model_capabilities =
+            allthecodes_config::settings::codex_model_capabilities();
     }
 
     #[test]

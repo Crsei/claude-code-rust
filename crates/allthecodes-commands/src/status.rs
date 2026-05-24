@@ -50,7 +50,9 @@ impl CommandHandler for StatusHandler {
         lines.push(format!("Permissions: {}", permission_mode));
         lines.push(format!(
             "Coordinator: {}",
-            if allthecodes_config::features::enabled(allthecodes_config::features::Feature::Coordinator) {
+            if allthecodes_config::features::enabled(
+                allthecodes_config::features::Feature::Coordinator
+            ) {
                 "ON"
             } else {
                 "OFF"

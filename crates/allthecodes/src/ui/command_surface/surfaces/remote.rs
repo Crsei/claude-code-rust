@@ -189,8 +189,8 @@ fn marker(selected: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use allthecodes_gateway::{RemoteSource, RemoteTransport, RunPolicy, RunRequest};
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use serial_test::serial;
     use std::path::Path;
 
@@ -274,8 +274,9 @@ mod tests {
     fn remote_surface_new_uses_nonblocking_placeholder_snapshot() {
         let temp = tempfile::tempdir().unwrap();
         let _guard = EnvGuard::set("ALLTHECODES_HOME", temp.path());
-        let store =
-            allthecodes_gateway::GatewayStore::default_with_policy(allthecodes_gateway::SessionKeyPolicy::default());
+        let store = allthecodes_gateway::GatewayStore::default_with_policy(
+            allthecodes_gateway::SessionKeyPolicy::default(),
+        );
         store.create_run(request()).unwrap();
 
         let surface = RemoteSurface::new();

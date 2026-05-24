@@ -436,7 +436,9 @@ mod tests {
                 permission_event_callback: None,
                 bg_agent_tx: None,
                 hook_runner: Arc::new(allthecodes_types::hooks::NoopHookRunner::new()),
-                command_dispatcher: Arc::new(allthecodes_types::commands::NoopCommandDispatcher::new()),
+                command_dispatcher: Arc::new(
+                    allthecodes_types::commands::NoopCommandDispatcher::new(),
+                ),
             },
             tx,
         )

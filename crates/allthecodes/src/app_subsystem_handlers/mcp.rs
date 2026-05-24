@@ -557,7 +557,7 @@ mod tests {
     #[serial_test::serial]
     fn handle_mcp_upsert_config_emits_config_changed() {
         let home = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         let entry = McpServerConfigEntry {
             name: "h-test".to_string(),
@@ -639,7 +639,7 @@ mod tests {
     fn handle_mcp_toggle_enabled_emits_config_changed_and_state() {
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         // Seed an entry in user scope via the handler so the `cwd` used
         // to discover matches the one the toggle handler uses.
@@ -699,9 +699,10 @@ mod tests {
     async fn handle_mcp_reconnect_uses_runtime_manager_and_emits_final_state() {
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
-        let manager =
-            std::sync::Arc::new(tokio::sync::Mutex::new(allthecodes_mcp::manager::McpManager::new()));
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
+        let manager = std::sync::Arc::new(tokio::sync::Mutex::new(
+            allthecodes_mcp::manager::McpManager::new(),
+        ));
         let _runtime = RuntimeMcpGuard::install(manager.clone());
         std::fs::write(
             home.path().join("settings.json"),
@@ -757,7 +758,7 @@ mod tests {
         use super::super::snapshot::build_mcp_server_config_entries;
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         std::fs::write(
             home.path().join("settings.json"),

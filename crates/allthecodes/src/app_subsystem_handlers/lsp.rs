@@ -35,7 +35,9 @@ fn lsp_document_change_from_ipc(
 }
 
 // Used by snapshot.rs — kept pub(super) to avoid code duplication.
-pub(super) fn lsp_server_info_to_ipc(info: allthecodes_lsp_service::LspServerInfo) -> LspServerInfo {
+pub(super) fn lsp_server_info_to_ipc(
+    info: allthecodes_lsp_service::LspServerInfo,
+) -> LspServerInfo {
     LspServerInfo {
         language_id: info.language_id,
         state: info.state,
@@ -114,11 +116,15 @@ pub fn handle_lsp_command(cmd: LspCommand) -> Vec<BackendMessage> {
         }),
         LspCommand::SaveDocument { uri, text } => {
             spawn_lsp_task("save_document", None, async move {
-                allthecodes_lsp_service::save_document(&uri, text).await.map(|_| ())
+                allthecodes_lsp_service::save_document(&uri, text)
+                    .await
+                    .map(|_| ())
             })
         }
         LspCommand::CloseDocument { uri } => spawn_lsp_task("close_document", None, async move {
-            allthecodes_lsp_service::close_document(&uri).await.map(|_| ())
+            allthecodes_lsp_service::close_document(&uri)
+                .await
+                .map(|_| ())
         }),
         LspCommand::Completion {
             request_id,
@@ -136,11 +142,13 @@ pub fn handle_lsp_command(cmd: LspCommand) -> Vec<BackendMessage> {
                     trigger_character,
                 )
                 .await?;
-                allthecodes_lsp_service::emit_event(allthecodes_lsp_service::LspEvent::CompletionResults {
-                    request_id,
-                    uri,
-                    items,
-                });
+                allthecodes_lsp_service::emit_event(
+                    allthecodes_lsp_service::LspEvent::CompletionResults {
+                        request_id,
+                        uri,
+                        items,
+                    },
+                );
                 Ok(())
             })
         }

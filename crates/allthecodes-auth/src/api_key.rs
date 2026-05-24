@@ -9,6 +9,7 @@ use anyhow::Result;
 
 /// Service name used for allthecodes API keys in the system keychain.
 pub const KEYCHAIN_SERVICE_NAME: &str = "allthecodes";
+const LEGACY_KEYCHAIN_SERVICE_NAME: &str = "cc-rust";
 
 /// Account name used for the Anthropic API key in the system keychain.
 pub const KEYCHAIN_ACCOUNT_API_KEY: &str = "api-key";
@@ -53,7 +54,7 @@ pub fn load_api_key() -> Result<Option<String>> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE_NAME, KEYCHAIN_ACCOUNT_API_KEY)?;
     match entry.get_password() {
         Ok(key) => Ok(Some(key)),
-        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(keyring::Error::NoEntry) => load_legacy_keychain_entry(KEYCHAIN_ACCOUNT_API_KEY),
         Err(e) => Err(e.into()),
     }
 }
@@ -65,6 +66,25 @@ pub fn load_openai_api_key() -> Result<Option<String>> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE_NAME, KEYCHAIN_ACCOUNT_OPENAI_API_KEY)?;
     match entry.get_password() {
         Ok(key) => Ok(Some(key)),
+        Err(keyring::Error::NoEntry) => load_legacy_keychain_entry(KEYCHAIN_ACCOUNT_OPENAI_API_KEY),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn load_legacy_keychain_entry(account: &str) -> Result<Option<String>> {
+    let legacy_entry = keyring::Entry::new(LEGACY_KEYCHAIN_SERVICE_NAME, account)?;
+    match legacy_entry.get_password() {
+        Ok(key) => {
+            let new_entry = keyring::Entry::new(KEYCHAIN_SERVICE_NAME, account)?;
+            if let Err(err) = new_entry.set_password(&key) {
+                tracing::warn!(
+                    account,
+                    error = %err,
+                    "failed to migrate legacy cc-rust keychain entry to allthecodes"
+                );
+            }
+            Ok(Some(key))
+        }
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(e.into()),
     }

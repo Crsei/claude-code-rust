@@ -8,7 +8,9 @@ use crate::protocol::{
     ToolResultContentInfo,
 };
 use crate::subsystem_types::SubsystemStatusSnapshot;
-use allthecodes_types::permission_events::{HookPermissionDecisionEvent, PermissionDecisionDebugEvent};
+use allthecodes_types::permission_events::{
+    HookPermissionDecisionEvent, PermissionDecisionDebugEvent,
+};
 
 /// Backward-compatible alias for the legacy backend wire enum.
 pub type LegacyBackendMessage = BackendMessage;

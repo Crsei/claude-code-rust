@@ -11,8 +11,8 @@ use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{bail, Context, Result};
 use allthecodes_types::hooks::{HookOutput, HookRunner, HooksMap};
+use anyhow::{bail, Context, Result};
 use serde_json::json;
 
 pub const WORKTREE_CREATE_EVENT: &str = "WorktreeCreate";
@@ -176,7 +176,7 @@ pub async fn run_worktree_create_hook(
         "branch_name": branch_name,
         "output_schema": {
             "updated_input": {
-                "worktree_path": "absolute path under CC_RUST_HOME/worktrees",
+                "worktree_path": "absolute path under ALLTHECODES_HOME/worktrees",
                 "branch_name": "optional branch name override"
             }
         }
@@ -304,7 +304,7 @@ mod tests {
     #[serial_test::serial]
     fn parse_create_output_accepts_allowed_path() {
         let home = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
         let path = crate::config::paths::worktrees_dir().join("agent-worktree-test");
         let output = HookOutput {
             updated_input: Some(json!({
@@ -325,7 +325,7 @@ mod tests {
     #[serial_test::serial]
     fn parse_create_output_rejects_out_of_bounds_path() {
         let home = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
         let output = HookOutput {
             updated_input: Some(json!({
                 "worktree_path": std::env::temp_dir().join("outside-worktree").display().to_string(),
@@ -340,7 +340,7 @@ mod tests {
     #[serial_test::serial]
     fn allowed_path_accepts_nonexistent_child_under_worktrees_root() {
         let home = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
         let path = crate::config::paths::worktrees_dir()
             .join("new-parent")
             .join("new-worktree");
@@ -354,7 +354,7 @@ mod tests {
     fn allowed_path_rejects_symlink_escape() {
         let home = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
         let root = crate::config::paths::worktrees_dir();
         std::fs::create_dir_all(&root).unwrap();
         std::os::unix::fs::symlink(outside.path(), root.join("escape")).unwrap();
@@ -369,7 +369,7 @@ mod tests {
     fn allowed_path_rejects_junction_escape() {
         let home = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
-        let _home = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
         let root = crate::config::paths::worktrees_dir();
         std::fs::create_dir_all(&root).unwrap();
         let junction = root.join("escape");

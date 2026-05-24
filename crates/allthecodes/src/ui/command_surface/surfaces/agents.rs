@@ -153,10 +153,11 @@ impl CreateAgentState {
 
 impl AgentsSurface {
     pub(crate) fn new(cwd: &Path) -> Self {
-        let agents: Vec<AgentDefinition> = allthecodes_services::agent_definitions::list_all_agents(cwd)
-            .into_iter()
-            .map(agent_entry_to_ui)
-            .collect();
+        let agents: Vec<AgentDefinition> =
+            allthecodes_services::agent_definitions::list_all_agents(cwd)
+                .into_iter()
+                .map(agent_entry_to_ui)
+                .collect();
         let source_tabs = agent_source_tabs(&agents);
         let mut state = AgentsListState::new(AgentSourceFilter::All, agents);
         state.show_create_new = create_entry_for_source(state.source);
@@ -928,7 +929,10 @@ fn upsert_agent(agent: AgentDefinition) -> Result<AgentDefinition, String> {
                     entry: Some(entry),
                     ..
                 } => return Ok(agent_entry_to_ui(*entry)),
-                allthecodes_ipc_protocol::subsystem_events::AgentSettingsEvent::Error { error, .. } => {
+                allthecodes_ipc_protocol::subsystem_events::AgentSettingsEvent::Error {
+                    error,
+                    ..
+                } => {
                     return Err(error);
                 }
                 _ => {}

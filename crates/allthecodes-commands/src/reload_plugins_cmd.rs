@@ -107,7 +107,10 @@ impl CommandHandler for ReloadPluginsHandler {
 /// When `report.errors` or `report.global_errors` is non-empty, each diagnostic
 /// is appended on its own line, followed by summary lines so the error count is
 /// obvious even if the diagnostic list is long.
-fn format_report(report: &ReloadReport, skill_report: &allthecodes_skills::SkillLoadReport) -> String {
+fn format_report(
+    report: &ReloadReport,
+    skill_report: &allthecodes_skills::SkillLoadReport,
+) -> String {
     let mut out = format!(
         "Reloaded {} plugin(s) in {}ms.",
         report.count, report.duration_ms

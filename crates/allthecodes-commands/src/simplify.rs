@@ -23,9 +23,9 @@
 //!   /simplify <file-or-dir>   — scope the review to a file/directory
 //!   /simplify --single         — run a single-agent pass (no parallel review)
 
+use allthecodes_tools::tool::Tools;
 use anyhow::Result;
 use async_trait::async_trait;
-use allthecodes_tools::tool::Tools;
 
 use crate::runtime::{CommandForkOutcome, CommandForkParams};
 use crate::{CommandContext, CommandHandler, CommandResult};

@@ -6,10 +6,10 @@
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use anyhow::{Context, Result};
 use allthecodes_ipc_protocol::subsystem_events::{IdeEvent, SubsystemEvent};
 use allthecodes_ipc_protocol::subsystem_types::IdeInfo;
 use allthecodes_mcp::McpServerConfig;
+use anyhow::{Context, Result};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tokio::sync::broadcast;

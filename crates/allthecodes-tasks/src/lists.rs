@@ -22,7 +22,7 @@ impl TaskListLock {
                     std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
                 }
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                    // Some package-wide tests temporarily point CC_RUST_HOME at
+                    // Some package-wide tests temporarily point ALLTHECODES_HOME at
                     // tempdirs from other tests. If that tempdir is torn down
                     // between create_dir_all() and lock creation, recreate the
                     // task-list directory and retry instead of failing with an
@@ -65,7 +65,7 @@ impl Drop for TaskListLock {
 #[cfg(test)]
 static TEST_TASKS_ROOT: std::sync::LazyLock<PathBuf> = std::sync::LazyLock::new(|| {
     std::env::temp_dir().join(format!(
-        "cc-rust-test-global-tasks-{}",
+        "allthecodes-test-global-tasks-{}",
         uuid::Uuid::new_v4()
     ))
 });
@@ -76,7 +76,9 @@ static GLOBAL_STORES: std::sync::LazyLock<Mutex<HashMap<String, TaskStore>>> =
 fn task_lists_root() -> PathBuf {
     #[cfg(test)]
     {
-        if let Ok(root) = std::env::var("CC_RUST_HOME") {
+        if let Ok(root) =
+            std::env::var("ALLTHECODES_HOME").or_else(|_| std::env::var("CC_RUST_HOME"))
+        {
             if !root.trim().is_empty() {
                 return PathBuf::from(root).join("tasks");
             }
@@ -86,7 +88,9 @@ fn task_lists_root() -> PathBuf {
 
     #[cfg(not(test))]
     {
-        if let Ok(root) = std::env::var("CC_RUST_HOME") {
+        if let Ok(root) =
+            std::env::var("ALLTHECODES_HOME").or_else(|_| std::env::var("CC_RUST_HOME"))
+        {
             let root = root.trim();
             if !root.is_empty() {
                 return PathBuf::from(root).join("tasks");
@@ -95,7 +99,7 @@ fn task_lists_root() -> PathBuf {
 
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".cc-rust")
+            .join(".allthecodes")
             .join("tasks")
     }
 }
@@ -251,7 +255,8 @@ pub struct TaskListScope {
 }
 
 pub fn task_list_id_from_parts(scope: TaskListScope) -> String {
-    if let Some(id) = env_task_list_id(CC_RUST_TASK_LIST_ID_ENV)
+    if let Some(id) = env_task_list_id(ALLTHECODES_TASK_LIST_ID_ENV)
+        .or_else(|| env_task_list_id(CC_RUST_TASK_LIST_ID_ENV))
         .or_else(|| env_task_list_id(CLAUDE_CODE_TASK_LIST_ID_ENV))
     {
         return id;
@@ -277,6 +282,7 @@ pub fn task_list_id_from_parts(scope: TaskListScope) -> String {
         .app_team_name
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+        .or_else(|| env_task_list_id(ALLTHECODES_TEAM_NAME_ENV))
         .or_else(|| env_task_list_id(CLAUDE_CODE_TEAM_NAME_ENV))
     {
         return team_name;

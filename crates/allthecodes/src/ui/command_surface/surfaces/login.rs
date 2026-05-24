@@ -112,7 +112,7 @@ impl LoginSurface {
                 detail_lines.push(plain_row("completion:", "/login-code <code>"));
             }
         }
-        BetterViewPanel::new("Login / Claude Code")
+        BetterViewPanel::new("Login / allthecodes")
             .summary("profiles=claude-code,codex,custom status=ready")
             .sections_title("Steps")
             .sections(sections, self.action_index)

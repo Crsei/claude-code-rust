@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Result;
 use allthecodes_types::hooks::{
     HookEventConfig, HookOutput, HookRunner, HooksMap, PostToolHookResult, PreToolHookResult,
 };
+use anyhow::Result;
 use futures::StreamExt;
 use serde_json::Value;
 
@@ -88,7 +88,9 @@ impl MockDeps {
             tools: vec![],
             refreshed_tools: parking_lot::Mutex::new(None),
             refresh_seen: AtomicBool::new(false),
-            hook_runner: parking_lot::Mutex::new(Arc::new(allthecodes_types::hooks::NoopHookRunner)),
+            hook_runner: parking_lot::Mutex::new(Arc::new(
+                allthecodes_types::hooks::NoopHookRunner,
+            )),
             steer_drains: parking_lot::Mutex::new(VecDeque::new()),
         }
     }

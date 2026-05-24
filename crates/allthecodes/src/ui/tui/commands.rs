@@ -192,7 +192,8 @@ fn sync_app_runtime_from_state(
     app.set_keybindings(state.keybindings.clone());
     app.sync_status_context_from_state(state);
 
-    let lang = allthecodes_voice::language::normalize_language_for_stt(state.settings.language.as_deref());
+    let lang =
+        allthecodes_voice::language::normalize_language_for_stt(state.settings.language.as_deref());
     let voice_supported = matches!(
         allthecodes_commands::voice_cmd::current_feasibility(),
         allthecodes_voice::Feasibility::Ready { .. }

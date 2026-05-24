@@ -6,7 +6,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
 
-use allthecodes_config::constants::files::{has_binary_extension, is_binary_content, BINARY_CHECK_SIZE};
+use allthecodes_config::constants::files::{
+    has_binary_extension, is_binary_content, BINARY_CHECK_SIZE,
+};
 
 pub const DEFAULT_MAX_WRITE_BYTES: usize = 10 * 1024 * 1024;
 

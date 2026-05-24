@@ -409,7 +409,9 @@ impl AgentRuntime {
             if let Some(agent_event) = sdk_to_agent_event(&msg, &self.agent_id) {
                 let _ = self
                     .bg_tx
-                    .send(allthecodes_types::agent_channel::AgentIpcEvent::Agent(agent_event));
+                    .send(allthecodes_types::agent_channel::AgentIpcEvent::Agent(
+                        agent_event,
+                    ));
             }
         }
 
@@ -642,7 +644,7 @@ async fn prepare_runtime(
         Err(err) => {
             if !worktree_fallback_enabled() {
                 let message = format!(
-                    "background worktree isolation required but setup failed: {err}. Set CC_RUST_ALLOW_WORKTREE_FALLBACK=true to run without isolation."
+                    "background worktree isolation required but setup failed: {err}. Set ALLTHECODES_ALLOW_WORKTREE_FALLBACK=true to run without isolation."
                 );
                 warn!(
                     agent_id = %agent_id,
@@ -688,7 +690,8 @@ async fn prepare_runtime(
 }
 
 fn worktree_fallback_enabled() -> bool {
-    std::env::var("CC_RUST_ALLOW_WORKTREE_FALLBACK")
+    std::env::var("ALLTHECODES_ALLOW_WORKTREE_FALLBACK")
+        .or_else(|_| std::env::var("CC_RUST_ALLOW_WORKTREE_FALLBACK"))
         .map(|value| {
             matches!(
                 value.trim().to_ascii_lowercase().as_str(),
@@ -1034,14 +1037,14 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn worktree_fallback_requires_explicit_policy() {
-        let _fallback = EnvGuard::remove("CC_RUST_ALLOW_WORKTREE_FALLBACK");
+        let _fallback = EnvGuard::remove("ALLTHECODES_ALLOW_WORKTREE_FALLBACK");
         assert!(!worktree_fallback_enabled());
     }
 
     #[test]
     #[serial_test::serial]
     fn worktree_fallback_policy_accepts_true() {
-        let _fallback = EnvGuard::set("CC_RUST_ALLOW_WORKTREE_FALLBACK", "true");
+        let _fallback = EnvGuard::set("ALLTHECODES_ALLOW_WORKTREE_FALLBACK", "true");
         assert!(worktree_fallback_enabled());
     }
 
@@ -1050,7 +1053,7 @@ mod tests {
     async fn worktree_setup_failure_is_visible_when_fallback_disabled() {
         let tmp = tempfile::tempdir().unwrap();
         let _cwd = CurrentDirGuard::set(tmp.path());
-        let _fallback = EnvGuard::remove("CC_RUST_ALLOW_WORKTREE_FALLBACK");
+        let _fallback = EnvGuard::remove("ALLTHECODES_ALLOW_WORKTREE_FALLBACK");
 
         let err = match prepare_runtime(
             true,
@@ -1070,7 +1073,7 @@ mod tests {
         let message = err.to_string();
 
         assert!(message.contains("background worktree isolation required but setup failed"));
-        assert!(message.contains("CC_RUST_ALLOW_WORKTREE_FALLBACK=true"));
+        assert!(message.contains("ALLTHECODES_ALLOW_WORKTREE_FALLBACK=true"));
     }
 
     #[tokio::test]
@@ -1078,7 +1081,7 @@ mod tests {
     async fn worktree_setup_failure_fallback_returns_visible_warning_when_enabled() {
         let tmp = tempfile::tempdir().unwrap();
         let _cwd = CurrentDirGuard::set(tmp.path());
-        let _fallback = EnvGuard::set("CC_RUST_ALLOW_WORKTREE_FALLBACK", "true");
+        let _fallback = EnvGuard::set("ALLTHECODES_ALLOW_WORKTREE_FALLBACK", "true");
 
         let runtime = prepare_runtime(
             true,

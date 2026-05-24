@@ -79,7 +79,9 @@ fn scope_from_discovery(scope: &allthecodes_mcp::discovery::DiscoveryScope) -> C
     match scope {
         allthecodes_mcp::discovery::DiscoveryScope::User => ConfigScope::User,
         allthecodes_mcp::discovery::DiscoveryScope::Project => ConfigScope::Project,
-        allthecodes_mcp::discovery::DiscoveryScope::Plugin(id) => ConfigScope::Plugin { id: id.clone() },
+        allthecodes_mcp::discovery::DiscoveryScope::Plugin(id) => {
+            ConfigScope::Plugin { id: id.clone() }
+        }
         allthecodes_mcp::discovery::DiscoveryScope::Ide(id) => ConfigScope::Ide { id: id.clone() },
     }
 }

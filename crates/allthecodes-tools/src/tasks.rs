@@ -86,8 +86,9 @@ fn maybe_link_plan_workflow_task(
     let persist_cwd = cwd.clone();
     let task_id = entry.id.clone();
     let summary = Some(entry.subject.clone());
-    let slot: Arc<parking_lot::Mutex<Option<Option<allthecodes_types::plan_workflow::PlanWorkflowRecord>>>> =
-        Arc::new(parking_lot::Mutex::new(None));
+    let slot: Arc<
+        parking_lot::Mutex<Option<Option<allthecodes_types::plan_workflow::PlanWorkflowRecord>>>,
+    > = Arc::new(parking_lot::Mutex::new(None));
     let slot_for_update = Arc::clone(&slot);
 
     (ctx.set_app_state)(Box::new(move |mut state| {
@@ -424,8 +425,10 @@ impl Tool for TaskUpdateTool {
                     && existing.status != TaskStatus::Completed
                 {
                     let app_state = (ctx.get_app_state)();
-                    let configs =
-                        allthecodes_types::hooks::load_hook_configs(&app_state.hooks, "TaskCompleted");
+                    let configs = allthecodes_types::hooks::load_hook_configs(
+                        &app_state.hooks,
+                        "TaskCompleted",
+                    );
                     if !configs.is_empty() {
                         let payload = json!({
                             "task_id": &entry.id,

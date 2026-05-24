@@ -5,10 +5,12 @@
 /// classifier callback can be installed before submit_message runs.
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use allthecodes_api::api::client::{ApiClient, MessagesRequest};
 use allthecodes_permissions::decision::AutoClassifierStage;
-use allthecodes_safety::classifier::{assistant_text, SafetyClassifierModel, SafetyClassifierPrompt};
+use allthecodes_safety::classifier::{
+    assistant_text, SafetyClassifierModel, SafetyClassifierPrompt,
+};
+use async_trait::async_trait;
 
 const FAST_MAX_TOKENS: usize = 512;
 const THINKING_MAX_TOKENS: usize = 4096;

@@ -9,7 +9,9 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 use crate::{CommandContext, CommandHandler, CommandResult};
-use allthecodes_types::message::{ContentBlock, Message, MessageContent, ToolResultContent, UserMessage};
+use allthecodes_types::message::{
+    ContentBlock, Message, MessageContent, ToolResultContent, UserMessage,
+};
 
 pub struct RecapHandler;
 

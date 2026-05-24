@@ -31,7 +31,7 @@ pub fn render_welcome(
     if area.width < 20 || area.height < PANEL_HEIGHT {
         let line = Line::from(vec![
             Span::styled(
-                "cc-rust ",
+                "allthecodes ",
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ),
             Span::styled(format!("v{}", version), Style::default().fg(MUTED)),
@@ -45,7 +45,7 @@ pub fn render_welcome(
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT_DIM))
         .title(Line::from(vec![Span::styled(
-            " cc-rust ",
+            " allthecodes ",
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         )]))
         .title_alignment(Alignment::Left);
@@ -154,7 +154,7 @@ mod tests {
             "/tmp",
         );
         let content = buf_to_string(&buf, area);
-        assert!(content.contains("cc-rust"));
+        assert!(content.contains("allthecodes"));
     }
 
     #[test]

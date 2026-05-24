@@ -24,12 +24,13 @@ pub(super) fn handle_lsp_recommendation_response(
     decision: String,
 ) {
     crate::app_runtime_adapters::ensure_installed();
-    let messages =
-        allthecodes_ipc::subsystem_handlers::handle_lsp_command(LspCommand::RecommendationResponse {
+    let messages = allthecodes_ipc::subsystem_handlers::handle_lsp_command(
+        LspCommand::RecommendationResponse {
             request_id,
             plugin_name,
             decision,
-        });
+        },
+    );
     handle_backend_messages(app, messages);
 }
 

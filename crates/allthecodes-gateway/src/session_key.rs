@@ -22,7 +22,7 @@ impl Default for SessionKeyPolicy {
     }
 }
 
-/// Stable, non-secret key used to map repeat source traffic to a cc-rust
+/// Stable, non-secret key used to map repeat source traffic to an allthecodes
 /// assistant session.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SessionKey(String);

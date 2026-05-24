@@ -15,7 +15,9 @@ use allthecodes_types::message::{
     ContentBlock, InfoLevel, Message, MessageContent, StreamEvent, SystemMessage, SystemSubtype,
     ToolResultContent, UserMessage,
 };
-use allthecodes_types::sdk::{SdkAssistantMessage, SdkMessage, SdkStreamEvent, SdkTombstone, SdkUserReplay};
+use allthecodes_types::sdk::{
+    SdkAssistantMessage, SdkMessage, SdkStreamEvent, SdkTombstone, SdkUserReplay,
+};
 use serde_json::json;
 fn stream_event(event: StreamEvent) -> SdkMessage {
     SdkMessage::StreamEvent(SdkStreamEvent {

@@ -157,7 +157,7 @@ pub fn is_over_token_limit(messages: &[Message], model: &str) -> bool {
 /// Return a structured context-usage report for the current heuristic estimator.
 ///
 /// This deliberately marks `exact_count_available=false` so callers do not
-/// mistake cc-rust's hot-path estimate for a provider-level countTokens result.
+/// mistake allthecodes' hot-path estimate for a provider-level countTokens result.
 pub fn estimate_context_usage(messages: &[Message], model: &str) -> TokenUsageReport {
     let estimated_tokens = estimate_messages_tokens(messages);
     token_usage_report_from_count(

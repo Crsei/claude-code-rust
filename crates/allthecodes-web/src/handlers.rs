@@ -256,10 +256,11 @@ pub async fn settings_handler(
             let model = req.value.as_str().unwrap_or("").to_string();
             let settings = state.engine().app_state().settings.clone();
             let available = settings.available_models.clone();
-            let resolved = allthecodes_commands::model::resolve_model_alias_with_settings(&model, &settings);
-            if let Err(message) =
-                allthecodes_commands::model::check_available_with_settings(&resolved, &available, &settings)
-            {
+            let resolved =
+                allthecodes_commands::model::resolve_model_alias_with_settings(&model, &settings);
+            if let Err(message) = allthecodes_commands::model::check_available_with_settings(
+                &resolved, &available, &settings,
+            ) {
                 return (
                     StatusCode::BAD_REQUEST,
                     Json(SettingsResponse {

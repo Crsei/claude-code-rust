@@ -27,7 +27,10 @@ use crate::{backend, constants, helpers, identity, in_process::InProcessBackend,
 // Entry point
 // ---------------------------------------------------------------------------
 
-pub async fn execute_team_command(args: &str, ctx: &mut allthecodes_commands::CommandContext) -> String {
+pub async fn execute_team_command(
+    args: &str,
+    ctx: &mut allthecodes_commands::CommandContext,
+) -> String {
     let mut parts = args.trim().splitn(2, char_is_whitespace);
     let sub = parts.next().unwrap_or("").trim();
     let rest = parts.next().unwrap_or("").trim();
@@ -276,7 +279,9 @@ async fn spawn(ctx: &mut allthecodes_commands::CommandContext, rest: &str) -> St
     let agent_type = crate::coordinator::default_teammate_agent_type().to_string();
     let system_prompt = (agent_type == crate::coordinator::WORKER_AGENT_TYPE)
         .then(|| {
-            allthecodes_engine::agent_runtime::builtin_agent_prompt(crate::coordinator::WORKER_AGENT_TYPE)
+            allthecodes_engine::agent_runtime::builtin_agent_prompt(
+                crate::coordinator::WORKER_AGENT_TYPE,
+            )
         })
         .flatten();
     let system_prompt_mode = system_prompt

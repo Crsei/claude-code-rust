@@ -333,9 +333,9 @@ mod tests {
         // even if SESSION_ID has been set by a prior test.
         let _feature = EnvGuard::set("FEATURE_SUBAGENT_DASHBOARD", "0");
 
-        // Point CC_RUST_HOME to a clean tempdir so we can assert no writes.
+        // Point ALLTHECODES_HOME to a clean tempdir so we can assert no writes.
         let tmp = TempDir::new().expect("tempdir");
-        let _home = EnvGuard::set("CC_RUST_HOME", tmp.path().to_str().unwrap());
+        let _home = EnvGuard::set("ALLTHECODES_HOME", tmp.path().to_str().unwrap());
 
         // Ensure SESSION_ID is set; if prior tests already set it, that's fine —
         // we just need emit_subagent_event to take the feature-gated early return.

@@ -11,14 +11,14 @@ use allthecodes_ipc_protocol::subsystem_types::{ConfigScope, McpServerConfigEntr
 /// Returns `Err` when the scope is read-only (plugin / IDE).
 ///
 /// We intentionally **don't** walk ancestors for `Project`: the scoped
-/// discovery layer reads exactly `{cwd}/.cc-rust/settings.json`, so any
+/// discovery layer reads exactly `{cwd}/.allthecodes/settings.json`, so any
 /// write must land in the same place or the round-trip breaks. Callers
 /// that really want the ancestor-walking behaviour should stabilize their
 /// project root before invoking this.
 fn settings_path_for_scope(cwd: &std::path::Path, scope: &ConfigScope) -> Result<PathBuf, String> {
     match scope {
         ConfigScope::User => Ok(allthecodes_config::settings::user_settings_path()),
-        ConfigScope::Project => Ok(cwd.join(".cc-rust").join("settings.json")),
+        ConfigScope::Project => Ok(cwd.join(".allthecodes").join("settings.json")),
         ConfigScope::Plugin { id } => Err(format!(
             "scope `plugin:{}` is read-only — edit the plugin manifest instead",
             id
@@ -281,7 +281,7 @@ mod tests {
     fn upsert_mcp_entry_persists_to_user_scope() {
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         let entry = McpServerConfigEntry {
             name: "ctx7".to_string(),
@@ -316,7 +316,7 @@ mod tests {
     fn upsert_mcp_entry_persists_to_project_scope() {
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         let entry = McpServerConfigEntry {
             name: "proj-srv".to_string(),
@@ -334,7 +334,7 @@ mod tests {
 
         upsert_mcp_entry(cwd.path(), entry).expect("upsert ok");
 
-        let path = cwd.path().join(".cc-rust").join("settings.json");
+        let path = cwd.path().join(".allthecodes").join("settings.json");
         assert!(path.exists(), "project settings.json should be created");
         let on_disk: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -346,7 +346,7 @@ mod tests {
     fn upsert_mcp_entry_rejects_plugin_scope() {
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         let entry = McpServerConfigEntry {
             name: "plugin-srv".to_string(),
@@ -374,7 +374,7 @@ mod tests {
     fn remove_mcp_entry_round_trips_user_scope() {
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         let entry = McpServerConfigEntry {
             name: "ctx7".to_string(),
@@ -423,7 +423,7 @@ mod tests {
     fn remove_mcp_entry_errors_on_missing_file() {
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         let err = remove_mcp_entry(cwd.path(), "nope", &ConfigScope::User)
             .expect_err("missing file should error");
@@ -435,7 +435,7 @@ mod tests {
     fn toggle_mcp_entry_enabled_flips_disabled_flag() {
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         let entry = McpServerConfigEntry {
             name: "tog-srv".to_string(),
@@ -477,7 +477,7 @@ mod tests {
     fn toggle_mcp_entry_enabled_rejects_plugin_scope() {
         let home = tempfile::tempdir().expect("tempdir");
         let cwd = tempfile::tempdir().expect("tempdir");
-        let _g = EnvGuard::set("CC_RUST_HOME", home.path().to_str().unwrap());
+        let _g = EnvGuard::set("ALLTHECODES_HOME", home.path().to_str().unwrap());
 
         // Directly ask to toggle in a read-only scope — should error even
         // when no matching entry exists in the scope.

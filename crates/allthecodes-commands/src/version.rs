@@ -12,9 +12,7 @@ pub struct VersionHandler;
 impl CommandHandler for VersionHandler {
     async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> Result<CommandResult> {
         let version = env!("CARGO_PKG_VERSION");
-        Ok(CommandResult::Output(
-            format!("allthecodes {}", version,),
-        ))
+        Ok(CommandResult::Output(format!("allthecodes {}", version,)))
     }
 }
 

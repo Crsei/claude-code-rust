@@ -151,7 +151,9 @@ struct GeneratedAgent {
     system_prompt: String,
 }
 
-fn parse_generated(msg: allthecodes_types::message::AssistantMessage) -> Result<GeneratedAgent, String> {
+fn parse_generated(
+    msg: allthecodes_types::message::AssistantMessage,
+) -> Result<GeneratedAgent, String> {
     use allthecodes_types::message::ContentBlock;
 
     let mut text_parts: Vec<String> = Vec::new();

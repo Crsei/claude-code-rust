@@ -53,10 +53,11 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
     let mut scored: Vec<(usize, ScoredCommandItem)> = Vec::new();
 
     // Get skill usage scores from Lane C global tracker
-    let usage_scores: std::collections::HashMap<String, f64> = allthecodes_skills::ranked_skill_usage()
-        .into_iter()
-        .map(|data| (data.name, data.rolling_score))
-        .collect();
+    let usage_scores: std::collections::HashMap<String, f64> =
+        allthecodes_skills::ranked_skill_usage()
+            .into_iter()
+            .map(|data| (data.name, data.rolling_score))
+            .collect();
 
     // Process commands with multi-field weighted scoring
     for (_index, cmd) in commands::get_all_commands().into_iter().enumerate() {

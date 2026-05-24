@@ -46,7 +46,7 @@ pub fn run_chrome_native_host() -> ExitCode {
 }
 
 /// Run the Claude-in-Chrome stdio MCP bridge. Spawned as an MCP subprocess
-/// by the cc-rust MCP manager when `--chrome` is active.
+/// by the allthecodes MCP manager when `--chrome` is active.
 pub fn run_claude_in_chrome_mcp() -> ExitCode {
     let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
     rt.block_on(async {
@@ -92,7 +92,9 @@ pub fn run_dump_system_prompt(cli: &impl DumpSystemPromptCli, tools: &[Arc<dyn T
 
     let dump_settings = match allthecodes_config::settings::load_effective(cwd_path) {
         Ok(mut loaded) => {
-            if let Err(e) = allthecodes_config::settings::apply_startup_runtime_env(&loaded.effective.env) {
+            if let Err(e) =
+                allthecodes_config::settings::apply_startup_runtime_env(&loaded.effective.env)
+            {
                 eprintln!("settings.env error: {e:#}");
                 return ExitCode::FAILURE;
             }
@@ -138,7 +140,8 @@ pub fn run_dump_system_prompt(cli: &impl DumpSystemPromptCli, tools: &[Arc<dyn T
         .as_ref()
         .and_then(|cfg| cfg.claude_in_chrome_default_enabled);
     if chrome_requested(cli, chrome_config_default) {
-        browser_servers.insert(allthecodes_browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string());
+        browser_servers
+            .insert(allthecodes_browser::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME.to_string());
     }
     allthecodes_browser::detection::install_browser_servers(browser_servers);
 

@@ -5,10 +5,12 @@
 //! with a message explaining how to build the UI or enable the feature — the
 //! Axum router stays valid either way.
 
-use axum::{http::Uri, response::IntoResponse};
 #[cfg(feature = "web-ui")]
-use allthecodes_daemon::web::{missing_static_assets_response, static_asset_response, static_html_response};
+use allthecodes_daemon::web::{
+    missing_static_assets_response, static_asset_response, static_html_response,
+};
 use allthecodes_daemon::web::{normalize_static_path, unbundled_static_assets_response};
+use axum::{http::Uri, response::IntoResponse};
 
 #[cfg(feature = "web-ui")]
 use rust_embed::Embed;

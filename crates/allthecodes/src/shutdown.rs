@@ -74,7 +74,8 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
                 "session_id": session_id.as_str(),
                 "exit_reason": "normal",
             });
-            let _ = allthecodes_tools::hooks::run_event_hooks("SessionEnd", &payload, &end_configs).await;
+            let _ = allthecodes_tools::hooks::run_event_hooks("SessionEnd", &payload, &end_configs)
+                .await;
         }
     }
 
@@ -102,7 +103,9 @@ pub async fn graceful_shutdown(engine: &QueryEngine) {
     let messages = engine.messages();
     if !messages.is_empty() {
         let cwd = engine.cwd();
-        if let Err(e) = allthecodes_session::storage::save_session(session_id.as_str(), &messages, cwd) {
+        if let Err(e) =
+            allthecodes_session::storage::save_session(session_id.as_str(), &messages, cwd)
+        {
             warn!(error = %e, "failed to save session during shutdown");
         } else {
             debug!("graceful_shutdown: session saved");

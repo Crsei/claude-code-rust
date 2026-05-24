@@ -277,7 +277,7 @@ fn display_path_prefers_readable_project_relative_paths() {
 #[test]
 #[serial_test::serial]
 fn snapshot_command_palette_root_and_filtered_views() {
-    let _home = EnvVarGuard::set("ALLTHECODES_HOME", "/tmp/cc-rust-snapshot-home");
+    let _home = EnvVarGuard::set("ALLTHECODES_HOME", "/tmp/allthecodes-snapshot-home");
     let cwd = snapshot_cwd();
 
     insta::assert_snapshot!(
@@ -301,7 +301,7 @@ fn snapshot_command_palette_root_and_filtered_views() {
 #[test]
 #[serial_test::serial]
 fn snapshot_all_command_argument_help_views() {
-    let _home = EnvVarGuard::set("ALLTHECODES_HOME", "/tmp/cc-rust-snapshot-home");
+    let _home = EnvVarGuard::set("ALLTHECODES_HOME", "/tmp/allthecodes-snapshot-home");
     let cwd = snapshot_cwd();
     let mut rendered = String::new();
 
@@ -352,7 +352,7 @@ fn render_palette_snapshot(
 }
 
 fn snapshot_cwd() -> PathBuf {
-    PathBuf::from("C:\\cc-rust-snapshot")
+    PathBuf::from("C:\\allthecodes-snapshot")
 }
 
 struct EnvVarGuard {
@@ -389,14 +389,14 @@ fn normalize_snapshot_text(mut text: String) -> String {
 
     text = normalize_managed_settings_path_width(text);
     text = normalize_allthecodes_home_width(text);
-    text.replace("C:/cc-rust-snapshot", "<WORKSPACE>")
+    text.replace("C:/allthecodes-snapshot", "<WORKSPACE>")
 }
 
 fn normalize_managed_settings_path_width(text: String) -> String {
     const PLACEHOLDER: &str = "<MANAGED_SETTINGS>";
     const PATHS: [&str; 2] = [
-        "file:///C:/ProgramData/cc-rust/settings.json",
-        "file:///etc/cc-rust/managed-settings.json",
+        "file:///C:/ProgramData/allthecodes/settings.json",
+        "file:///etc/allthecodes/managed-settings.json",
     ];
 
     text.lines()

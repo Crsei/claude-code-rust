@@ -79,7 +79,7 @@ fn render_captures_debug_snapshot_and_exports_file() {
     assert!(file_name.starts_with("snapshot-"));
     assert!(file_name.ends_with(".txt"));
     let exported = std::fs::read_to_string(path).expect("read snapshot");
-    assert!(exported.contains("# cc-rust TUI debug snapshot"));
+    assert!(exported.contains("# allthecodes TUI debug snapshot"));
     assert!(exported.contains("exported_at: "));
     assert!(exported.contains("session_id: debug-session"));
     assert!(exported.contains("model: deepseek-v4-pro"));
@@ -209,12 +209,16 @@ fn mouse_click_session_scrollbar_controls_prompt_messages() {
     app.scroll_offset = 0;
     let mut terminal = Terminal::new(TestBackend::new(40, 12)).expect("terminal");
     terminal.draw(|frame| app.render(frame)).expect("draw");
+    let scrollbar = app.session_scrollbar.expect("session scrollbar");
 
     assert_eq!(
         app.handle_mouse_event(MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: 39,
-            row: 7,
+            column: scrollbar.area.x,
+            row: scrollbar
+                .area
+                .y
+                .saturating_add(scrollbar.area.height.saturating_sub(2)),
             modifiers: KeyModifiers::NONE,
         }),
         AppAction::ScrollDown
@@ -467,7 +471,7 @@ fn agent_tree_dialog_navigation_select_and_close() {
 #[test]
 #[serial]
 fn status_bar_renders_only_model_and_workspace() {
-    let home = tempfile::tempdir().expect("cc-rust home");
+    let home = tempfile::tempdir().expect("allthecodes home");
     let _home_guard = EnvGuard::set_path("ALLTHECODES_HOME", home.path());
     let mut app = App::new();
     app.set_model_name("deepseek-v4-pro".to_string());
@@ -591,7 +595,7 @@ fn argument_entry_does_not_render_parameter_help_near_input() {
 #[test]
 #[serial]
 fn render_workspace_trust_prompt_after_cwd_is_set() {
-    let home = tempfile::tempdir().expect("cc-rust home");
+    let home = tempfile::tempdir().expect("allthecodes home");
     let _home_guard = EnvGuard::set_path("ALLTHECODES_HOME", home.path());
     let workspace = tempfile::tempdir().expect("workspace");
     let cwd = workspace.path().display().to_string();
@@ -611,7 +615,7 @@ fn render_workspace_trust_prompt_after_cwd_is_set() {
 #[test]
 #[serial]
 fn workspace_trust_prompt_accepts_persists_and_exits() {
-    let home = tempfile::tempdir().expect("cc-rust home");
+    let home = tempfile::tempdir().expect("allthecodes home");
     let _home_guard = EnvGuard::set_path("ALLTHECODES_HOME", home.path());
     let workspace = tempfile::tempdir().expect("workspace");
     let cwd = workspace.path().display().to_string();
@@ -631,7 +635,7 @@ fn workspace_trust_prompt_accepts_persists_and_exits() {
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
     terminal.draw(|frame| reopened.render(frame)).expect("draw");
     let content = buffer_to_lines(terminal.backend().buffer(), 80, 24).join("\n");
-    assert!(content.contains("cc-rust"));
+    assert!(content.contains("allthecodes"));
     assert!(!content.contains("Quick safety check"));
 
     let other_workspace = tempfile::tempdir().expect("other workspace");

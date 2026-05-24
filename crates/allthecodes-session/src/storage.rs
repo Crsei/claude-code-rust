@@ -643,9 +643,11 @@ fn serializable_to_messages(msgs: &[SerializableMessage]) -> Vec<Message> {
                     content: match sm.data.get("content") {
                         Some(serde_json::Value::String(s)) => MessageContent::Text(s.clone()),
                         Some(serde_json::Value::Array(blocks)) => {
-                            match serde_json::from_value::<Vec<allthecodes_types::message::ContentBlock>>(
-                                serde_json::Value::Array(blocks.clone()),
-                            ) {
+                            match serde_json::from_value::<
+                                Vec<allthecodes_types::message::ContentBlock>,
+                            >(serde_json::Value::Array(
+                                blocks.clone(),
+                            )) {
                                 Ok(cb) => MessageContent::Blocks(cb),
                                 Err(_) => MessageContent::Text(
                                     blocks

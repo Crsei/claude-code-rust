@@ -133,7 +133,7 @@ pub struct VimStatus {
     pub mode: String,
 }
 
-/// Active cc-rust worktree session metadata.
+/// Active allthecodes worktree session metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeStatus {

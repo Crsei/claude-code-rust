@@ -347,14 +347,14 @@ pub mod product {
     pub const CLAUDE_AI_BASE_URL: &str = "https://claude.ai";
 
     /// System prompt prefix for interactive CLI mode.
-    pub const CLI_SYSPROMPT_PREFIX: &str = "You are cc-rust, a coding CLI.";
+    pub const CLI_SYSPROMPT_PREFIX: &str = "You are allthecodes, a coding CLI.";
 
-    /// System prompt prefix for Agent SDK (with cc-rust preset).
+    /// System prompt prefix for Agent SDK (with allthecodes preset).
     pub const AGENT_SDK_CC_PREFIX: &str =
-        "You are cc-rust, a coding CLI, running within the Agent SDK.";
+        "You are allthecodes, a coding CLI, running within the Agent SDK.";
 
     /// System prompt prefix for plain Agent SDK usage.
-    pub const AGENT_SDK_PREFIX: &str = "You are an agent built for cc-rust.";
+    pub const AGENT_SDK_PREFIX: &str = "You are an agent built for allthecodes.";
 
     /// Message returned when a tool call produces no content.
     pub const NO_CONTENT_MESSAGE: &str = "(no content)";

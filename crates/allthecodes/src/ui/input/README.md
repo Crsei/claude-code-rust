@@ -28,6 +28,6 @@
 
 ### 测试/构建验证
 ```bash
-cargo test -p claude-code-rs ui::input
+cargo test -p allthecodes ui::input
 cargo build --workspace --release
 ```

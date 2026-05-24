@@ -5,18 +5,20 @@
 //! Provides types for describing permission changes (`PermissionUpdate`) and
 //! functions to apply them to a [`ToolPermissionContext`] in memory.
 
-use allthecodes_types::permissions::{AdditionalWorkingDirectory, PermissionMode, ToolPermissionContext};
+use allthecodes_types::permissions::{
+    AdditionalWorkingDirectory, PermissionMode, ToolPermissionContext,
+};
 
 /// Where to apply a permission update.
 ///
 /// Mirrors the editable setting sources in Bun's PermissionUpdateSchema.ts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PermissionUpdateDestination {
-    /// Global user settings (`~/.cc-rust/settings.json`).
+    /// Global user settings (`~/.allthecodes/settings.json`).
     UserSettings,
-    /// Project settings (`.cc-rust/settings.json`).
+    /// Project settings (`.allthecodes/settings.json`).
     ProjectSettings,
-    /// Local per-machine settings (`.cc-rust/settings.local.json`).
+    /// Local per-machine settings (`.allthecodes/settings.local.json`).
     LocalSettings,
     /// In-memory session-level grant (not persisted).
     Session,

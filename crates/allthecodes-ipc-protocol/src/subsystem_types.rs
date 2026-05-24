@@ -153,9 +153,9 @@ pub struct McpServerInfoBrief {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ConfigScope {
-    /// Global user scope (`~/.cc-rust/settings.json`).
+    /// Global user scope (`~/.allthecodes/settings.json`).
     User,
-    /// Current project scope (`.cc-rust/settings.json`).
+    /// Current project scope (`.allthecodes/settings.json`).
     Project,
     /// Contributed by a plugin (read-only; edit via `/plugin`).
     Plugin {
@@ -346,9 +346,9 @@ pub struct SkillInfo {
 pub enum AgentDefinitionSource {
     /// Engine-provided subagent types (general-purpose, Explore, Plan, code-reviewer).
     Builtin,
-    /// Global user scope (`~/.cc-rust/agents/*.md`).
+    /// Global user scope (`~/.allthecodes/agents/*.md`).
     User,
-    /// Current project scope (`{cwd}/.cc-rust/agents/*.md`).
+    /// Current project scope (`{cwd}/.allthecodes/agents/*.md`).
     Project,
     /// Contributed by a plugin (read-only).
     Plugin { id: String },

@@ -23,7 +23,9 @@ use super::terminal_integration::{render_policy, TerminalEnvironment};
 use super::theme::Theme;
 use super::tool_activity::{render_grouped_activity, ToolActivity, ToolState};
 use super::virtual_scroll::VirtualScroll;
-use allthecodes_types::message::{AssistantMessage, ContentBlock, Message, MessageContent, UserMessage};
+use allthecodes_types::message::{
+    AssistantMessage, ContentBlock, Message, MessageContent, UserMessage,
+};
 use uuid::Uuid;
 
 pub fn render_foundation_snapshot() -> String {
@@ -299,7 +301,7 @@ fn render_diff_snapshot() -> String {
 }
 
 fn snapshot_cwd() -> std::path::PathBuf {
-    std::path::PathBuf::from("C:\\cc-rust-snapshot")
+    std::path::PathBuf::from("C:\\allthecodes-snapshot")
 }
 
 fn buffer_text(buf: &Buffer, area: Rect) -> String {

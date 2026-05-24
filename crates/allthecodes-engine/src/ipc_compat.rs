@@ -23,7 +23,9 @@ impl allthecodes_types::callbacks::CallbackHost for QueryEngine {
     }
 }
 
-impl allthecodes_types::query_host::QueryTurnHost<allthecodes_types::sdk::SdkMessage> for QueryEngine {
+impl allthecodes_types::query_host::QueryTurnHost<allthecodes_types::sdk::SdkMessage>
+    for QueryEngine
+{
     type Stream = futures::stream::BoxStream<'static, allthecodes_types::sdk::SdkMessage>;
 
     fn reset_abort(&self) {

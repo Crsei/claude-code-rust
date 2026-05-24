@@ -1581,8 +1581,12 @@ impl ApiClient {
                 }
                 Self::from_openai_api_keychain_result()
             }
-            allthecodes_config::settings::API_PROVIDER_OPENAI_CODEX => Self::from_codex_auth_result(),
-            allthecodes_config::settings::API_PROVIDER_ANTHROPIC => Self::from_anthropic_auth_result(),
+            allthecodes_config::settings::API_PROVIDER_OPENAI_CODEX => {
+                Self::from_codex_auth_result()
+            }
+            allthecodes_config::settings::API_PROVIDER_ANTHROPIC => {
+                Self::from_anthropic_auth_result()
+            }
             provider => bail!("unsupported apiProvider `{provider}`"),
         }
     }
@@ -1630,7 +1634,8 @@ impl ApiClient {
 
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        if let Ok(value) = HeaderValue::from_str(&allthecodes_config::user_agent::api_user_agent()) {
+        if let Ok(value) = HeaderValue::from_str(&allthecodes_config::user_agent::api_user_agent())
+        {
             headers.insert(USER_AGENT, value);
         }
 

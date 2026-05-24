@@ -76,7 +76,7 @@ pub enum TelemetryExporter {
     ///     yet implemented. The variant exists so the type hierarchy is complete
     ///     and callers that match on `TelemetryExporter` can handle this case
     ///     (currently a stub that drains events silently).
-    /// Owner: https://github.com/Crsei/claude-code-rust/issues (telemetry)
+    /// Owner: https://github.com/Crsei/allthecodes/issues (telemetry)
     /// Removal: When the BigQuery exporter backend is implemented, remove this
     ///     allow-dead-code and add real export logic in `TelemetryHandle::flush`.
     #[allow(dead_code)]

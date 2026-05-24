@@ -116,7 +116,9 @@ pub fn group_hooks_by_event_and_matcher(
 }
 
 /// Get the matcher metadata for an event.
-pub fn get_matcher_metadata(event: &HookEvent) -> Option<allthecodes_types::hooks::MatcherMetadata> {
+pub fn get_matcher_metadata(
+    event: &HookEvent,
+) -> Option<allthecodes_types::hooks::MatcherMetadata> {
     get_hook_event_metadata()
         .get(event)
         .and_then(|m| m.matcher_metadata.clone())
@@ -134,13 +136,13 @@ pub fn get_hook_event_metadata_for(event: &HookEvent) -> Option<HookEventMetadat
 /// Display string for a hook source (long description).
 pub fn hook_source_description(source: HookSource) -> &'static str {
     match source {
-        HookSource::UserSettings => "User settings (~/.cc-rust/settings.json)",
-        HookSource::ProjectSettings => "Project settings (.cc-rust/settings.json)",
-        HookSource::LocalSettings => "Local settings (.cc-rust/settings.local.json)",
+        HookSource::UserSettings => "User settings (~/.allthecodes/settings.json)",
+        HookSource::ProjectSettings => "Project settings (.allthecodes/settings.json)",
+        HookSource::LocalSettings => "Local settings (.allthecodes/settings.local.json)",
         HookSource::PolicySettings => "Policy settings (managed)",
-        HookSource::PluginHook => "Plugin hooks (~/.cc-rust/plugins/*/hooks/hooks.json)",
+        HookSource::PluginHook => "Plugin hooks (~/.allthecodes/plugins/*/hooks/hooks.json)",
         HookSource::SessionHook => "Session hooks (in-memory, temporary)",
-        HookSource::BuiltinHook => "Built-in hooks (registered internally by cc-rust)",
+        HookSource::BuiltinHook => "Built-in hooks (registered internally by allthecodes)",
     }
 }
 

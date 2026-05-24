@@ -250,11 +250,15 @@ fn is_recoverable_model_capacity_error(error: &str) -> bool {
 }
 
 pub(crate) fn stream_idle_timeout() -> Duration {
-    duration_from_env("CC_RUST_STREAM_IDLE_TIMEOUT_MS").unwrap_or(DEFAULT_STREAM_IDLE_TIMEOUT)
+    duration_from_env("ALLTHECODES_STREAM_IDLE_TIMEOUT_MS")
+        .or_else(|| duration_from_env("CC_RUST_STREAM_IDLE_TIMEOUT_MS"))
+        .unwrap_or(DEFAULT_STREAM_IDLE_TIMEOUT)
 }
 
 pub(crate) fn stream_stall_timeout() -> Duration {
-    duration_from_env("CC_RUST_STREAM_STALL_TIMEOUT_MS").unwrap_or(DEFAULT_STREAM_STALL_TIMEOUT)
+    duration_from_env("ALLTHECODES_STREAM_STALL_TIMEOUT_MS")
+        .or_else(|| duration_from_env("CC_RUST_STREAM_STALL_TIMEOUT_MS"))
+        .unwrap_or(DEFAULT_STREAM_STALL_TIMEOUT)
 }
 
 fn duration_from_env(name: &str) -> Option<Duration> {
@@ -408,7 +412,11 @@ pub(crate) async fn execute_tool_calls(
             .collect::<Vec<String>>();
         let batch_span = if is_concurrent && batch.len() > 1 {
             deps.langfuse_trace().as_ref().and_then(|trace| {
-                allthecodes_services::langfuse::create_tool_batch_span(trace, &batch_tool_names, batch_index)
+                allthecodes_services::langfuse::create_tool_batch_span(
+                    trace,
+                    &batch_tool_names,
+                    batch_index,
+                )
             })
         } else {
             None

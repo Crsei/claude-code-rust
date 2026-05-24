@@ -36,7 +36,10 @@ impl Drop for EnvGuard {
 struct TestCommandDispatcher;
 
 impl allthecodes_types::commands::CommandDispatcher for TestCommandDispatcher {
-    fn parse_command_input(&self, input: &str) -> Option<allthecodes_types::commands::ParsedCommand> {
+    fn parse_command_input(
+        &self,
+        input: &str,
+    ) -> Option<allthecodes_types::commands::ParsedCommand> {
         let trimmed = input.trim();
         if trimmed == "/clear" {
             return Some(allthecodes_types::commands::ParsedCommand {
@@ -242,7 +245,7 @@ fn test_start_new_session_rotates_active_id_and_clears_runtime_state() {
 #[serial_test::serial]
 fn test_start_new_session_saves_previous_messages() {
     let home = tempdir().unwrap();
-    let _guard = EnvGuard::set("CC_RUST_HOME", home.path());
+    let _guard = EnvGuard::set("ALLTHECODES_HOME", home.path());
     let workspace = home.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
 
@@ -376,7 +379,7 @@ fn test_loaded_nested_memory_paths() {
 #[serial_test::serial]
 fn test_try_extract_session_memory_uses_structured_insight() {
     let home = tempdir().unwrap();
-    let _guard = EnvGuard::set("CC_RUST_HOME", home.path());
+    let _guard = EnvGuard::set("ALLTHECODES_HOME", home.path());
     let workspace = home.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
 

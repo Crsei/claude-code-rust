@@ -6,12 +6,12 @@
 use clap::Parser;
 use std::path::PathBuf;
 
-/// cc-rust CLI
+/// allthecodes CLI
 #[derive(Parser, Debug)]
 #[command(
     name = "claude",
     version,
-    about = "cc-rust CLI",
+    about = "allthecodes CLI",
     disable_version_flag = true
 )]
 pub struct Cli {
@@ -124,7 +124,7 @@ pub struct Cli {
     pub chrome_native_host: bool,
 
     /// INTERNAL: run as the Claude-in-Chrome stdio MCP bridge. Spawned as a
-    /// subprocess of the cc-rust MCP manager when --chrome is active.
+    /// subprocess of the allthecodes MCP manager when --chrome is active.
     /// Connects to the native-host socket and exposes the first-party
     /// browser tool surface via MCP.
     #[arg(long = "claude-in-chrome-mcp", hide = true)]

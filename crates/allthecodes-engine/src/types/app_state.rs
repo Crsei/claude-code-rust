@@ -63,7 +63,7 @@ pub struct AppState {
     pub terminal_focus: bool,
     /// Shared keybinding registry (default + user, with hot reload).
     ///
-    /// Populated at startup from `~/.cc-rust/keybindings.json` (issue #10).
+    /// Populated at startup from `~/.allthecodes/keybindings.json` (issue #10).
     /// Multiple UI surfaces (Rust TUI, IPC-driven OpenTUI) share the same
     /// handle so reloads are observed everywhere.
     pub keybindings: allthecodes_keybindings::KeybindingRegistry,

@@ -15,7 +15,9 @@ use futures::Stream;
 use uuid::Uuid;
 
 use allthecodes_types::callbacks::PermissionEventPayload;
-use allthecodes_types::permission_events::{HookPermissionDecisionEvent, PermissionDecisionDebugEvent};
+use allthecodes_types::permission_events::{
+    HookPermissionDecisionEvent, PermissionDecisionDebugEvent,
+};
 
 use crate::compact::compaction::build_post_compact_messages_with_boundary;
 use crate::permissions::decision::{

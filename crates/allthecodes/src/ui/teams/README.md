@@ -14,6 +14,6 @@
 
 ### 测试/构建验证
 ```bash
-cargo test -p claude-code-rs ui::teams
+cargo test -p allthecodes ui::teams
 cargo build --workspace --release
 ```

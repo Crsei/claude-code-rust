@@ -28,17 +28,37 @@ impl CompactionFeatureGates {
 
     pub fn from_env_iter(iter: impl IntoIterator<Item = (String, String)>) -> Self {
         let env = iter.into_iter().collect::<HashMap<_, _>>();
-        let enabled_by_default =
-            |name: &str| -> bool { env.get(name).map(|value| !is_falsey(value)).unwrap_or(true) };
-        let disabled =
-            |name: &str| -> bool { env.get(name).map(|value| is_truthy(value)).unwrap_or(false) };
+        let enabled_by_default = |name: &str, legacy_name: &str| -> bool {
+            env.get(name)
+                .or_else(|| env.get(legacy_name))
+                .map(|value| !is_falsey(value))
+                .unwrap_or(true)
+        };
+        let disabled = |name: &str, legacy_name: &str| -> bool {
+            env.get(name)
+                .or_else(|| env.get(legacy_name))
+                .map(|value| is_truthy(value))
+                .unwrap_or(false)
+        };
 
         Self {
-            auto_compact: enabled_by_default("CC_RUST_AUTO_COMPACT")
-                && !disabled("CC_RUST_DISABLE_AUTO_COMPACT"),
-            reactive_compact: enabled_by_default("CC_RUST_REACTIVE_COMPACT"),
-            session_memory_compact: enabled_by_default("CC_RUST_SESSION_MEMORY_COMPACT"),
-            partial_compact: enabled_by_default("CC_RUST_PARTIAL_COMPACT"),
+            auto_compact: enabled_by_default("ALLTHECODES_AUTO_COMPACT", "CC_RUST_AUTO_COMPACT")
+                && !disabled(
+                    "ALLTHECODES_DISABLE_AUTO_COMPACT",
+                    "CC_RUST_DISABLE_AUTO_COMPACT",
+                ),
+            reactive_compact: enabled_by_default(
+                "ALLTHECODES_REACTIVE_COMPACT",
+                "CC_RUST_REACTIVE_COMPACT",
+            ),
+            session_memory_compact: enabled_by_default(
+                "ALLTHECODES_SESSION_MEMORY_COMPACT",
+                "CC_RUST_SESSION_MEMORY_COMPACT",
+            ),
+            partial_compact: enabled_by_default(
+                "ALLTHECODES_PARTIAL_COMPACT",
+                "CC_RUST_PARTIAL_COMPACT",
+            ),
         }
     }
 }

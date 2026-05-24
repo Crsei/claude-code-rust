@@ -5,12 +5,16 @@ use allthecodes_commands::CommandContext;
 use allthecodes_gateway::{AdapterProvider, AdapterStatus, RunEvent, RunId, RunMeta};
 
 pub(crate) fn install_command_runtime_providers() {
-    allthecodes_commands::runtime::set_runtime_installer(crate::app_runtime_adapters::ensure_installed);
+    allthecodes_commands::runtime::set_runtime_installer(
+        crate::app_runtime_adapters::ensure_installed,
+    );
     allthecodes_commands::runtime::set_lsp_runtime_providers(
         allthecodes_ipc::subsystem_handlers::build_lsp_server_info_list,
         allthecodes_ipc::subsystem_handlers::load_lsp_recommendation_settings,
     );
-    allthecodes_commands::runtime::set_lsp_recommendations_provider(lsp_recommendations_for_commands);
+    allthecodes_commands::runtime::set_lsp_recommendations_provider(
+        lsp_recommendations_for_commands,
+    );
     allthecodes_commands::runtime::set_agent_runtime_providers(
         builtin_agent_entries_for_commands,
         builtin_agent_prompt_for_commands,
@@ -28,7 +32,9 @@ pub(crate) fn install_command_runtime_providers() {
     allthecodes_commands::runtime::set_worktree_status_provider(
         crate::ui::status_line_resolver::current_worktree_status,
     );
-    allthecodes_commands::runtime::set_remote_daemon_status_provider(remote_daemon_status_for_commands);
+    allthecodes_commands::runtime::set_remote_daemon_status_provider(
+        remote_daemon_status_for_commands,
+    );
     allthecodes_commands::runtime::set_remote_token_path_provider(
         allthecodes_daemon::process_state::control_token_path,
     );
@@ -39,15 +45,21 @@ pub(crate) fn install_command_runtime_providers() {
     allthecodes_commands::copy::set_clipboard_copy_provider(
         crate::ui::clipboard_text::copy_text_to_clipboard,
     );
-    allthecodes_commands::logout::set_onboarding_logout_clearer(onboarding_logout_clear_for_commands);
-    allthecodes_commands::skills_cmd::set_plugin_skills_provider(discover_plugin_skills_for_commands);
-    allthecodes_commands::ide_cmd::set_ide_command_runtime(allthecodes_commands::ide_cmd::IdeCommandRuntime {
-        detect_ides: allthecodes_lsp_service::ide::detect_ides,
-        selected_ide: allthecodes_lsp_service::ide::selected_ide,
-        select_ide: allthecodes_lsp_service::ide::select_ide,
-        clear_selection: allthecodes_lsp_service::ide::clear_selection,
-        reconnect_selected: allthecodes_lsp_service::ide::reconnect_selected,
-    });
+    allthecodes_commands::logout::set_onboarding_logout_clearer(
+        onboarding_logout_clear_for_commands,
+    );
+    allthecodes_commands::skills_cmd::set_plugin_skills_provider(
+        discover_plugin_skills_for_commands,
+    );
+    allthecodes_commands::ide_cmd::set_ide_command_runtime(
+        allthecodes_commands::ide_cmd::IdeCommandRuntime {
+            detect_ides: allthecodes_lsp_service::ide::detect_ides,
+            selected_ide: allthecodes_lsp_service::ide::selected_ide,
+            select_ide: allthecodes_lsp_service::ide::select_ide,
+            clear_selection: allthecodes_lsp_service::ide::clear_selection,
+            reconnect_selected: allthecodes_lsp_service::ide::reconnect_selected,
+        },
+    );
     allthecodes_commands::plugin_cmd::set_plugin_command_runtime(
         allthecodes_commands::plugin_cmd::PluginCommandRuntime {
             load_installed_plugins: allthecodes_plugins::loader::load_installed_plugins,
@@ -74,9 +86,11 @@ pub(crate) fn install_command_runtime_providers() {
             discover_plugin_skills: discover_plugin_skills_for_commands,
         },
     );
-    allthecodes_commands::brief::set_brief_command_runtime(allthecodes_commands::brief::BriefCommandRuntime {
-        clear_prompt_cache: allthecodes_engine::prompt_sections::clear_cache,
-    });
+    allthecodes_commands::brief::set_brief_command_runtime(
+        allthecodes_commands::brief::BriefCommandRuntime {
+            clear_prompt_cache: allthecodes_engine::prompt_sections::clear_cache,
+        },
+    );
     allthecodes_commands::daemon_cmd::set_daemon_command_runtime(
         allthecodes_commands::daemon_cmd::DaemonCommandRuntime {
             status_snapshot: daemon_status_snapshot_for_commands,
@@ -192,7 +206,8 @@ fn command_metadata_for_commands() -> Vec<allthecodes_commands::CommandMetadata>
     allthecodes_commands::get_dynamic_metadata()
 }
 
-fn lsp_recommendations_for_commands() -> Vec<allthecodes_commands::runtime::LspPluginRecommendationInfo> {
+fn lsp_recommendations_for_commands(
+) -> Vec<allthecodes_commands::runtime::LspPluginRecommendationInfo> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let installed: Vec<String> = allthecodes_plugins::loader::load_installed_plugins()
         .into_iter()
@@ -202,18 +217,20 @@ fn lsp_recommendations_for_commands() -> Vec<allthecodes_commands::runtime::LspP
 
     allthecodes_lsp_service::generate_recommendations(&cwd, &installed)
         .into_iter()
-        .map(|rec| allthecodes_commands::runtime::LspPluginRecommendationInfo {
-            is_dismissed: settings
-                .muted_plugins
-                .iter()
-                .any(|plugin| plugin == &rec.plugin_id || plugin == &rec.plugin_name),
-            plugin_id: rec.plugin_id,
-            plugin_name: rec.plugin_name,
-            description: rec.description,
-            languages: rec.languages,
-            confidence: rec.confidence,
-            is_already_installed: rec.is_already_installed,
-        })
+        .map(
+            |rec| allthecodes_commands::runtime::LspPluginRecommendationInfo {
+                is_dismissed: settings
+                    .muted_plugins
+                    .iter()
+                    .any(|plugin| plugin == &rec.plugin_id || plugin == &rec.plugin_name),
+                plugin_id: rec.plugin_id,
+                plugin_name: rec.plugin_name,
+                description: rec.description,
+                languages: rec.languages,
+                confidence: rec.confidence,
+                is_already_installed: rec.is_already_installed,
+            },
+        )
         .collect()
 }
 
@@ -221,7 +238,9 @@ fn all_tools_for_commands() -> allthecodes_engine::types::tool::Tools {
     allthecodes_tools::registry::get_all_tools()
 }
 
-fn tool_policy_names_for_commands(policy: allthecodes_commands::runtime::CommandToolPolicy) -> Vec<String> {
+fn tool_policy_names_for_commands(
+    policy: allthecodes_commands::runtime::CommandToolPolicy,
+) -> Vec<String> {
     let root_policy = match policy {
         allthecodes_commands::runtime::CommandToolPolicy::DefaultAgent => {
             allthecodes_tools::registry::ToolPolicy::DefaultAgent
@@ -255,25 +274,30 @@ fn fork_runner_for_commands(
     params: allthecodes_commands::runtime::CommandForkParams,
 ) -> std::pin::Pin<
     Box<
-        dyn std::future::Future<Output = anyhow::Result<allthecodes_commands::runtime::CommandForkOutcome>>
-            + Send
+        dyn std::future::Future<
+                Output = anyhow::Result<allthecodes_commands::runtime::CommandForkOutcome>,
+            > + Send
             + 'static,
     >,
 > {
     Box::pin(async move {
-        let outcome = allthecodes_engine::agent::fork::run_fork(allthecodes_engine::agent::fork::ForkParams {
-            prompt: params.prompt,
-            cwd: params.cwd,
-            model: params.model,
-            fallback_model: params.fallback_model,
-            tools: params.tools,
-            max_turns: params.max_turns,
-            parent_messages: params.parent_messages,
-            append_system_prompt: params.append_system_prompt,
-            custom_system_prompt: params.custom_system_prompt,
-            hook_runner: Arc::new(allthecodes_types::hooks::NoopHookRunner::new()),
-            command_dispatcher: Arc::new(allthecodes_types::commands::NoopCommandDispatcher::new()),
-        })
+        let outcome = allthecodes_engine::agent::fork::run_fork(
+            allthecodes_engine::agent::fork::ForkParams {
+                prompt: params.prompt,
+                cwd: params.cwd,
+                model: params.model,
+                fallback_model: params.fallback_model,
+                tools: params.tools,
+                max_turns: params.max_turns,
+                parent_messages: params.parent_messages,
+                append_system_prompt: params.append_system_prompt,
+                custom_system_prompt: params.custom_system_prompt,
+                hook_runner: Arc::new(allthecodes_types::hooks::NoopHookRunner::new()),
+                command_dispatcher: Arc::new(
+                    allthecodes_types::commands::NoopCommandDispatcher::new(),
+                ),
+            },
+        )
         .await?;
 
         Ok(allthecodes_commands::runtime::CommandForkOutcome {
@@ -301,18 +325,20 @@ fn discover_plugin_skills_for_commands() -> Vec<allthecodes_skills::SkillDefinit
 
     for contributed in allthecodes_plugins::discover_plugin_skill_definitions() {
         let source = allthecodes_skills::SkillSource::Plugin(contributed.plugin_id.clone());
-        let mut skill =
-            match allthecodes_skills::loader::load_skill_from_file_path(&contributed.path, source) {
-                Some(skill) => skill,
-                None => {
-                    tracing::warn!(
-                        plugin = %contributed.plugin_id,
-                        path = %contributed.path.display(),
-                        "Plugin: failed to load contributed skill file"
-                    );
-                    continue;
-                }
-            };
+        let mut skill = match allthecodes_skills::loader::load_skill_from_file_path(
+            &contributed.path,
+            source,
+        ) {
+            Some(skill) => skill,
+            None => {
+                tracing::warn!(
+                    plugin = %contributed.plugin_id,
+                    path = %contributed.path.display(),
+                    "Plugin: failed to load contributed skill file"
+                );
+                continue;
+            }
+        };
 
         skill.name = contributed.name;
         if let Some(desc) = contributed.description {
@@ -389,17 +415,23 @@ fn emit_plugin_event_external_for_commands(
 
 fn daemon_status_snapshot_for_commands(
 ) -> anyhow::Result<allthecodes_commands::daemon_cmd::DaemonStatusSnapshot> {
-    Ok(match allthecodes_daemon::process_state::status_snapshot()? {
-        allthecodes_daemon::process_state::DaemonStatusSnapshot::Running(state) => {
-            allthecodes_commands::daemon_cmd::DaemonStatusSnapshot::Running(map_daemon_state(state))
-        }
-        allthecodes_daemon::process_state::DaemonStatusSnapshot::Stale(state) => {
-            allthecodes_commands::daemon_cmd::DaemonStatusSnapshot::Stale(map_daemon_state(state))
-        }
-        allthecodes_daemon::process_state::DaemonStatusSnapshot::Stopped => {
-            allthecodes_commands::daemon_cmd::DaemonStatusSnapshot::Stopped
-        }
-    })
+    Ok(
+        match allthecodes_daemon::process_state::status_snapshot()? {
+            allthecodes_daemon::process_state::DaemonStatusSnapshot::Running(state) => {
+                allthecodes_commands::daemon_cmd::DaemonStatusSnapshot::Running(map_daemon_state(
+                    state,
+                ))
+            }
+            allthecodes_daemon::process_state::DaemonStatusSnapshot::Stale(state) => {
+                allthecodes_commands::daemon_cmd::DaemonStatusSnapshot::Stale(map_daemon_state(
+                    state,
+                ))
+            }
+            allthecodes_daemon::process_state::DaemonStatusSnapshot::Stopped => {
+                allthecodes_commands::daemon_cmd::DaemonStatusSnapshot::Stopped
+            }
+        },
+    )
 }
 
 fn map_daemon_state(
@@ -411,13 +443,15 @@ fn map_daemon_state(
         workers: state
             .workers
             .into_iter()
-            .map(|worker| allthecodes_commands::daemon_cmd::DaemonWorkerSummary {
-                worker_id: worker.worker_id,
-                kind: worker.kind,
-                pid: worker.pid,
-                status: worker.status,
-                updated_at: worker.updated_at,
-            })
+            .map(
+                |worker| allthecodes_commands::daemon_cmd::DaemonWorkerSummary {
+                    worker_id: worker.worker_id,
+                    kind: worker.kind,
+                    pid: worker.pid,
+                    status: worker.status,
+                    updated_at: worker.updated_at,
+                },
+            )
             .collect(),
     }
 }
@@ -461,23 +495,27 @@ fn map_remote_daemon_status(
     }
 }
 
-fn remote_capabilities_for_commands(
-) -> allthecodes_commands::remote_cmd::RemoteFuture<allthecodes_commands::remote_cmd::GatewayCapabilitiesSnapshot> {
+fn remote_capabilities_for_commands() -> allthecodes_commands::remote_cmd::RemoteFuture<
+    allthecodes_commands::remote_cmd::GatewayCapabilitiesSnapshot,
+> {
     Box::pin(async {
         let client = allthecodes_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         let cap = client.capabilities().await?;
-        Ok(allthecodes_commands::remote_cmd::GatewayCapabilitiesSnapshot {
-            version: cap.version,
-            auth_mode: cap.auth_mode,
-            supports_steer: cap.supports_steer,
-            max_running: cap.max_running,
-            max_queued: cap.max_queued,
-            endpoints: cap.endpoints,
-        })
+        Ok(
+            allthecodes_commands::remote_cmd::GatewayCapabilitiesSnapshot {
+                version: cap.version,
+                auth_mode: cap.auth_mode,
+                supports_steer: cap.supports_steer,
+                max_running: cap.max_running,
+                max_queued: cap.max_queued,
+                endpoints: cap.endpoints,
+            },
+        )
     })
 }
 
-fn remote_adapters_for_commands() -> allthecodes_commands::remote_cmd::RemoteFuture<Vec<AdapterStatus>> {
+fn remote_adapters_for_commands(
+) -> allthecodes_commands::remote_cmd::RemoteFuture<Vec<AdapterStatus>> {
     Box::pin(async {
         let client = allthecodes_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         client.adapters().await
@@ -504,7 +542,9 @@ fn remote_test_adapter_message_for_commands(
     })
 }
 
-fn remote_show_run_for_commands(run_id: RunId) -> allthecodes_commands::remote_cmd::RemoteFuture<RunMeta> {
+fn remote_show_run_for_commands(
+    run_id: RunId,
+) -> allthecodes_commands::remote_cmd::RemoteFuture<RunMeta> {
     Box::pin(async move {
         let client = allthecodes_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         client.show_run(&run_id).await
@@ -522,7 +562,9 @@ fn remote_run_events_for_commands(
 
 fn remote_stop_run_for_commands(
     run_id: RunId,
-) -> allthecodes_commands::remote_cmd::RemoteFuture<allthecodes_commands::remote_cmd::GatewayRunActionResponse> {
+) -> allthecodes_commands::remote_cmd::RemoteFuture<
+    allthecodes_commands::remote_cmd::GatewayRunActionResponse,
+> {
     Box::pin(async move {
         let client = allthecodes_daemon::gateway_client::LocalGatewayClient::from_running_daemon()?;
         let response = client.stop_run(&run_id).await?;

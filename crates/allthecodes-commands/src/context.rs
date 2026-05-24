@@ -14,11 +14,11 @@
 //! /context raw        — alias for `json`
 //! ```
 
-use anyhow::Result;
-use async_trait::async_trait;
 use allthecodes_compact::context_analysis::{
     analyze_context_usage_with_window, ContextAnalysis, ContextAnalysisInput,
 };
+use anyhow::Result;
+use async_trait::async_trait;
 
 use crate::{CommandContext, CommandHandler, CommandResult};
 

@@ -200,7 +200,7 @@ fn test_plan_mode_allows_read_tools() {
 #[serial_test::serial]
 fn test_plan_mode_allows_dedicated_plan_file_write() {
     let temp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(temp.path().join(".cc-rust")).unwrap();
+    std::fs::create_dir_all(temp.path().join(".allthecodes")).unwrap();
     let _cwd_guard = set_original_cwd_for_test(temp.path());
 
     let plan_path = crate::config::paths::current_plan_file_path(temp.path());
@@ -224,7 +224,7 @@ fn test_plan_mode_allows_dedicated_plan_file_write() {
 #[serial_test::serial]
 fn test_plan_mode_blocks_non_plan_file_write() {
     let temp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(temp.path().join(".cc-rust")).unwrap();
+    std::fs::create_dir_all(temp.path().join(".allthecodes")).unwrap();
     let _cwd_guard = set_original_cwd_for_test(temp.path());
 
     let other_path = temp.path().join("other.md").to_string_lossy().into_owned();

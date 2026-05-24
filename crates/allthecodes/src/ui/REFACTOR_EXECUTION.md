@@ -23,7 +23,7 @@ Before starting a work package:
 ```powershell
 git status --short
 cargo fmt --all
-cargo check -p claude-code-rs
+cargo check -p allthecodes
 ```
 
 Known non-UI failures may exist in the full package test suite. Do not treat
@@ -34,8 +34,8 @@ Minimum verification after each package:
 
 ```powershell
 cargo fmt --all
-cargo check -p claude-code-rs
-cargo clippy -p claude-code-rs --all-targets -- -D warnings
+cargo check -p allthecodes
+cargo clippy -p allthecodes --all-targets -- -D warnings
 ```
 
 Run the package-specific tests listed below as well.
@@ -110,7 +110,7 @@ Recommended steps:
 Targeted tests:
 
 ```powershell
-cargo test -p claude-code-rs ui::command_surface
+cargo test -p allthecodes ui::command_surface
 ```
 
 Stop conditions:
@@ -161,7 +161,7 @@ Recommended steps:
 Targeted tests:
 
 ```powershell
-cargo test -p claude-code-rs ui::app
+cargo test -p allthecodes ui::app
 ```
 
 Stop conditions:
@@ -203,7 +203,7 @@ Recommended steps:
 Targeted tests:
 
 ```powershell
-cargo test -p claude-code-rs ui::tui
+cargo test -p allthecodes ui::tui
 ```
 
 Stop conditions:
@@ -248,7 +248,7 @@ Recommended steps:
 Targeted tests:
 
 ```powershell
-cargo test -p claude-code-rs ui::command_palette
+cargo test -p allthecodes ui::command_palette
 ```
 
 Stop conditions:
@@ -287,7 +287,7 @@ Recommended steps:
 Targeted tests:
 
 ```powershell
-cargo test -p claude-code-rs ui::permissions
+cargo test -p allthecodes ui::permissions
 ```
 
 Stop conditions:
@@ -328,7 +328,7 @@ Recommended steps:
 Targeted tests:
 
 ```powershell
-cargo test -p claude-code-rs ui::messages
+cargo test -p allthecodes ui::messages
 ```
 
 Stop conditions:
@@ -344,10 +344,10 @@ Use this checklist before reporting completion:
 - No behavior change was mixed into mechanical extraction.
 - Tests and snapshots moved with their source owners.
 - `cargo fmt --all` passed.
-- `cargo check -p claude-code-rs` passed.
-- `cargo clippy -p claude-code-rs --all-targets -- -D warnings` passed.
+- `cargo check -p allthecodes` passed.
+- `cargo clippy -p allthecodes --all-targets -- -D warnings` passed.
 - Targeted UI tests for the package passed.
-- If full `cargo test -p claude-code-rs` fails, the final report lists exact
+- If full `cargo test -p allthecodes` fails, the final report lists exact
   failures and states whether they are non-UI baseline failures.
 
 ## Commit Guidance

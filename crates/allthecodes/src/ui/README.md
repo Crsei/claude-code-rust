@@ -1,6 +1,6 @@
 # Rust TUI Layout
 
-This directory contains the Rust terminal UI for `claude-code-rs`.
+This directory contains the Rust terminal UI for `allthecodes`.
 
 For the step-by-step large-file refactor sequence, see
 [`REFACTOR_EXECUTION.md`](REFACTOR_EXECUTION.md).

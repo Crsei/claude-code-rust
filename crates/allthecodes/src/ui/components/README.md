@@ -29,6 +29,6 @@
 
 ### 测试/构建验证
 ```bash
-cargo test -p claude-code-rs ui::components
+cargo test -p allthecodes ui::components
 cargo build --workspace --release
 ```

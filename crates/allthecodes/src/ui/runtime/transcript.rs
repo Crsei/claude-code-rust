@@ -32,7 +32,9 @@
 //! recomputed lazily and the viewport snaps to the first hit. `n` / `N`
 //! cycle through hits, wrapping at the ends.
 
-use allthecodes_types::message::{Attachment, ContentBlock, Message, MessageContent, SystemSubtype};
+use allthecodes_types::message::{
+    Attachment, ContentBlock, Message, MessageContent, SystemSubtype,
+};
 
 /// The three view modes the TUI can be in. Cycling is `Prompt →
 /// Transcript → Focus → Prompt` via `Ctrl+O`.

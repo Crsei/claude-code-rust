@@ -1,7 +1,9 @@
 use chrono::Utc;
 use uuid::Uuid;
 
-use allthecodes_types::message::{CompactMetadata, ContentBlock, Message, SystemMessage, SystemSubtype};
+use allthecodes_types::message::{
+    CompactMetadata, ContentBlock, Message, SystemMessage, SystemSubtype,
+};
 
 use crate::compaction::create_preserved_segment;
 

@@ -10,7 +10,7 @@ pub(super) async fn export_to_editor(body: &str) -> anyhow::Result<std::path::Pa
     use std::io::Write as _;
     let mut path = std::env::temp_dir();
     let stem = format!(
-        "cc-rust-transcript-{}.md",
+        "allthecodes-transcript-{}.md",
         chrono::Utc::now().format("%Y%m%d-%H%M%S")
     );
     path.push(stem);

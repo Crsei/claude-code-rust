@@ -3,10 +3,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
-use async_trait::async_trait;
 use allthecodes_engine::types::tool::PermissionMode;
 use allthecodes_types::plan_workflow::PlanWorkflowRecord;
+use anyhow::Result;
+use async_trait::async_trait;
 
 use super::browser::{ensure_and_open, format_open_outcome};
 use crate::{plan_workflow, CommandContext, CommandHandler, CommandResult};
@@ -461,8 +461,10 @@ mod tests {
         let mut ctx = make_ctx(tmp.path().to_path_buf(), PermissionMode::Default);
         let result = PlanHandler.execute("open", &mut ctx).await.unwrap();
 
-        let body =
-            fs::read_to_string(allthecodes_config::paths::current_plan_file_path(tmp.path())).unwrap();
+        let body = fs::read_to_string(allthecodes_config::paths::current_plan_file_path(
+            tmp.path(),
+        ))
+        .unwrap();
         assert!(body.starts_with("# Plan"));
 
         match result {

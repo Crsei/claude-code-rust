@@ -304,7 +304,7 @@ fn permissions_command_surface_routes_confirmed_safety_modes() {
 fn login_surface_routes_auth_actions() {
     let mut surface = CommandSurface::Login(LoginSurface { action_index: 0 });
 
-    assert!(surface.render().contains("Login / Claude Code"));
+    assert!(surface.render().contains("Login / allthecodes"));
     assert!(surface
         .render()
         .contains("profiles=claude-code,codex,custom"));

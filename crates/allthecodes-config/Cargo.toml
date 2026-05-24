@@ -2,7 +2,7 @@
 name = "allthecodes-config"
 version = "0.1.0"
 edition = "2021"
-description = "Configuration, feature gates, settings, and runtime paths for cc-rust"
+description = "Configuration, feature gates, settings, and runtime paths for allthecodes"
 
 [dependencies]
 serde = { workspace = true }

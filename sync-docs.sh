@@ -1,11 +1,11 @@
 #!/bin/bash
-# Manually sync CLAUDE.md and AGENTS.md from main repo to all worktrees.
-# Run this after editing CLAUDE.md or AGENTS.md in the main repo.
+# Manually sync AGENTS.md from main repo to all worktrees.
+# Run this after editing AGENTS.md in the main repo.
 #
 # Usage: bash sync-docs.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-FILES_TO_SYNC="CLAUDE.md AGENTS.md"
+FILES_TO_SYNC="AGENTS.md"
 
 echo "Syncing from: $SCRIPT_DIR"
 

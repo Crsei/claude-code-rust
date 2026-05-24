@@ -3,7 +3,9 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::fmt;
 
-use allthecodes_types::message::{AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage};
+use allthecodes_types::message::{
+    AssistantMessage, ContentBlock, MessageDelta, StreamEvent, Usage,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompletedToolUse {

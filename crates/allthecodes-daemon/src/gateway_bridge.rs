@@ -7,11 +7,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
 use allthecodes_gateway::{
     GatewayCommand, GatewayCommandKind, GatewayCommandReceipt, GatewayCommandSink,
     GatewayDiagnostic, GatewayError, RunEventKind, RunStatus,
 };
+use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use tokio_stream::StreamExt;
 

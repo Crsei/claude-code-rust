@@ -22,7 +22,7 @@ pub struct EnvLoadDiagnostic {
 }
 
 /// Load `.env` files in priority order (later loads do NOT override earlier):
-///   1. `~/.cc-rust/.env`        (global user config)
+///   1. `~/.allthecodes/.env`    (global user config)
 ///   2. `<exe-dir>/.env`         (portable, next to the binary)
 ///   3. `<cwd>/.env`             (project-local)
 pub fn load_env_files() {

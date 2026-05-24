@@ -206,7 +206,7 @@ impl LarkTransport for HttpLarkTransport {
     }
 
     fn probe_webhook(&self, webhook_url: &str) -> Result<(), GatewayError> {
-        self.send_webhook(webhook_url, "cc-rust gateway Lark adapter health check")
+        self.send_webhook(webhook_url, "allthecodes gateway Lark adapter health check")
     }
 
     fn send_webhook(&self, webhook_url: &str, text: &str) -> Result<(), GatewayError> {

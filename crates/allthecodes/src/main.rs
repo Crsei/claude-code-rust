@@ -36,9 +36,9 @@ mod dashboard;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use anyhow::Context;
 use allthecodes_startup as startup;
 use allthecodes_web as web;
+use anyhow::Context;
 use clap::Parser;
 use serde_json::Value;
 use tracing::{debug, error, info, warn};
@@ -287,14 +287,16 @@ use startup::runtime_config::{
 use startup::tool_registry as registry;
 
 fn install_daemon_runtime_adapters() {
-    allthecodes_daemon::runtime::set_runtime_adapters(allthecodes_daemon::runtime::DaemonRuntimeAdapters {
-        init_plugins: allthecodes_plugins::init_plugins,
-        active_tools: registry::get_tools_for_active_session,
-        commands: allthecodes_commands::get_all_commands,
-        command_dispatcher: daemon_command_dispatcher,
-        command_executor: daemon_command_executor,
-        route_github_pr_activity: daemon_route_github_pr_activity,
-    });
+    allthecodes_daemon::runtime::set_runtime_adapters(
+        allthecodes_daemon::runtime::DaemonRuntimeAdapters {
+            init_plugins: allthecodes_plugins::init_plugins,
+            active_tools: registry::get_tools_for_active_session,
+            commands: allthecodes_commands::get_all_commands,
+            command_dispatcher: daemon_command_dispatcher,
+            command_executor: daemon_command_executor,
+            route_github_pr_activity: daemon_route_github_pr_activity,
+        },
+    );
 }
 
 fn discover_plugin_skills_for_root() -> Vec<allthecodes_skills::SkillDefinition> {
@@ -302,18 +304,20 @@ fn discover_plugin_skills_for_root() -> Vec<allthecodes_skills::SkillDefinition>
 
     for contributed in allthecodes_plugins::discover_plugin_skill_definitions() {
         let source = allthecodes_skills::SkillSource::Plugin(contributed.plugin_id.clone());
-        let mut skill =
-            match allthecodes_skills::loader::load_skill_from_file_path(&contributed.path, source) {
-                Some(skill) => skill,
-                None => {
-                    warn!(
-                        plugin = %contributed.plugin_id,
-                        path = %contributed.path.display(),
-                        "Plugin: failed to load contributed skill file"
-                    );
-                    continue;
-                }
-            };
+        let mut skill = match allthecodes_skills::loader::load_skill_from_file_path(
+            &contributed.path,
+            source,
+        ) {
+            Some(skill) => skill,
+            None => {
+                warn!(
+                    plugin = %contributed.plugin_id,
+                    path = %contributed.path.display(),
+                    "Plugin: failed to load contributed skill file"
+                );
+                continue;
+            }
+        };
 
         skill.name = contributed.name;
         if let Some(desc) = contributed.description {
@@ -346,10 +350,12 @@ fn daemon_route_github_pr_activity(
         return Ok(None);
     };
     let result = allthecodes_teams::pr_activity::route_github_pr_activity(&activity)?;
-    Ok(Some(allthecodes_daemon::runtime::GithubPrActivityRouteOutcome {
-        matched: result.matched,
-        delivered: result.delivered,
-    }))
+    Ok(Some(
+        allthecodes_daemon::runtime::GithubPrActivityRouteOutcome {
+            matched: result.matched,
+            delivered: result.delivered,
+        },
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -358,7 +364,9 @@ fn daemon_route_github_pr_activity(
 
 fn main() -> ExitCode {
     startup::load_env_files();
-    allthecodes_tools::registry::install_tool_registry_providers(registry::root_tool_registry_providers());
+    allthecodes_tools::registry::install_tool_registry_providers(
+        registry::root_tool_registry_providers(),
+    );
     startup::engine_runtime::install(
         Arc::new(RootDashboardEmitter),
         Arc::new(RootAgentToolRegistry),
@@ -434,7 +442,7 @@ fn main() -> ExitCode {
     }
 
     // Fast path: --claude-in-chrome-mcp
-    // Spawned as a stdio MCP subprocess by the cc-rust MCP manager when
+    // Spawned as a stdio MCP subprocess by the allthecodes MCP manager when
     // --chrome is active. Bridges MCP <-> native-host socket.
     if cli.claude_in_chrome_mcp {
         return startup::fast_paths::run_claude_in_chrome_mcp();
@@ -469,7 +477,8 @@ fn main() -> ExitCode {
             .clone()
             .unwrap_or_else(|| format!("{}-{}", worker_kind, std::process::id()));
         let worker_result = rt.block_on(async {
-            allthecodes_daemon::supervisor::run_worker_mode(&worker_kind, &worker_id, worker_cwd).await
+            allthecodes_daemon::supervisor::run_worker_mode(&worker_kind, &worker_id, worker_cwd)
+                .await
         });
         return match worker_result {
             Ok(()) => ExitCode::SUCCESS,
@@ -489,9 +498,11 @@ fn main() -> ExitCode {
 
     if !cli.print && cli.output_format.is_none() {
         let daemon_cwd = std::path::PathBuf::from(resolve_cwd(&cli));
-        if let Some(code) =
-            allthecodes_daemon::process_state::try_run_management_command(&cli.prompt, &daemon_cwd, cli.port)
-        {
+        if let Some(code) = allthecodes_daemon::process_state::try_run_management_command(
+            &cli.prompt,
+            &daemon_cwd,
+            cli.port,
+        ) {
             return code;
         }
     }
@@ -570,7 +581,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             debug!(source = src.as_str(), path = %path.display(), "settings layer");
         }
     }
-    let backend = allthecodes_engine::codex_exec::normalize_backend(merged_config.backend.as_deref());
+    let backend =
+        allthecodes_engine::codex_exec::normalize_backend(merged_config.backend.as_deref());
 
     // B.2: Determine permission mode
     let permission_mode = resolve_permission_mode(
@@ -618,9 +630,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 })
                 .collect();
             if !provider_configs.is_empty() {
-                allthecodes_lsp_service::set_config_provider(Some(std::sync::Arc::new(move || {
-                    provider_configs.clone()
-                })));
+                allthecodes_lsp_service::set_config_provider(Some(std::sync::Arc::new(
+                    move || provider_configs.clone(),
+                )));
             }
         }
     }
@@ -639,16 +651,16 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                         allthecodes_commands::DYNAMIC_REGISTRY
                             .lock()
                             .register(DynamicCommandEntry {
-                                name: cmd.name,
-                                aliases: cmd.aliases,
-                                description: cmd.description,
-                                source: CommandSource::Plugin,
-                                plugin_id: Some(plugin.id.clone()),
-                                hidden: false,
-                                usage_score: 0.0,
-                                execution_strategy:
-                                    allthecodes_commands::dynamic_registry::ExecutionStrategy::Plugin,
-                            });
+                            name: cmd.name,
+                            aliases: cmd.aliases,
+                            description: cmd.description,
+                            source: CommandSource::Plugin,
+                            plugin_id: Some(plugin.id.clone()),
+                            hidden: false,
+                            usage_score: 0.0,
+                            execution_strategy:
+                                allthecodes_commands::dynamic_registry::ExecutionStrategy::Plugin,
+                        });
                     }
                 }
             }
@@ -681,8 +693,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             handle: TelemetryHandle,
             span_counter: AtomicU64,
             // Live spans keyed by SpanId so finish() can find them.
-            active_spans:
-                Mutex<std::collections::HashMap<SpanId, allthecodes_services::telemetry::InteractionSpan>>,
+            active_spans: Mutex<
+                std::collections::HashMap<SpanId, allthecodes_services::telemetry::InteractionSpan>,
+            >,
             // Live hook spans
             active_hooks:
                 Mutex<std::collections::HashMap<SpanId, allthecodes_services::telemetry::HookSpan>>,
@@ -863,7 +876,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 let report = allthecodes_skills::register_skills_resolved_with_diagnostics(
                     mcp_skills,
                     mcp_skill_diagnostics,
-                    allthecodes_skills::SkillLoadOptions::for_app_version(env!("CARGO_PKG_VERSION")),
+                    allthecodes_skills::SkillLoadOptions::for_app_version(env!(
+                        "CARGO_PKG_VERSION"
+                    )),
                 );
                 log_skill_report("mcp", &report);
             }
@@ -876,12 +891,13 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             .iter()
             .map(|tool| tool.user_facing_name(None))
             .collect::<Vec<_>>();
-        let mut browser_servers = allthecodes_browser::detection::detect_browser_servers_from_tool_names(
-            configs_for_browser
-                .iter()
-                .map(|config| (config.name.as_str(), config.browser_mcp.unwrap_or(false))),
-            tool_names.iter().map(String::as_str),
-        );
+        let mut browser_servers =
+            allthecodes_browser::detection::detect_browser_servers_from_tool_names(
+                configs_for_browser
+                    .iter()
+                    .map(|config| (config.name.as_str(), config.browser_mcp.unwrap_or(false))),
+                tool_names.iter().map(String::as_str),
+            );
         // Pre-register the first-party Chrome MCP server name when --chrome
         // (or equivalent) is on. The actual tools come online via #5; doing
         // this early means the system prompt, permissions, and /mcp list all
@@ -917,9 +933,10 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // B.4: Create AppState
     // Resolve model: CLI arg > config > provider default > hardcoded fallback
     let is_codex_backend = allthecodes_engine::codex_exec::is_codex_backend(&backend);
-    let detected_client = allthecodes_api::api::client::ApiClient::from_backend_result(Some(&backend))
-        .context("invalid API provider configuration")?
-        .map(Arc::new);
+    let detected_client =
+        allthecodes_api::api::client::ApiClient::from_backend_result(Some(&backend))
+            .context("invalid API provider configuration")?
+            .map(Arc::new);
     let provider_default_model = detected_client
         .as_ref()
         .map(|client| client.config().default_model.clone());
@@ -969,7 +986,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
             let is_anthropic_compatible = detected_client.as_ref().is_some_and(|client| {
                 matches!(
                     client.config().provider.endpoint_kind(),
-                    Some(allthecodes_api::api::providers::AnthropicEndpointKind::CompatibleAnthropic)
+                    Some(
+                        allthecodes_api::api::providers::AnthropicEndpointKind::CompatibleAnthropic
+                    )
                 )
             });
             if is_anthropic_compatible {
@@ -981,14 +1000,14 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 )
             }
         });
-    let persisted_plan_workflow = match allthecodes_commands::plan_workflow::load(std::path::Path::new(&cwd))
-    {
-        Ok(record) => record,
-        Err(e) => {
-            warn!(error = %e, "failed to load persisted plan workflow");
-            None
-        }
-    };
+    let persisted_plan_workflow =
+        match allthecodes_commands::plan_workflow::load(std::path::Path::new(&cwd)) {
+            Ok(record) => record,
+            Err(e) => {
+                warn!(error = %e, "failed to load persisted plan workflow");
+                None
+            }
+        };
 
     // Mark CLI overrides (model / verbose) in the source map so /config show
     // reports them correctly.
@@ -1194,9 +1213,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 client: client.clone(),
                 model: model.clone(),
             });
-            let shared_classifier = Arc::new(allthecodes_safety::classifier::SharedSafetyClassifier::new(
-                classifier_model,
-            ));
+            let shared_classifier = Arc::new(
+                allthecodes_safety::classifier::SharedSafetyClassifier::new(classifier_model),
+            );
 
             e.set_auto_classifier_fn(Some(Arc::new(
                 move |tool_name: String,
@@ -1242,7 +1261,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
                 "cwd": std::env::current_dir().unwrap_or_default().to_string_lossy(),
             });
             let _ =
-                allthecodes_tools::hooks::run_event_hooks("SessionStart", &payload, &start_configs).await;
+                allthecodes_tools::hooks::run_event_hooks("SessionStart", &payload, &start_configs)
+                    .await;
         }
     }
 
@@ -1288,7 +1308,8 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.8.1: Initialize global ProcessState
     let cwd_path = std::path::PathBuf::from(&cwd);
-    let project_root = allthecodes_utils::git::find_git_root(&cwd_path).unwrap_or_else(|| cwd_path.clone());
+    let project_root =
+        allthecodes_utils::git::find_git_root(&cwd_path).unwrap_or_else(|| cwd_path.clone());
     allthecodes_bootstrap::init_process_state(
         cwd_path,
         project_root,
@@ -1423,9 +1444,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 
     // B.12: Enter TUI or headless mode
     if cli.headless {
-        let result = allthecodes_ipc::headless::run_headless(crate::app_runtime_adapters::headless_config(
-            engine, model,
-        ))
+        let result = allthecodes_ipc::headless::run_headless(
+            crate::app_runtime_adapters::headless_config(engine, model),
+        )
         .await
         .map(|()| ExitCode::SUCCESS);
         persist_skill_usage();
@@ -1435,19 +1456,19 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
     // Register shutdown handler
     let shutdown_token = shutdown::register_shutdown_handler();
 
-    let mut dashboard_companion =
-        if allthecodes_config::features::enabled(allthecodes_config::features::Feature::SubagentDashboard) {
-            match dashboard::DashboardCompanion::spawn(dashboard::DashboardConfig::default()).await
-            {
-                Ok(child) => Some(child),
-                Err(e) => {
-                    warn!(error = %e, "failed to start subagent dashboard companion");
-                    None
-                }
+    let mut dashboard_companion = if allthecodes_config::features::enabled(
+        allthecodes_config::features::Feature::SubagentDashboard,
+    ) {
+        match dashboard::DashboardCompanion::spawn(dashboard::DashboardConfig::default()).await {
+            Ok(child) => Some(child),
+            Err(e) => {
+                warn!(error = %e, "failed to start subagent dashboard companion");
+                None
             }
-        } else {
-            None
-        };
+        }
+    } else {
+        None
+    };
 
     let tui_result = tui::run_tui(engine.clone(), initial_prompt, &model, shutdown_token).await;
 
@@ -1467,7 +1488,9 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
 }
 
 fn register_user_invocable_skill_commands() {
-    use allthecodes_commands::dynamic_registry::{CommandSource, DynamicCommandEntry, ExecutionStrategy};
+    use allthecodes_commands::dynamic_registry::{
+        CommandSource, DynamicCommandEntry, ExecutionStrategy,
+    };
 
     let skills = allthecodes_skills::get_user_invocable_skills();
     let mut registry = allthecodes_commands::DYNAMIC_REGISTRY.lock();

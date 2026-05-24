@@ -58,8 +58,12 @@ pub(super) async fn handle_auth(rest: &[&str], ctx: &CommandContext) -> Result<C
                 Ok(config) => config,
                 Err(message) => return Ok(CommandResult::Output(message)),
             };
-            match allthecodes_mcp::auth::complete_authorization(&config, &code, parsed.state.as_deref())
-                .await
+            match allthecodes_mcp::auth::complete_authorization(
+                &config,
+                &code,
+                parsed.state.as_deref(),
+            )
+            .await
             {
                 Ok(_) => Ok(CommandResult::Output(format!(
                     "Stored OAuth credentials for MCP server `{}` in {}. Access token: {}",

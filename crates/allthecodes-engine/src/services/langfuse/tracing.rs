@@ -73,7 +73,7 @@ pub fn create_trace(
     );
     span.set_attribute(
         TRACE_TAGS_ATTR,
-        json!(["cc-rust", query_source.unwrap_or("submit")]).to_string(),
+        json!(["allthecodes", query_source.unwrap_or("submit")]).to_string(),
     );
 
     Some(LangfuseTrace {
@@ -109,7 +109,7 @@ pub fn create_subagent_trace(
     );
     span.set_attribute(
         TRACE_TAGS_ATTR,
-        json!(["cc-rust", "subagent", agent_type]).to_string(),
+        json!(["allthecodes", "subagent", agent_type]).to_string(),
     );
 
     Some(LangfuseTrace {

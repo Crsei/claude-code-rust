@@ -154,7 +154,8 @@ impl CommandHandler for SkillsHandler {
     }
 }
 
-fn plugin_skills_for_reload() -> std::result::Result<Vec<allthecodes_skills::SkillDefinition>, String> {
+fn plugin_skills_for_reload(
+) -> std::result::Result<Vec<allthecodes_skills::SkillDefinition>, String> {
     crate::runtime::ensure_runtime_installed();
     let Some(slot) = PLUGIN_SKILLS_PROVIDER.get() else {
         return Err(

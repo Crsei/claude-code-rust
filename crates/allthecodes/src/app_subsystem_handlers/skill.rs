@@ -96,9 +96,17 @@ mod tests {
         allthecodes_skills::clear_skills();
 
         let sources = vec![
-            ("bundled-sk", allthecodes_skills::SkillSource::Bundled, "bundled"),
+            (
+                "bundled-sk",
+                allthecodes_skills::SkillSource::Bundled,
+                "bundled",
+            ),
             ("user-sk", allthecodes_skills::SkillSource::User, "user"),
-            ("project-sk", allthecodes_skills::SkillSource::Project, "project"),
+            (
+                "project-sk",
+                allthecodes_skills::SkillSource::Project,
+                "project",
+            ),
             (
                 "plugin-sk",
                 allthecodes_skills::SkillSource::Plugin("p".to_string()),
