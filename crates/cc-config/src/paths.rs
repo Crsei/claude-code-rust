@@ -1,11 +1,13 @@
-//! Central registry of cc-rust runtime persistence paths.
+//! Central registry of allthecodes runtime persistence paths.
 //!
 //! All runtime data — sessions, logs, credentials, transcripts — is resolved
 //! through this module. The resolution chain is:
 //!
-//! 1. `CC_RUST_HOME` env var (trim non-empty) → use as-is.
-//! 2. `dirs::home_dir().join(".cc-rust")`.
-//! 3. `std::env::temp_dir().join("cc-rust")` (non-persistent, warns once).
+//! 1. `ALLTHECODES_HOME` env var (trim non-empty) → use as-is.
+//! 2. Old `CC_RUST_HOME` env var (trim non-empty) → read and log migration hint.
+//! 3. `dirs::home_dir().join(".allthecodes")`.
+//! 4. Old `~/.cc-rust` dir exists → read and log migration hint.
+//! 5. `std::env::temp_dir().join("allthecodes")` (non-persistent, warns once).
 //!
 //! Functions return `PathBuf` unconditionally; they never fail. Creation of
 //! the directory is the caller's responsibility.
@@ -16,27 +18,60 @@ use std::path::PathBuf;
 use std::sync::Once;
 
 static TEMP_FALLBACK_WARN: Once = Once::new();
+static OLD_PATH_WARN: Once = Once::new();
 
-/// Return the cc-rust data root directory.
+/// Return the allthecodes data root directory.
 ///
 /// See module-level docs for the resolution chain.
 pub fn data_root() -> PathBuf {
-    if let Ok(override_dir) = std::env::var("CC_RUST_HOME") {
+    // 1. ALLTHECODES_HOME env var (new, preferred)
+    if let Ok(override_dir) = std::env::var("ALLTHECODES_HOME") {
         if !override_dir.trim().is_empty() {
             return PathBuf::from(override_dir);
         }
     }
 
-    if let Some(home) = dirs::home_dir() {
-        return home.join(".cc-rust");
+    // 2. Old CC_RUST_HOME env var (fallback, with migration hint)
+    if let Ok(override_dir) = std::env::var("CC_RUST_HOME") {
+        if !override_dir.trim().is_empty() {
+            OLD_PATH_WARN.call_once(|| {
+                tracing::warn!(
+                    "CC_RUST_HOME is set but allthecodes now uses ALLTHECODES_HOME. \
+                     Please migrate to ALLTHECODES_HOME. Reading from: {}",
+                    override_dir
+                );
+            });
+            return PathBuf::from(override_dir);
+        }
     }
 
-    let tmp = std::env::temp_dir().join("cc-rust");
+    if let Some(home) = dirs::home_dir() {
+        let new_path = home.join(".allthecodes");
+        if new_path.exists() {
+            return new_path;
+        }
+        // 4. Old ~/.cc-rust exists → read it and hint migration
+        let old_path = home.join(".cc-rust");
+        if old_path.exists() {
+            OLD_PATH_WARN.call_once(|| {
+                tracing::warn!(
+                    "Using legacy data directory {}; please migrate to {} \
+                     by renaming or setting ALLTHECODES_HOME.",
+                    old_path.display(),
+                    new_path.display()
+                );
+            });
+            return old_path;
+        }
+        return new_path;
+    }
+
+    let tmp = std::env::temp_dir().join("allthecodes");
     TEMP_FALLBACK_WARN.call_once(|| {
         tracing::warn!(
             path = %tmp.display(),
-            "unable to resolve home directory; cc-rust data will be written to a \
-             non-persistent temp location. Set CC_RUST_HOME to override."
+            "unable to resolve home directory; allthecodes data will be written to a \
+             non-persistent temp location. Set ALLTHECODES_HOME to override."
         );
     });
     tmp
@@ -104,7 +139,7 @@ pub fn credentials_path() -> PathBuf {
 /// `{data_root}/keybindings.json` — user keybinding overrides (issue #10).
 ///
 /// Location matches the Claude Code spec convention of sitting next to
-/// `settings.json`; on cc-rust that's inside `{data_root}` rather than
+/// `settings.json`; on allthecodes that's inside `{data_root}` rather than
 /// `~/.claude/` to preserve path isolation.
 pub fn keybindings_path() -> PathBuf {
     data_root().join("keybindings.json")
@@ -193,21 +228,35 @@ pub fn team_memory_dir(cwd: &Path) -> PathBuf {
 
 // ----- Project-local paths (under cwd) -------------------------------------
 
-/// `{cwd}/.cc-rust/` — project-level settings / memory / skills root.
-pub fn project_cc_rust_dir(cwd: &Path) -> PathBuf {
-    cwd.join(".cc-rust")
+/// `{cwd}/.allthecodes/` — project-level settings / memory / skills root.
+pub fn project_allthecodes_dir(cwd: &Path) -> PathBuf {
+    let new_path = cwd.join(".allthecodes");
+    if new_path.exists() {
+        return new_path;
+    }
+    let old_path = cwd.join(".cc-rust");
+    if old_path.exists() {
+        return old_path;
+    }
+    new_path
 }
 
-/// `{cwd}/.cc-rust/skills/` — project-local skill packages.
+/// Deprecated alias — use [`project_allthecodes_dir`].
+#[deprecated(note = "Use project_allthecodes_dir instead")]
+pub fn project_cc_rust_dir(cwd: &Path) -> PathBuf {
+    project_allthecodes_dir(cwd)
+}
+
+/// `{cwd}/.allthecodes/skills/` — project-local skill packages.
 pub fn project_skills_dir(cwd: &Path) -> PathBuf {
-    project_cc_rust_dir(cwd).join("skills")
+    project_allthecodes_dir(cwd).join("skills")
 }
 
 // ----- Plan file (issue #46) -----------------------------------------------
 
-/// `{cwd}/.cc-rust/plan.md` — project-scoped plan file.
+/// `{cwd}/.allthecodes/plan.md` — project-scoped plan file.
 pub fn plan_file_path_project(cwd: &Path) -> PathBuf {
-    cwd.join(".cc-rust").join("plan.md")
+    project_allthecodes_dir(cwd).join("plan.md")
 }
 
 /// `{data_root}/plan.md` — fallback global plan file used outside a project.
@@ -215,9 +264,9 @@ pub fn plan_file_path_global() -> PathBuf {
     data_root().join("plan.md")
 }
 
-/// `{cwd}/.cc-rust/plan-workflow.json` — project-scoped durable plan workflow.
+/// `{cwd}/.allthecodes/plan-workflow.json` — project-scoped durable plan workflow.
 pub fn plan_workflow_file_path_project(cwd: &Path) -> PathBuf {
-    cwd.join(".cc-rust").join("plan-workflow.json")
+    project_allthecodes_dir(cwd).join("plan-workflow.json")
 }
 
 /// `{data_root}/plan-workflow.json` — fallback global durable plan workflow.
@@ -228,8 +277,8 @@ pub fn plan_workflow_file_path_global() -> PathBuf {
 /// Resolve the plan file the current session should read/write.
 ///
 /// Priority:
-///   1. If `cwd` or an ancestor has a project `.cc-rust/` or `CLAUDE.md`,
-///      use that workspace's `.cc-rust/plan.md`.
+///   1. If `cwd` or an ancestor has a project `.allthecodes/`, `AGENTS.md`,
+///      use that workspace's plan file.
 ///   2. Else use global `{data_root}/plan.md`.
 pub fn current_plan_file_path(cwd: &Path) -> PathBuf {
     if let Some(root) = find_plan_project_root(cwd) {
@@ -255,18 +304,28 @@ fn find_plan_project_root(cwd: &Path) -> Option<PathBuf> {
 }
 
 fn has_project_plan_marker(candidate: &Path) -> bool {
+    if candidate.join("AGENTS.md").is_file() {
+        return true;
+    }
     if candidate.join("CLAUDE.md").is_file() {
         return true;
     }
 
-    let marker = candidate.join(".cc-rust");
-    marker.is_dir() && !is_global_cc_rust_dir(&marker)
+    // Check new directory first, then old
+    let new_marker = candidate.join(".allthecodes");
+    if new_marker.is_dir() && !is_global_data_dir(&new_marker) {
+        return true;
+    }
+    let old_marker = candidate.join(".cc-rust");
+    old_marker.is_dir() && !is_global_data_dir(&old_marker)
 }
 
-fn is_global_cc_rust_dir(path: &Path) -> bool {
+fn is_global_data_dir(path: &Path) -> bool {
     path == data_root()
         || dirs::home_dir()
-            .map(|home| path == home.join(".cc-rust"))
+            .map(|home| {
+                path == home.join(".allthecodes") || path == home.join(".cc-rust")
+            })
             .unwrap_or(false)
 }
 
@@ -557,15 +616,15 @@ mod tests {
 
     #[test]
     #[serial]
-    fn current_plan_uses_claude_md_ancestor_as_workspace_root() {
+    fn current_plan_uses_agents_md_ancestor_as_workspace_root() {
         let tmp = tempfile::tempdir().unwrap();
         let nested = tmp.path().join("src").join("module");
         std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(tmp.path().join("CLAUDE.md"), "# instructions\n").unwrap();
+        std::fs::write(tmp.path().join("AGENTS.md"), "# instructions\n").unwrap();
         let _g = EnvGuard::set("CC_RUST_HOME", "/tmp/should-not-be-used");
         assert_eq!(
             current_plan_file_path(&nested),
-            tmp.path().join(".cc-rust").join("plan.md")
+            tmp.path().join(".allthecodes").join("plan.md")
         );
     }
 
