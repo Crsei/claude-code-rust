@@ -45,7 +45,6 @@ expression: render_interactive_ui_surfaces()
 │  edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                        │
 │        local: ./.cc-rust/settings.local.json                                                     │
 │  target: Ctrl+E pick target                                                                      │
-│                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ## markdown

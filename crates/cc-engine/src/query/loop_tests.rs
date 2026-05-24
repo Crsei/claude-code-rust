@@ -1,6 +1,6 @@
 use super::*;
-use std::pin::Pin;
 use std::collections::VecDeque;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
