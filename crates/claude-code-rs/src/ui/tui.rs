@@ -26,6 +26,8 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
+#[path = "tui/command_availability.rs"]
+mod command_availability;
 #[path = "tui/commands.rs"]
 mod commands;
 #[path = "tui/engine_events.rs"]
@@ -40,6 +42,7 @@ mod terminal_guard;
 #[path = "tui/tests.rs"]
 mod tests;
 
+use command_availability::{slash_command_availability_during_task, TaskCommandAvailability};
 use commands::{query_prompt_text, try_execute_command, CmdAction};
 use engine_events::{
     create_user_message, handle_sdk_message, handle_tool_progress, install_tui_ask_user_callback,
@@ -425,7 +428,25 @@ pub async fn run_tui(
                         match action {
                             AppAction::Submit(text) => {
                                 if app.is_streaming() {
-                                    steer_prompt_to_engine(text, &engine, &mut app);
+                                    match slash_command_availability_during_task(&text) {
+                                        TaskCommandAvailability::Allowed => {
+                                            if submit_prompt_to_engine(
+                                                text,
+                                                &engine,
+                                                &mut app,
+                                                &engine_tx,
+                                            ).await {
+                                                break;
+                                            }
+                                        }
+                                        TaskCommandAvailability::Disabled { .. } => {
+                                            reject_unavailable_streaming_command(text, &mut app);
+                                        }
+                                        TaskCommandAvailability::NotCommand
+                                        | TaskCommandAvailability::UnknownCommand => {
+                                            steer_prompt_to_engine(text, &engine, &mut app);
+                                        }
+                                    }
                                     continue;
                                 }
                                 if submit_prompt_to_engine(
@@ -438,7 +459,25 @@ pub async fn run_tui(
                                 }
                             }
                             AppAction::Steer(text) => {
-                                steer_prompt_to_engine(text, &engine, &mut app);
+                                match slash_command_availability_during_task(&text) {
+                                    TaskCommandAvailability::Allowed => {
+                                        if submit_prompt_to_engine(
+                                            text,
+                                            &engine,
+                                            &mut app,
+                                            &engine_tx,
+                                        ).await {
+                                            break;
+                                        }
+                                    }
+                                    TaskCommandAvailability::Disabled { .. } => {
+                                        reject_unavailable_streaming_command(text, &mut app);
+                                    }
+                                    TaskCommandAvailability::NotCommand
+                                    | TaskCommandAvailability::UnknownCommand => {
+                                        steer_prompt_to_engine(text, &engine, &mut app);
+                                    }
+                                }
                             }
                             AppAction::Queue(text) => {
                                 let queued = app.queue_prompt(text);
@@ -718,6 +757,21 @@ fn export_debug_snapshot(app: &mut App) {
         ),
         Err(error) => add_system_error(app, &format!("TUI debug snapshot failed: {error}")),
     }
+}
+
+fn reject_unavailable_streaming_command(text: String, app: &mut App) -> bool {
+    let TaskCommandAvailability::Disabled { command } =
+        slash_command_availability_during_task(&text)
+    else {
+        return false;
+    };
+
+    app.restore_prompt_text(text);
+    add_system_error(
+        app,
+        &format!("'/{command}' is disabled while a task is in progress."),
+    );
+    true
 }
 
 async fn submit_prompt_to_engine(

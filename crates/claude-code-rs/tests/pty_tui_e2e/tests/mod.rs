@@ -12,6 +12,7 @@ mod commands_memory_skills_hooks;
 mod commands_permissions;
 mod commands_query;
 mod commands_session;
+mod running_task_slash_commands;
 mod test1_login_structure;
 mod test2_full_access;
 mod test3_plan_flow;

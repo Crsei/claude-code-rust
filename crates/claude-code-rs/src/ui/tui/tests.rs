@@ -1,8 +1,12 @@
+use super::command_availability::{
+    slash_command_availability_during_task, TaskCommandAvailability,
+};
 use super::commands::query_prompt_text;
 use super::engine_events::{
     create_user_message, handle_sdk_message, handle_tool_progress, now_ts,
     progress_message_from_tool_progress, StreamingState,
 };
+use super::reject_unavailable_streaming_command;
 use super::subsystem_events::handle_subsystem_event;
 use crate::ui::app::App;
 use cc_engine::types::tool::ToolProgress;
@@ -69,6 +73,47 @@ fn query_prompt_text_joins_multiple_messages_with_spacing() {
     ];
 
     assert_eq!(query_prompt_text(&msgs), "First\n\nSecond".to_string());
+}
+
+#[test]
+fn streaming_disabled_slash_command_is_restored_with_error() {
+    let mut app = App::new();
+    app.set_streaming(true);
+    app.restore_prompt_text("/review these changes".to_string());
+
+    assert!(reject_unavailable_streaming_command(
+        "/review these changes".to_string(),
+        &mut app,
+    ));
+
+    assert_eq!(app.prompt_text(), "/review these changes");
+    match app.messages().last().expect("system error message") {
+        Message::System(message) => {
+            assert_eq!(
+                message.content,
+                "'/review' is disabled while a task is in progress."
+            );
+        }
+        other => panic!("expected system message, got {other:?}"),
+    }
+}
+
+#[test]
+fn streaming_ordinary_text_and_available_slash_command_are_not_rejected() {
+    let mut app = App::new();
+
+    assert!(!reject_unavailable_streaming_command(
+        "keep going".to_string(),
+        &mut app,
+    ));
+    assert!(!reject_unavailable_streaming_command(
+        "/status".to_string(),
+        &mut app,
+    ));
+    assert_eq!(
+        slash_command_availability_during_task("/diff"),
+        TaskCommandAvailability::Allowed
+    );
 }
 
 #[test]

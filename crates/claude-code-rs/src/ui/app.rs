@@ -1292,6 +1292,11 @@ impl App {
         self.suggestions.as_deref()
     }
 
+    #[cfg(test)]
+    pub fn prompt_text(&self) -> &str {
+        &self.prompt.input
+    }
+
     pub fn push_history(&mut self, text: String) {
         if self.history.last().map(|entry| entry.display.as_str()) != Some(text.as_str()) {
             self.history

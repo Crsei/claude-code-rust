@@ -268,6 +268,14 @@ fn prompt_stays_editable_while_streaming_and_tab_queues() {
         AppAction::Queue("queued".to_string())
     );
     assert!(app.prompt.input.is_empty());
+
+    app.prompt.input = "/review these changes".to_string();
+    app.prompt.cursor_position = app.prompt.input.len();
+    assert_eq!(
+        send_key(&mut app, KeyCode::Tab),
+        AppAction::Queue("/review these changes".to_string())
+    );
+    assert!(app.prompt.input.is_empty());
 }
 
 #[test]
