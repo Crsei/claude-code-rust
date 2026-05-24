@@ -1001,4 +1001,69 @@ mod tests {
 
         TestRunner::new().run(&case).assert_no_errors();
     }
+
+    /// 命令面板中输入 agents，截图代理命令详情/参数提示面板。
+    #[test]
+    fn script_palette_agents_detail() {
+        let case = TestCase::new("palette_agents_detail")
+            .log_root(SCRIPTS_LOG_ROOT)
+            .timeout(QUICK_TIMEOUT)
+            .cols(180)
+            .rows(60)
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::OpenPalette)
+            .step(TestStep::PaletteSelect(2))
+            .step(TestStep::Key(TestKey::Enter))
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::Snapshot("agents_surface".into()))
+            .step(TestStep::AssertScreenContains("Sources".into()))
+            .step(TestStep::AssertNoPanic);
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
+
+    /// 命令面板中输入 model，截图模型命令详情/参数提示面板。
+    #[test]
+    fn script_palette_model_detail() {
+        let case = TestCase::new("palette_model_detail")
+            .log_root(SCRIPTS_LOG_ROOT)
+            .timeout(QUICK_TIMEOUT)
+            .cols(180)
+            .rows(60)
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::OpenPalette)
+            .step(TestStep::TypeText("model".into()))
+            .step(TestStep::Key(TestKey::Enter))
+            .step(TestStep::Key(TestKey::Enter))
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::Snapshot("model_surface".into()))
+            .step(TestStep::AssertScreenContains("Available models".into()))
+            .step(TestStep::AssertNoPanic);
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
+
+    /// 命令面板中输入 login，截图登录命令详情/参数提示面板。
+    #[test]
+    fn script_palette_login_detail() {
+        let case = TestCase::new("palette_login_detail")
+            .log_root(SCRIPTS_LOG_ROOT)
+            .timeout(QUICK_TIMEOUT)
+            .cols(180)
+            .rows(60)
+            .step(TestStep::SkipTrustGate)
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::OpenPalette)
+            .step(TestStep::TypeText("login".into()))
+            .step(TestStep::Key(TestKey::Enter))
+            .step(TestStep::Key(TestKey::Enter))
+            .step(TestStep::Wait(Duration::from_millis(500)))
+            .step(TestStep::Snapshot("login_surface".into()))
+            .step(TestStep::AssertScreenContains("OAuth details".into()))
+            .step(TestStep::AssertNoPanic);
+
+        TestRunner::new().run(&case).assert_no_errors();
+    }
 }
