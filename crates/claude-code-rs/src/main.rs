@@ -529,6 +529,22 @@ async fn run_full_init(cli: Cli) -> anyhow::Result<ExitCode> {
         }
     }
 
+    // First-run initialization: if no settings.json exists, seed from template.
+    let first_run_initialized = match cc_config::settings::initialize_first_run() {
+        Ok(created) => created,
+        Err(e) => {
+            warn!(error = %e, "first-run initialization failed; continuing with defaults");
+            false
+        }
+    };
+    if first_run_initialized {
+        info!("first-run initialization complete");
+        let store = cc_services::onboarding::OnboardingStore::open_default();
+        if let Err(e) = store.update(|_| {}) {
+            warn!(error = %e, "failed to initialize onboarding state");
+        }
+    }
+
     // B.1: Load layered settings (managed/user/project/local + env).
     let mut loaded_settings = settings::load_effective(std::path::Path::new(&cwd))?;
     let env_report = settings::apply_startup_runtime_env(&loaded_settings.effective.env)?;

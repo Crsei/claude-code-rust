@@ -42,6 +42,23 @@ pub fn data_root() -> PathBuf {
     tmp
 }
 
+/// Create the data root directory if it does not exist.
+///
+/// Also creates the `logs/` subdirectory so that `init_tracing` has a
+/// writable location from the first startup cycle.
+///
+/// Returns `Ok(true)` if the directory was newly created, `Ok(false)` if
+/// it already existed.
+pub fn ensure_data_root() -> std::io::Result<bool> {
+    let root = data_root();
+    if root.exists() {
+        return Ok(false);
+    }
+    std::fs::create_dir_all(&root)?;
+    let _ = std::fs::create_dir_all(root.join("logs"));
+    Ok(true)
+}
+
 // ----- Global paths (under data_root) --------------------------------------
 
 pub fn sessions_dir() -> PathBuf {
@@ -339,6 +356,20 @@ mod tests {
             "expected temp fallback, got {}",
             root.display()
         );
+    }
+
+    #[test]
+    #[serial]
+    fn ensure_data_root_creates_and_reports() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fresh = tmp.path().join("fresh_root");
+        let _g = EnvGuard::set("CC_RUST_HOME", fresh.to_str().unwrap());
+        assert!(!data_root().exists());
+        assert!(ensure_data_root().unwrap());
+        assert!(data_root().exists());
+        assert!(data_root().join("logs").exists());
+        // Second call is idempotent
+        assert!(!ensure_data_root().unwrap());
     }
 
     #[test]

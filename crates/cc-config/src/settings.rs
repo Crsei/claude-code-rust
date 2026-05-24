@@ -29,6 +29,7 @@
 //! [`EffectiveSettings`].
 
 mod effective;
+mod first_run;
 mod load;
 mod paths;
 mod providers;
@@ -41,6 +42,7 @@ mod types;
 mod write;
 
 pub use effective::*;
+pub use first_run::*;
 pub use load::*;
 pub use paths::*;
 pub use providers::*;
