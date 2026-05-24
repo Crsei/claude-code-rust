@@ -97,7 +97,8 @@ unicode-width = "0.2"          # 宽字符列宽计算
 │  │  (后台线程)   │    │  (输出) │    └────────────────┘ │
 │  │     │         │    └─────────┘                       │
 │  │     ▼         │                                      │
-│  │  buffer ──────────► logs/*.raw + *.log + *.html      │
+│  │  buffer ──────────► logs/*.raw + *.log + *.stream.log│
+│  │                  └► logs/*.html                      │
 │  └──────────────┘                                       │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -110,9 +111,11 @@ unicode-width = "0.2"          # 宽字符列宽计算
 
 **光标渲染空格**: TUI 光标渲染在 ANSI strip 后会在字符间产生空格（如 `"hel lo w orl d"`），文本匹配需使用短片段。
 
-**HTML 终端截图**: `CapturedOutput::render_html()` 将原始 ANSI 数据通过 `vt100::Parser` 终端模拟器解析，逐单元格提取前景色、背景色、粗体、下划线、反色等属性，渲染为带样式的 HTML。支持 256 色调色板（标准 16 色 + 6x6x6 色立方 + 灰度渐变）和 RGB 真彩色。当进程退出清屏导致画面空白时，自动回退搜索最后一帧有内容的画面。
+**HTML 终端截图**: harness 将原始 ANSI 数据通过 `vt100::Parser` 终端模拟器解析，逐单元格提取前景色、背景色、粗体、下划线、反色等属性，渲染为带样式的 HTML。支持 256 色调色板（标准 16 色 + 6x6x6 色立方 + 灰度渐变）和 RGB 真彩色。当进程退出清屏导致画面空白时，自动回退搜索最后一帧有内容的画面。`pty_tui_e2e` 的 HTML 还包含测试/步骤 label、终端尺寸和字节数元信息，便于区分相似画面。
 
-**mid-session snapshot**: `session.snapshot(label)` 在不结束会话的情况下捕获当前终端状态，保存 `.raw`/`.log`/`.html` 文件，用于多轮对话测试中每一轮的截图。
+**文本日志语义**: `pty_tui_e2e` 的 `.log` 是 vt100 当前屏幕文本，每行对应终端屏幕行，适合人工阅读；`.stream.log` 是 ANSI 去除后的累计 PTY 输出，保留历史输出和重绘残留，适合文本搜索；`.raw` 是原始 PTY 字节流。
+
+**mid-session snapshot**: `session.snapshot(label)` 在不结束会话的情况下捕获当前终端状态，保存 `.raw`/`.log`/`.stream.log`/`.html` 文件，用于多轮对话测试中每一轮的截图。
 
 ### harness API
 
@@ -147,14 +150,14 @@ session.wait_for_text(needle, timeout) -> bool       // 等待文本出现
 session.wait_for_any(needles, timeout) -> Option<usize>  // 等待任一文本，返回匹配索引
 
 // 中途截图
-session.snapshot(label) -> String        // 不结束会话，保存 .raw/.log/.html，返回纯文本
+session.snapshot(label) -> String        // 不结束会话，保存 .raw/.log/.stream.log/.html，返回累计纯文本
 
 // 结束
 session.finish(timeout, test_name) -> CapturedOutput
 output.text()             // 纯文本
 output.contains(s)        // 文本匹配
 output.preview(n)         // 打印前 n 字节预览
-output.render_html()      // vt100 渲染为 HTML 截图
+output.screen_text()      // vt100 当前屏幕文本
 ```
 
 ---

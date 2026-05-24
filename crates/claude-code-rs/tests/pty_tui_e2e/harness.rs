@@ -5,7 +5,7 @@
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -452,25 +452,18 @@ impl PtySession {
     pub fn snapshot(&self, label: &str) -> String {
         let raw = self.buffer.lock().unwrap().clone();
         let plain = strip_ansi_escapes::strip(&raw);
-
-        let dir = logs_dir();
-        let log_path = dir.join(format!("{label}.log"));
-        std::fs::write(&log_path, &plain).expect("write log");
-
         let output = CapturedOutput {
             raw: raw.clone(),
             plain: plain.clone(),
             cols: self.cols,
             rows: self.rows,
         };
-        let html_path = dir.join(format!("{label}.html"));
-        let html = output.render_html();
-        std::fs::write(&html_path, html.as_bytes()).expect("write html");
+        let paths = write_capture_files(logs_dir(), label, &output);
 
         eprintln!(
             "[snapshot] {label}: {} bytes → {}",
             output.raw.len(),
-            html_path.display()
+            paths.html.display()
         );
         String::from_utf8_lossy(&plain).into_owned()
     }
@@ -479,24 +472,18 @@ impl PtySession {
     pub fn snapshot_to(&self, label: &str, dir: &std::path::Path) -> String {
         let raw = self.buffer.lock().unwrap().clone();
         let plain = strip_ansi_escapes::strip(&raw);
-
-        let log_path = dir.join(format!("{label}.log"));
-        std::fs::write(&log_path, &plain).expect("write log");
-
         let output = CapturedOutput {
             raw: raw.clone(),
             plain: plain.clone(),
             cols: self.cols,
             rows: self.rows,
         };
-        let html_path = dir.join(format!("{label}.html"));
-        let html = output.render_html();
-        std::fs::write(&html_path, html.as_bytes()).expect("write html");
+        let paths = write_capture_files(dir, label, &output);
 
         eprintln!(
             "[snapshot] {label}: {} bytes → {}",
             output.raw.len(),
-            html_path.display()
+            paths.html.display()
         );
         String::from_utf8_lossy(&plain).into_owned()
     }
@@ -530,29 +517,20 @@ impl PtySession {
         let raw = self.buffer.lock().unwrap().clone();
         let plain = strip_ansi_escapes::strip(&raw);
 
-        // 保存日志文件（不保存 .raw，只保留 .log + .html）
-        let dir = logs_dir();
-        let log_path = dir.join(format!("{test_name}.log"));
-        std::fs::write(&log_path, &plain).expect("write log");
-
-        eprintln!(
-            "[pty] {test_name}: {} bytes raw, {} bytes plain → {}",
-            raw.len(),
-            plain.len(),
-            log_path.display()
-        );
-
         let output = CapturedOutput {
             raw,
             plain,
             cols: self.cols,
             rows: self.rows,
         };
+        let paths = write_capture_files(logs_dir(), test_name, &output);
 
-        // 保存 HTML 终端截图
-        let html_path = dir.join(format!("{test_name}.html"));
-        let html = output.render_html();
-        std::fs::write(&html_path, html.as_bytes()).expect("write html");
+        eprintln!(
+            "[pty] {test_name}: {} bytes raw, {} bytes plain → {}",
+            output.raw.len(),
+            output.plain.len(),
+            paths.log.display()
+        );
 
         output
     }
@@ -588,26 +566,20 @@ impl PtySession {
         let raw = self.buffer.lock().unwrap().clone();
         let plain = strip_ansi_escapes::strip(&raw);
 
-        let log_path = dir.join(format!("{test_name}.log"));
-        std::fs::write(&log_path, &plain).expect("write log");
-
-        eprintln!(
-            "[pty] {test_name}: {} bytes raw, {} bytes plain → {}",
-            raw.len(),
-            plain.len(),
-            log_path.display()
-        );
-
         let output = CapturedOutput {
             raw,
             plain,
             cols: self.cols,
             rows: self.rows,
         };
+        let paths = write_capture_files(dir, test_name, &output);
 
-        let html_path = dir.join(format!("{test_name}.html"));
-        let html = output.render_html();
-        std::fs::write(&html_path, html.as_bytes()).expect("write html");
+        eprintln!(
+            "[pty] {test_name}: {} bytes raw, {} bytes plain → {}",
+            output.raw.len(),
+            output.plain.len(),
+            paths.log.display()
+        );
 
         output
     }
@@ -647,8 +619,115 @@ impl CapturedOutput {
         eprintln!("[preview]\n{}", &text[..end]);
     }
 
-    /// 渲染为 HTML 终端截图。
-    pub fn render_html(&self) -> String {
+    /// 当前终端屏幕内容，每一行对应一个 vt100 屏幕行。
+    pub fn screen_text(&self) -> String {
+        let parser = self.parser_for_visible_screen();
+        let screen = parser.screen();
+        let mut rows = Vec::with_capacity(self.rows as usize);
+        for row in 0..self.rows {
+            let mut line = String::new();
+            let mut col = 0u16;
+            while col < self.cols {
+                let Some(cell) = screen.cell(row, col) else {
+                    col += 1;
+                    continue;
+                };
+                let ch = cell.contents();
+                let display = if ch.is_empty() { " " } else { &ch };
+                line.push_str(display);
+                let width = unicode_width::UnicodeWidthStr::width(display);
+                col += if width > 1 { width as u16 } else { 1 };
+            }
+            rows.push(line.trim_end().to_string());
+        }
+        rows.join("\n")
+    }
+
+    fn render_html_with_meta(&self, meta: &HtmlMeta<'_>) -> String {
+        let parser = self.parser_for_visible_screen();
+        let screen = parser.screen();
+        let generated_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let title = html_escape(meta.title);
+        let label = html_escape(meta.label);
+        let generated_at = html_escape(&generated_at);
+
+        let mut html = String::with_capacity(self.raw.len() * 3);
+        html.push_str(&format!(
+            r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>{title}</title>
+<style>
+body{{background:#1e1e1e;color:#ddd;margin:0;padding:16px;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
+.wrap{{display:flex;flex-direction:column;align-items:center;gap:12px}}
+.meta{{box-sizing:border-box;width:max-content;max-width:100%;min-width:min(100%,720px);background:#151515;border:1px solid #3a3a3a;border-radius:8px;padding:10px 12px;color:#d6d6d6;font-size:13px;line-height:1.5}}
+.meta strong{{color:#fff}}
+.meta code{{font-family:'Cascadia Code','Consolas','Courier New',monospace;color:#f2f2f2}}
+.terminal{{background:#0c0c0c;border:1px solid #444;border-radius:8px;padding:12px;box-shadow:0 4px 24px rgba(0,0,0,.5);overflow:auto;max-width:100%}}
+pre{{font-family:'Cascadia Code','Consolas','Courier New',monospace;font-size:14px;line-height:1.3;margin:0;color:#ccc}}
+.row{{display:block;height:1.3em;white-space:pre}}
+</style></head><body><div class="wrap">
+<div class="meta"><strong>{title}</strong><br>
+label: <code>{label}</code><br>
+terminal: <code>{cols}x{rows}</code> | raw bytes: <code>{raw_len}</code> | plain bytes: <code>{plain_len}</code> | generated: <code>{generated_at}</code></div>
+<div class="terminal"><pre>
+"#,
+            cols = self.cols,
+            rows = self.rows,
+            raw_len = self.raw.len(),
+            plain_len = self.plain.len(),
+        ));
+
+        for row in 0..self.rows {
+            html.push_str("<span class=\"row\">");
+            let mut col = 0u16;
+            while col < self.cols {
+                let cell = screen.cell(row, col).unwrap();
+                let ch = cell.contents();
+                let fg = color_to_css(cell.fgcolor());
+                let bg = color_to_css(cell.bgcolor());
+                let (fg_css, bg_css) = if cell.inverse() {
+                    (
+                        bg.as_deref().unwrap_or("#0c0c0c"),
+                        fg.as_deref().unwrap_or("#cccccc"),
+                    )
+                } else {
+                    (
+                        fg.as_deref().unwrap_or("#cccccc"),
+                        bg.as_deref().unwrap_or("#0c0c0c"),
+                    )
+                };
+
+                let mut style = String::new();
+                if fg_css != "#cccccc" || cell.inverse() {
+                    style.push_str(&format!("color:{fg_css};"));
+                }
+                if bg_css != "#0c0c0c" || cell.inverse() {
+                    style.push_str(&format!("background:{bg_css};"));
+                }
+                if cell.bold() {
+                    style.push_str("font-weight:bold;");
+                }
+                if cell.underline() {
+                    style.push_str("text-decoration:underline;");
+                }
+
+                let display = if ch.is_empty() { " " } else { &ch };
+                let escaped = html_escape(display);
+                if style.is_empty() {
+                    html.push_str(&escaped);
+                } else {
+                    html.push_str(&format!("<span style=\"{style}\">{escaped}</span>"));
+                }
+                let width = unicode_width::UnicodeWidthStr::width(display);
+                col += if width > 1 { width as u16 } else { 1 };
+            }
+            html.push_str("</span>\n");
+        }
+
+        html.push_str("</pre></div></div></body></html>");
+        html
+    }
+
+    fn parser_for_visible_screen(&self) -> vt100::Parser {
         let mut parser = vt100::Parser::new(self.rows, self.cols, 0);
         parser.process(&self.raw);
 
@@ -676,38 +755,42 @@ impl CapturedOutput {
             parser.process(&self.raw[..best_end]);
         }
 
-        let screen = parser.screen();
-        let mut html = String::with_capacity(self.raw.len() * 3);
-        html.push_str(r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>PTY Test Screenshot</title>
-<style>
-body{background:#1e1e1e;margin:0;padding:16px;display:flex;justify-content:center}
-.terminal{background:#0c0c0c;border:1px solid #444;border-radius:8px;padding:12px;box-shadow:0 4px 24px rgba(0,0,0,.5)}
-pre{font-family:'Cascadia Code','Consolas','Courier New',monospace;font-size:14px;line-height:1.3;margin:0;color:#ccc}
-.row{display:block;height:1.3em;white-space:pre}
-</style></head><body><div class="terminal"><pre>
-"#);
-
-        for row in 0..self.rows {
-            html.push_str("<span class=\"row\">");
-            let mut col = 0u16;
-            while col < self.cols {
-                let cell = screen.cell(row, col).unwrap();
-                let ch = cell.contents();
-                let display = if ch.is_empty() { " " } else { &ch };
-                html.push_str(&html_escape(display));
-                let width = unicode_width::UnicodeWidthStr::width(display);
-                col += if width > 1 { width as u16 } else { 1 };
-            }
-            html.push_str("</span>\n");
-        }
-
-        html.push_str("</pre></div></body></html>");
-        html
+        parser
     }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
+
+struct CapturePaths {
+    log: PathBuf,
+    html: PathBuf,
+}
+
+struct HtmlMeta<'a> {
+    title: &'a str,
+    label: &'a str,
+}
+
+fn write_capture_files(dir: &Path, label: &str, output: &CapturedOutput) -> CapturePaths {
+    let log_path = dir.join(format!("{label}.log"));
+    let stream_log_path = dir.join(format!("{label}.stream.log"));
+    let raw_path = dir.join(format!("{label}.raw"));
+    let html_path = dir.join(format!("{label}.html"));
+
+    std::fs::write(&log_path, output.screen_text()).expect("write screen log");
+    std::fs::write(&stream_log_path, &output.plain).expect("write stream log");
+    std::fs::write(&raw_path, &output.raw).expect("write raw log");
+    let html = output.render_html_with_meta(&HtmlMeta {
+        title: "PTY TUI E2E Capture",
+        label,
+    });
+    std::fs::write(&html_path, html.as_bytes()).expect("write html");
+
+    CapturePaths {
+        log: log_path,
+        html: html_path,
+    }
+}
 
 /// 从状态栏解析 "N msgs" 中的 N。
 pub fn parse_msg_count(status: &str) -> Option<usize> {
@@ -727,6 +810,36 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 fn rfind(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).rposition(|w| w == needle)
+}
+
+fn color_to_css(color: vt100::Color) -> Option<String> {
+    match color {
+        vt100::Color::Default => None,
+        vt100::Color::Idx(i) => Some(idx_to_css(i)),
+        vt100::Color::Rgb(r, g, b) => Some(format!("#{r:02x}{g:02x}{b:02x}")),
+    }
+}
+
+fn idx_to_css(i: u8) -> String {
+    const PALETTE: [&str; 16] = [
+        "#0c0c0c", "#c50f1f", "#13a10e", "#c19c00", "#0037da", "#881798", "#3a96dd", "#cccccc",
+        "#767676", "#e74856", "#16c60c", "#f9f1a5", "#3b78ff", "#b4009e", "#61d6d6", "#f2f2f2",
+    ];
+    if (i as usize) < PALETTE.len() {
+        return PALETTE[i as usize].to_string();
+    }
+    if i >= 232 {
+        let v = 8 + (i - 232) as u32 * 10;
+        let v = v.min(255) as u8;
+        return format!("#{v:02x}{v:02x}{v:02x}");
+    }
+
+    let idx = (i - 16) as u32;
+    let r = idx / 36;
+    let g = (idx % 36) / 6;
+    let b = idx % 6;
+    let to_val = |c: u32| if c == 0 { 0u8 } else { (55 + c * 40) as u8 };
+    format!("#{:02x}{:02x}{:02x}", to_val(r), to_val(g), to_val(b))
 }
 
 fn html_escape(s: &str) -> String {

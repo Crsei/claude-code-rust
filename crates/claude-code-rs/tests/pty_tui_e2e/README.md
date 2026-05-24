@@ -84,7 +84,7 @@ TestCase（测试脚本）
 | `TypeText(String)` | 只输入文本，不按 Enter |
 | `Command(String)` | 斜杠命令（自动加 "/" 前缀 + Enter） |
 | `Key(TestKey)` | 发送快捷键 |
-| `Snapshot(String)` | 手动截图（保存 .html + .log） |
+| `Snapshot(String)` | 手动截图（保存 .html + .log/.stream.log/.raw） |
 | `OpenPalette` | 打开命令面板（发送 "/"，等待 "Commands" 出现） |
 | `PaletteSelect(usize)` | 命令面板选择第 N 项（Down N-1 次 + Enter） |
 | `ClosePalette` | 关闭命令面板（Esc） |
@@ -290,18 +290,25 @@ skip_trust_gate()    // 跳过首次 workspace 信任确认
 crates/claude-code-rs/logs/pty_tui_e2e_{YYYYMMDDHHMM}/
 ├── {test_name}/                    ← 每个测试独立文件夹
 │   ├── step_001_skip_trust.html    ← 步骤截图（HTML 终端渲染）
-│   ├── step_001_skip_trust.log     ← 步骤纯文本
+│   ├── step_001_skip_trust.log     ← 当前屏幕文本（适合人工阅读）
+│   ├── step_001_skip_trust.stream.log ← 累积纯文本流（ANSI 去除）
+│   ├── step_001_skip_trust.raw     ← 原始 PTY 字节流
 │   ├── step_003_input_question.html
 │   ├── step_003_input_question.log
 │   ├── ...
+│   ├── index.html                  ← 步骤报告和产物导航
 │   ├── session_full.html           ← 完整会话 HTML 截图
-│   ├── session_full.log            ← 完整会话纯文本
+│   ├── session_full.log            ← 完整会话最终屏幕文本
+│   ├── session_full.stream.log     ← 完整会话累积纯文本流
+│   ├── session_full.raw            ← 完整会话原始 PTY 字节流
 │   └── errors.txt                  ← 错误汇总（仅在有错误时生成）
 ├── {test_name_2}/
 │   └── ...
 ```
 
-HTML 文件可在浏览器中打开查看终端截图，带暗色终端样式。
+HTML 文件可在浏览器中打开查看终端截图，带暗色终端样式和测试/步骤元信息。`.log`
+是 vt100 当前屏幕快照，适合人工阅读；`.stream.log` 保留旧的累计输出语义，用于搜索
+历史输出和重绘残留；`.raw` 用于排查 ANSI 控制序列和 PTY 时序问题。
 
 ## 测试分类
 

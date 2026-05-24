@@ -355,6 +355,73 @@ impl TestReport {
         let path = self.output_dir.join("errors.txt");
         std::fs::write(&path, content).expect("write errors.txt");
     }
+
+    /// 保存 index.html，作为每个脚本化测试目录的人工排查入口。
+    pub fn save_index(&self) {
+        let status = if self.errors.is_empty() {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+        let mut html = String::new();
+        html.push_str(&format!(
+            r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>{test_name} - pty_tui_e2e</title>
+<style>
+body{{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:24px;background:#f7f7f7;color:#202020}}
+h1{{font-size:22px;margin:0 0 8px}}
+.meta{{margin:0 0 16px;color:#555;line-height:1.5}}
+table{{border-collapse:collapse;width:100%;background:#fff;border:1px solid #d8d8d8}}
+th,td{{border-bottom:1px solid #e7e7e7;padding:8px 10px;text-align:left;vertical-align:top;font-size:14px}}
+th{{background:#ececec;font-weight:600}}
+tr.fail{{background:#fff1f1}}
+code{{font-family:'Cascadia Code','Consolas','Courier New',monospace}}
+a{{color:#005ea8;text-decoration:none}}
+a:hover{{text-decoration:underline}}
+.status-pass{{color:#137333;font-weight:700}}
+.status-fail{{color:#b3261e;font-weight:700}}
+</style></head><body>
+<h1>{test_name}</h1>
+<div class="meta">
+status: <span class="status-{status_class}">{status}</span><br>
+steps: <code>{steps}</code> | errors: <code>{errors}</code><br>
+session: {session_links}{errors_link}
+</div>
+<table><thead><tr><th>Step</th><th>Status</th><th>Time</th><th>Description</th><th>Artifacts</th></tr></thead><tbody>
+"#,
+            test_name = html_escape(&self.test_name),
+            status = status,
+            status_class = if self.errors.is_empty() { "pass" } else { "fail" },
+            steps = self.steps.len(),
+            errors = self.errors.len(),
+            session_links = artifact_links(&self.session_html),
+            errors_link = if self.errors.is_empty() {
+                String::new()
+            } else {
+                " | <a href=\"errors.txt\">errors.txt</a>".to_string()
+            },
+        ));
+
+        for step in &self.steps {
+            let status = if step.passed { "OK" } else { "FAIL" };
+            let row_class = if step.passed { "" } else { " class=\"fail\"" };
+            let artifacts = step
+                .snapshot
+                .as_ref()
+                .map(|path| artifact_links(path))
+                .unwrap_or_else(|| "&nbsp;".to_string());
+            html.push_str(&format!(
+                "<tr{row_class}><td><code>{index}</code></td><td>{status}</td><td><code>{duration:.0?}</code></td><td>{desc}</td><td>{artifacts}</td></tr>\n",
+                index = step.index + 1,
+                desc = html_escape(&step.desc),
+                duration = step.duration,
+            ));
+        }
+
+        html.push_str("</tbody></table></body></html>");
+        let path = self.output_dir.join("index.html");
+        std::fs::write(&path, html).expect("write index.html");
+    }
 }
 
 // ─── TestRunner ──────────────────────────────────────────────────────
@@ -488,6 +555,7 @@ impl TestRunner {
         };
         report.summary();
         report.save_errors();
+        report.save_index();
         report
     }
 
@@ -759,6 +827,28 @@ fn sanitize(s: &str) -> String {
         .collect::<String>()
         .trim_matches('_')
         .to_string()
+}
+
+fn artifact_links(path: &std::path::Path) -> String {
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return String::new();
+    };
+    let stem = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or(file_name);
+    let file_name = html_escape(file_name);
+    let stem = html_escape(stem);
+    format!(
+        "<a href=\"{file_name}\">html</a> | <a href=\"{stem}.log\">log</a> | <a href=\"{stem}.stream.log\">stream</a> | <a href=\"{stem}.raw\">raw</a>"
+    )
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 // ─── 示例测试 ────────────────────────────────────────────────────────
