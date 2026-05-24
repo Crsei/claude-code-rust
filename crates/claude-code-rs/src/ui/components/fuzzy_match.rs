@@ -124,7 +124,7 @@ fn update_best(
     let is_better = match best_score {
         Some(current) => {
             // Better kind always wins, then lower score
-            kind > *best_kind || (kind == *best_kind && score < *current)
+            (kind as u8) < (*best_kind as u8) || (kind == *best_kind && score < *current)
         }
         None => true,
     };

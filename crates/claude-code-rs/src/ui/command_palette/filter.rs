@@ -229,7 +229,7 @@ fn best_fuzzy_multi(
             let weighted = (m.score as f64 * weight) as usize;
             let is_better = match best {
                 Some((ref best_score, ref best_kind)) => {
-                    m.kind as u8 > *best_kind as u8
+                    (m.kind as u8) < (*best_kind as u8)
                         || (m.kind == *best_kind && weighted < *best_score)
                 }
                 None => true,
@@ -245,7 +245,7 @@ fn best_fuzzy_multi(
             let weighted = (m.score as f64 * 0.75) as usize;
             let is_better = match best {
                 Some((ref best_score, ref best_kind)) => {
-                    m.kind as u8 > *best_kind as u8
+                    (m.kind as u8) < (*best_kind as u8)
                         || (m.kind == *best_kind && weighted < *best_score)
                 }
                 None => true,
