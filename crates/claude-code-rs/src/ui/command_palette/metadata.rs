@@ -107,10 +107,11 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         "init" => simple_meta("/init", &["/init"]),
         "insights" => simple_meta("/insights [fast|full]", &["/insights"]),
         "login" => simple_meta(
-            "/login [claude_code|codex|openai_api|bedrock|vertex|cloud]",
+            "/login [claude-code|claude-ai|console|codex|codex-oauth|codex-cli|custom|openai-api|bedrock|vertex]",
             &[
-                "/login claude_code",
+                "/login claude-code",
                 "/login codex",
+                "/login custom",
                 "/login bedrock",
                 "/login vertex",
             ],
@@ -271,7 +272,7 @@ pub(super) fn command_meta(name: &str, cwd: &Path) -> CommandMeta {
         },
         "config" => CommandMeta {
             usage: "/config <show|sources|schema|set|reset> [key] [value]".to_string(),
-            examples: vec!["/config set model MOTA".to_string()],
+            examples: vec!["/config set theme dark".to_string()],
             edit_targets: vec![
                 EditTarget::new(
                     "user",

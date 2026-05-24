@@ -56,10 +56,16 @@ impl CommandHandler for HelpHandler {
             String::new(),
         ];
 
-        // Find the longest command name for alignment.
-        let max_len = commands.iter().map(|c| c.name.len()).max().unwrap_or(0);
+        // Filter out hidden commands from the listing.
+        let visible: Vec<_> = commands
+            .iter()
+            .filter(|c| !crate::is_hidden_command(&c.name))
+            .collect();
 
-        for cmd in &commands {
+        // Find the longest command name for alignment.
+        let max_len = visible.iter().map(|c| c.name.len()).max().unwrap_or(0);
+
+        for cmd in &visible {
             let padding = " ".repeat(max_len - cmd.name.len() + 2);
             let mut line = format!("  /{}{}{}", cmd.name, padding, cmd.description);
             if !cmd.aliases.is_empty() {

@@ -83,7 +83,7 @@ expression: normalize_snapshot_text(rendered)
 ## /config
 ┌ /config arguments ─────────────────────────────────────────────────────────────────────────────────────────┐
 │Usage: /config <show|sources|schema|set|reset> [key] [value]                                                │
-│Example: /config set model MOTA                                                                             │
+│Example: /config set theme dark                                                                             │
 │About: Show or modify configuration settings                                                                │
 │Edit: user: ~/.cc-rust/settings.json | project: ./.cc-rust/settings.json                                    │
 │                                                                                                            │
@@ -228,8 +228,8 @@ expression: normalize_snapshot_text(rendered)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /login
 ┌ /login arguments ──────────────────────────────────────────────────────────────────────────────────────────┐
-│Usage: /login [claude_code|codex|openai_api|bedrock|vertex|cloud]                                           │
-│Example: /login claude_code                                                                                 │
+│Usage: /login [claude-code|claude-ai|console|codex|codex-oauth|codex-cli|custom|openai-api|bedrock|vertex]  │
+│Example: /login claude-code                                                                                 │
 │About: Authenticate (Claude Code / Anthropic-compatible, OpenAI Codex, OpenAI API, Bedrock, Vertex)         │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ## /login-code

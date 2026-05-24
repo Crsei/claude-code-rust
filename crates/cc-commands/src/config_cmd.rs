@@ -104,7 +104,7 @@ fn handle_set(parts: &[&str], ctx: &mut CommandContext) -> Result<CommandResult>
     if parts.len() < 2 {
         return Ok(CommandResult::Output(format!(
             "Usage: /config set <key> <value> [--user|--project|--local]\n\n\
-             Available keys: model, backend, theme, verbose, permissionMode,\n  \
+             Available keys: backend, theme, verbose, permissionMode,\n  \
                apiProvider,\n  \
                outputStyle, language, voiceEnabled, editorMode, viewMode,\n  \
                terminalProgressBarEnabled, effortLevel, model_reasoning_effort, fastMode,\n  \

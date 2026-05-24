@@ -572,6 +572,22 @@ pub fn sort_commands_for_display(commands: &mut [Command]) {
     });
 }
 
+/// Returns `true` if a builtin command should be hidden from the command
+/// palette and `/help` listing.  Hidden commands are still executable when
+/// typed directly.
+pub fn is_hidden_command(name: &str) -> bool {
+    matches!(
+        name,
+        "advisor"
+            | "brief"
+            | "extra-usage"
+            | "rate-limit-options"
+            | "model-add"
+            | "login-code"
+            | "voice"
+    )
+}
+
 /// Global dynamic command registry shared across the application.
 ///
 /// This registry stores dynamically-registered commands from user, project,

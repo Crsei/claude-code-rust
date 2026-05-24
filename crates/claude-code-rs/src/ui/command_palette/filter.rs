@@ -210,7 +210,7 @@ pub(super) fn filtered_commands(query: &str, cwd: &Path) -> Vec<CommandItem> {
 }
 
 fn is_hidden_palette_command(name: &str) -> bool {
-    matches!(name, "advisor" | "brief")
+    cc_commands::is_hidden_command(name)
 }
 
 /// Multi-field weighted fuzzy match.
