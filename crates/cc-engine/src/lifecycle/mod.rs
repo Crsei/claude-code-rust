@@ -23,8 +23,8 @@ mod types;
 
 pub use types::AbortReason;
 
-use parking_lot::RwLock;
-use std::collections::HashSet;
+use parking_lot::{Mutex, RwLock};
+use std::collections::{HashSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -116,6 +116,67 @@ pub(crate) struct QueryEngineState {
     pub(crate) auto_denial_tracker: crate::permissions::decision::DenialTracker,
 }
 
+#[derive(Default)]
+pub(crate) struct ActiveSteerState {
+    active: bool,
+    pending: VecDeque<String>,
+}
+
+impl ActiveSteerState {
+    fn activate(&mut self) {
+        self.active = true;
+        self.pending.clear();
+    }
+
+    fn deactivate(&mut self) {
+        self.active = false;
+        self.pending.clear();
+    }
+}
+
+pub struct SteerError {
+    message: String,
+}
+
+impl SteerError {
+    fn no_active_turn() -> Self {
+        Self {
+            message: "No active turn is available to steer.".to_string(),
+        }
+    }
+}
+
+impl std::fmt::Debug for SteerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("SteerError").field(&self.message).finish()
+    }
+}
+
+impl std::fmt::Display for SteerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for SteerError {}
+
+pub(crate) struct ActiveSteerGuard {
+    state: Arc<Mutex<ActiveSteerState>>,
+}
+
+impl ActiveSteerGuard {
+    pub(crate) fn activate(state: Arc<Mutex<ActiveSteerState>>) -> Self {
+        state.lock().activate();
+        Self { state }
+    }
+}
+
+impl Drop for ActiveSteerGuard {
+    fn drop(&mut self) {
+        self.state.lock().deactivate();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // QueryEngine
 // ---------------------------------------------------------------------------
@@ -144,6 +205,7 @@ pub struct QueryEngine {
     /// Shared buffer of completed background agents.
     /// Event loop pushes; query loop drains.
     pub(crate) pending_bg_results: crate::agent_runtime::PendingBackgroundResults,
+    pub(crate) active_steer_state: Arc<Mutex<ActiveSteerState>>,
     /// Hook runner for the tool-execution hook system.
     ///
     /// Defaults to [`cc_types::hooks::NoopHookRunner`]. Call sites that want
@@ -220,6 +282,7 @@ impl QueryEngine {
             })),
             aborted: Arc::new(AtomicBool::new(false)),
             pending_bg_results: crate::agent_runtime::PendingBackgroundResults::new(),
+            active_steer_state: Arc::new(Mutex::new(ActiveSteerState::default())),
             hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
             command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
             command_executor: crate::command_runtime::global_command_executor(),
@@ -346,6 +409,19 @@ impl QueryEngine {
         info!("aborting query engine");
         self.aborted.store(true, Ordering::SeqCst);
         self.state.write().abort_reason = Some(AbortReason::UserAbort);
+    }
+
+    pub fn submit_steer_message(&self, text: String) -> Result<(), SteerError> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return Ok(());
+        }
+        let mut state = self.active_steer_state.lock();
+        if !state.active {
+            return Err(SteerError::no_active_turn());
+        }
+        state.pending.push_back(trimmed.to_string());
+        Ok(())
     }
 
     /// Reset the abort flag before starting a new `submit_message` call.

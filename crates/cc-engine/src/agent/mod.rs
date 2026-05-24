@@ -309,7 +309,7 @@ fn build_child_config(
             .and_then(|entry| entry.max_turns)
             .filter(|turns| *turns > 0)
             .map(|turns| turns as usize)
-            .or(Some(30)),
+            .or(None),
         max_budget_usd: ctx.options.max_budget_usd,
         task_budget: None,
         verbose: ctx.options.verbose,

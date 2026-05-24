@@ -8,7 +8,6 @@
 //!
 //! The main entry point is [`run_tui`].
 
-use std::collections::VecDeque;
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
@@ -343,7 +342,6 @@ pub async fn run_tui(
     let mut pending_permission_response: Option<oneshot::Sender<PermissionResponsePayload>> = None;
     let mut pending_question_response: Option<oneshot::Sender<String>> = None;
     let mut streaming_state = StreamingState::new();
-    let mut queued_prompts: VecDeque<String> = VecDeque::new();
 
     let subsystem_bus = SubsystemEventBus::new();
     let mut subsystem_rx = subsystem_bus.subscribe();
@@ -426,6 +424,10 @@ pub async fn run_tui(
                         let action = app.handle_key_event(key);
                         match action {
                             AppAction::Submit(text) => {
+                                if app.is_streaming() {
+                                    steer_prompt_to_engine(text, &engine, &mut app);
+                                    continue;
+                                }
                                 if submit_prompt_to_engine(
                                     text,
                                     &engine,
@@ -435,13 +437,15 @@ pub async fn run_tui(
                                     break;
                                 }
                             }
+                            AppAction::Steer(text) => {
+                                steer_prompt_to_engine(text, &engine, &mut app);
+                            }
                             AppAction::Queue(text) => {
-                                queued_prompts.push_back(text);
-                                app.set_queued_prompt_count(queued_prompts.len());
+                                let queued = app.queue_prompt(text);
                                 app.handle_app_event(AppEvent::LocalNotice {
                                     message: format!(
                                         "Queued next prompt ({} pending).",
-                                        queued_prompts.len()
+                                        queued
                                     ),
                                 });
                             }
@@ -637,12 +641,12 @@ pub async fn run_tui(
                     }
                     EngineEvent::Done => {
                         app.set_streaming(false);
-                        while let Some(text) = queued_prompts.pop_front() {
-                            app.set_queued_prompt_count(queued_prompts.len());
+                        while let Some(text) = app.pop_next_queued() {
+                            let remaining = app.queued_count();
                             app.handle_app_event(AppEvent::LocalNotice {
                                 message: format!(
                                     "Running queued prompt ({} remaining).",
-                                    queued_prompts.len()
+                                    remaining
                                 ),
                             });
                             if submit_prompt_to_engine(text, &engine, &mut app, &engine_tx).await {
@@ -757,4 +761,25 @@ async fn submit_prompt_to_engine(
     }
 
     false
+}
+
+fn steer_prompt_to_engine(text: String, engine: &Arc<QueryEngine>, app: &mut App) {
+    match engine.submit_steer_message(text.clone()) {
+        Ok(()) => {
+            app.push_history(text.clone());
+            app.add_message(create_user_message(&text));
+            app.handle_app_event(AppEvent::LocalNotice {
+                message: "Sent steer message to the active turn.".to_string(),
+            });
+        }
+        Err(err) => {
+            app.restore_prompt_text(text);
+            app.handle_app_event(AppEvent::Notification {
+                key: "steer-failed".to_string(),
+                message: err.to_string(),
+                level: "warning".to_string(),
+                timeout_ms: Some(4000),
+            });
+        }
+    }
 }

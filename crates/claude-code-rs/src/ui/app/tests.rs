@@ -255,13 +255,43 @@ fn prompt_stays_editable_while_streaming_and_tab_queues() {
     assert_eq!(send_key(&mut app, KeyCode::Char('t')), AppAction::None);
 
     assert_eq!(app.prompt.input, "next");
-    assert_eq!(send_key(&mut app, KeyCode::Enter), AppAction::None);
-    assert_eq!(app.prompt.input, "next");
     assert_eq!(
-        send_key(&mut app, KeyCode::Tab),
-        AppAction::Queue("next".to_string())
+        send_key(&mut app, KeyCode::Enter),
+        AppAction::Steer("next".to_string())
     );
     assert!(app.prompt.input.is_empty());
+
+    app.prompt.input = "queued".to_string();
+    app.prompt.cursor_position = app.prompt.input.len();
+    assert_eq!(
+        send_key(&mut app, KeyCode::Tab),
+        AppAction::Queue("queued".to_string())
+    );
+    assert!(app.prompt.input.is_empty());
+}
+
+#[test]
+fn idle_tab_submits_instead_of_queueing() {
+    let mut app = App::new();
+    app.prompt.input = "send now".to_string();
+    app.prompt.cursor_position = app.prompt.input.len();
+
+    assert_eq!(
+        send_key(&mut app, KeyCode::Tab),
+        AppAction::Submit("send now".to_string())
+    );
+}
+
+#[test]
+fn app_owns_queued_prompt_fifo() {
+    let mut app = App::new();
+
+    assert_eq!(app.queue_prompt("one".to_string()), 1);
+    assert_eq!(app.queue_prompt("two".to_string()), 2);
+    assert_eq!(app.queued_count(), 2);
+    assert_eq!(app.pop_next_queued().as_deref(), Some("one"));
+    assert_eq!(app.pop_next_queued().as_deref(), Some("two"));
+    assert_eq!(app.pop_next_queued(), None);
 }
 
 #[test]
@@ -270,7 +300,8 @@ fn streaming_draft_renders_tab_queue_hint_below_prompt() {
     app.set_streaming(true);
     app.prompt.input = "follow up".to_string();
     app.prompt.cursor_position = app.prompt.input.len();
-    app.set_queued_prompt_count(2);
+    app.queue_prompt("one".to_string());
+    app.queue_prompt("two".to_string());
     let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
 
     terminal.draw(|frame| app.render(frame)).expect("draw");

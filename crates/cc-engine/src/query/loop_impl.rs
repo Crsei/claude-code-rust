@@ -136,6 +136,11 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                 state.messages.push(sys_msg);
             }
 
+            for steer_msg in drain_steer_messages(&deps) {
+                yield QueryYield::Message(steer_msg.clone());
+                state.messages.push(steer_msg);
+            }
+
             // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             // STEP 2: CONTEXT -- microcompact + autocompact
             // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -539,6 +544,17 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     executor.abort();
                 }
 
+                let steer_messages = drain_steer_messages(&deps);
+                if !steer_messages.is_empty() {
+                    for steer_msg in steer_messages {
+                        yield QueryYield::Message(steer_msg.clone());
+                        state.messages.push(steer_msg);
+                    }
+                    state.transition = Some(Continue::NextTurn);
+                    state.turn_count += 1;
+                    continue;
+                }
+
                 // 鈹€鈹€ TERMINAL CHECK (no tool calls) 鈹€鈹€
 
                 // 5a. max_output_tokens recovery
@@ -696,6 +712,17 @@ pub fn query(params: QueryParams, deps: Arc<dyn QueryDeps>) -> impl Stream<Item 
                     }
                 }
 
+                let steer_messages = drain_steer_messages(&deps);
+                if !steer_messages.is_empty() {
+                    for steer_msg in steer_messages {
+                        yield QueryYield::Message(steer_msg.clone());
+                        state.messages.push(steer_msg);
+                    }
+                    state.transition = Some(Continue::NextTurn);
+                    state.turn_count += 1;
+                    continue;
+                }
+
                 // 鈹€鈹€ STEP 6b: Generate tool use summary 鈹€鈹€
                 if turn_context.gates.emit_tool_use_summaries {
                     let tool_infos: Vec<ToolInfo> = tool_results
@@ -813,6 +840,20 @@ fn should_accept_partial_response_after_chunk_read_error(
     });
 
     has_text && !has_tool_use
+}
+
+fn drain_steer_messages(deps: &Arc<dyn QueryDeps>) -> Vec<Message> {
+    deps.drain_steer_messages()
+        .into_iter()
+        .filter_map(|text| {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(Message::User(make_user_message(deps, trimmed, false)))
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

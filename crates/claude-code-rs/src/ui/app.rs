@@ -11,6 +11,8 @@ mod tests;
 mod transcript_mode;
 mod voice;
 mod workspace_trust;
+use std::collections::VecDeque;
+
 use agent_navigation::{AgentNavigationState, AgentThreadEntry, AgentThreadStatus};
 use agent_tree_dialog::AgentTreeDialog;
 use cc_config::settings::StatusLineSettings;
@@ -52,6 +54,7 @@ use app_event::AppEvent;
 pub enum AppAction {
     None,
     Submit(String),
+    Steer(String),
     Abort,
     Quit,
     ScrollUp,
@@ -165,7 +168,7 @@ pub struct App {
     prompt: PromptInput,
     scroll_offset: usize,
     is_streaming: bool,
-    queued_prompt_count: usize,
+    queued_prompts: VecDeque<String>,
     spinner_state: SpinnerState,
     bypass_permissions_mode_dialog: Option<BypassPermissionsModeDialog>,
     permission_dialog: Option<PermissionDialog>,
@@ -281,7 +284,7 @@ impl App {
             prompt: PromptInput::new(),
             scroll_offset: 0,
             is_streaming: false,
-            queued_prompt_count: 0,
+            queued_prompts: VecDeque::new(),
             spinner_state: SpinnerState::new(),
             bypass_permissions_mode_dialog: None,
             permission_dialog: None,
@@ -537,11 +540,22 @@ impl App {
         self.is_streaming
     }
 
-    pub fn set_queued_prompt_count(&mut self, count: usize) {
-        if self.queued_prompt_count != count {
-            self.queued_prompt_count = count;
+    pub fn queue_prompt(&mut self, text: String) -> usize {
+        self.queued_prompts.push_back(text);
+        self.dirty = true;
+        self.queued_prompts.len()
+    }
+
+    pub fn pop_next_queued(&mut self) -> Option<String> {
+        let next = self.queued_prompts.pop_front();
+        if next.is_some() {
             self.dirty = true;
         }
+        next
+    }
+
+    pub fn queued_count(&self) -> usize {
+        self.queued_prompts.len()
     }
 
     /// Tick the spinner. Called at 16ms interval; spinner frame advances

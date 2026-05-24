@@ -164,6 +164,7 @@ fn make_deps(tools: Tools, mode: PermissionMode) -> QueryEngineDeps {
         bg_agent_tx: None,
         tool_progress_callback: None,
         pending_bg_results: crate::agent_runtime::PendingBackgroundResults::new(),
+        active_steer_state: engine.active_steer_state.clone(),
         hook_runner: Arc::new(cc_types::hooks::NoopHookRunner::new()),
         command_dispatcher: Arc::new(cc_types::commands::NoopCommandDispatcher::new()),
         auto_classifier_fn: None,

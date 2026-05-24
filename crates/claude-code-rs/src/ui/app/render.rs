@@ -466,8 +466,8 @@ impl App {
         if self.is_streaming && !self.prompt.input.trim().is_empty() {
             parts.push("tab to queue message".to_string());
         }
-        if self.queued_prompt_count > 0 {
-            parts.push(format!("{} queued", self.queued_prompt_count));
+        if self.queued_count() > 0 {
+            parts.push(format!("{} queued", self.queued_count()));
         }
         if !self.model_name.is_empty() {
             parts.push(self.model_name.clone());

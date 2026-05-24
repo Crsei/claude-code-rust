@@ -722,6 +722,7 @@ impl QueryEngine {
         let state_ref = self.state.clone();
         let active_session_id_ref = self.active_session_id.clone();
         let aborted_ref = self.aborted.clone();
+        let active_steer_state = self.active_steer_state.clone();
         let pending_bg_results = self.pending_bg_results.clone();
         let hook_runner = self.hook_runner.clone();
         let command_dispatcher = self.command_dispatcher.clone();
@@ -729,6 +730,7 @@ impl QueryEngine {
         let auto_classifier_fn = self.auto_classifier_fn.clone();
 
         let stream = async_stream::stream! {
+            let _active_steer_guard = super::ActiveSteerGuard::activate(active_steer_state.clone());
             let mut submit_turn = SubmitTurnState::new();
             let submit_id = Uuid::new_v4().to_string();
             let mut telemetry_submit_span =
@@ -1112,6 +1114,7 @@ impl QueryEngine {
                 bg_agent_tx,
                 tool_progress_callback,
                 pending_bg_results: pending_bg_results.clone(),
+                active_steer_state: active_steer_state.clone(),
                 hook_runner: hook_runner.clone(),
                 command_dispatcher: command_dispatcher.clone(),
                 auto_classifier_fn: auto_classifier_fn.clone(),

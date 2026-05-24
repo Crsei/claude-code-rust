@@ -4,7 +4,7 @@
 //! (abort flag, app state, tools) and, optionally, a real `ApiClient`
 //! for making Anthropic API calls.
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -38,7 +38,7 @@ use cc_engine::query::deps::{
 };
 
 use super::helpers::{build_messages_request, format_conversation_for_summary};
-use super::{AutoClassifierFn, QueryEngineState};
+use super::{ActiveSteerState, AutoClassifierFn, QueryEngineState};
 
 mod autocompact;
 mod execute;
@@ -92,6 +92,8 @@ pub(crate) struct QueryEngineDeps {
     pub(crate) tool_progress_callback: Option<Arc<dyn Fn(ToolProgress) + Send + Sync>>,
     /// Shared buffer of completed background agents.
     pub(crate) pending_bg_results: crate::agent_runtime::PendingBackgroundResults,
+    /// Active-turn steer queue.
+    pub(crate) active_steer_state: Arc<Mutex<ActiveSteerState>>,
     /// Hook runner — used via the `HookRunner` trait from `cc-types::hooks` so
     /// the engine has no direct dependency on the concrete shell-hook runner.
     pub(crate) hook_runner: Arc<dyn cc_types::hooks::HookRunner>,
@@ -233,6 +235,11 @@ impl QueryDeps for QueryEngineDeps {
 
     fn drain_background_results(&self) -> Vec<crate::agent_runtime::CompletedBackgroundAgent> {
         self.pending_bg_results.drain_all()
+    }
+
+    fn drain_steer_messages(&self) -> Vec<String> {
+        let mut state = self.active_steer_state.lock();
+        state.pending.drain(..).collect()
     }
 
     fn hook_runner(&self) -> Arc<dyn cc_types::hooks::HookRunner> {

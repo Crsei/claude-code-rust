@@ -38,6 +38,10 @@ pub(crate) const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT: usize = 3;
 /// Escalated max output tokens (8k -> 64k).
 pub(crate) const ESCALATED_MAX_TOKENS: usize = 64_000;
 
+/// Maximum number of concurrent tool executions.
+/// Matches codex DEFAULT_AGENT_MAX_THREADS.
+const MAX_CONCURRENT_TOOLS: usize = 6;
+
 type ToolUseTuple = (String, String, serde_json::Value);
 type ToolUseBatch = (bool, Vec<ToolUseTuple>);
 
@@ -418,9 +422,11 @@ pub(crate) async fn execute_tool_calls(
             None
         };
         if is_concurrent && batch.len() > 1 {
-            // Concurrent execution
+            // Concurrent execution with concurrency cap
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_TOOLS));
             let mut handles = Vec::new();
             for (id, name, input) in batch {
+                let permit = semaphore.clone().acquire_owned().await.unwrap();
                 let tool_use_id = id.clone();
                 let tool_name = name.clone();
                 let deps = deps.clone();
@@ -429,6 +435,7 @@ pub(crate) async fn execute_tool_calls(
                 let batch_span = batch_span.clone();
                 let on_progress_clone = on_progress.clone();
                 let handle = tokio::spawn(async move {
+                    let _permit = permit;
                     let req = ToolExecRequest {
                         tool_use_id: id,
                         tool_name: name,

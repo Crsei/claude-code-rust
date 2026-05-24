@@ -105,6 +105,11 @@ pub const DEFAULTS: &[Default] = &[
     },
     Default {
         context: Context::Chat,
+        chord: "tab",
+        action: "chat:queue",
+    },
+    Default {
+        context: Context::Chat,
         chord: "ctrl+j",
         action: "chat:newline",
     },
@@ -600,6 +605,17 @@ pub const DEFAULTS: &[Default] = &[
         context: Context::Scroll,
         chord: "ctrl+shift+c",
         action: "selection:copy",
+    },
+    // -- Busy -----------------------------------------------------------
+    Default {
+        context: Context::Busy,
+        chord: "enter",
+        action: "chat:steer",
+    },
+    Default {
+        context: Context::Busy,
+        chord: "tab",
+        action: "chat:queue",
     },
 ];
 

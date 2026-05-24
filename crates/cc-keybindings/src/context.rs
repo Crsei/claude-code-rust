@@ -52,6 +52,8 @@ pub enum Context {
     Plugin,
     /// Conversation scroll / text selection (fullscreen).
     Scroll,
+    /// Chat input while a model turn is running.
+    Busy,
     /// `/doctor` diagnostics screen.
     Doctor,
 }
@@ -80,6 +82,7 @@ impl Context {
             Context::Select => "Select",
             Context::Plugin => "Plugin",
             Context::Scroll => "Scroll",
+            Context::Busy => "Busy",
             Context::Doctor => "Doctor",
         }
     }
@@ -106,6 +109,7 @@ impl Context {
             Context::Select,
             Context::Plugin,
             Context::Scroll,
+            Context::Busy,
             Context::Doctor,
         ]
     }
@@ -189,6 +193,6 @@ mod tests {
 
     #[test]
     fn all_contexts_listed() {
-        assert_eq!(Context::all().len(), 21);
+        assert_eq!(Context::all().len(), 22);
     }
 }

@@ -263,26 +263,6 @@ impl App {
             }
         }
 
-        if self.prompt.is_active && self.is_streaming {
-            match (key.modifiers, key.code) {
-                (KeyModifiers::NONE, KeyCode::Tab) => {
-                    return self
-                        .take_prompt_submission()
-                        .map_or(AppAction::None, AppAction::Queue);
-                }
-                (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Enter) => {
-                    self.add_notification(super::notification_from_app_event(
-                        "queue-hint".to_string(),
-                        "Press Tab to queue this message after the current response.".to_string(),
-                        "low".to_string(),
-                        Some(3000),
-                    ));
-                    return AppAction::None;
-                }
-                _ => {}
-            }
-        }
-
         if let Some(action) = self.resolve_bound_action(&key) {
             if let Some(app_action) = self.dispatch_bound_action(&action) {
                 return app_action;
@@ -813,6 +793,14 @@ impl App {
         Some(text)
     }
 
+    pub fn restore_prompt_text(&mut self, text: String) {
+        self.prompt.input = text;
+        self.prompt.cursor_position = self.prompt.input.len();
+        self.prompt.is_active = true;
+        self.sync_command_palette();
+        self.dirty = true;
+    }
+
     pub(super) fn sync_command_palette(&mut self) {
         if self.prompt.is_active && !self.is_streaming {
             self.command_palette
@@ -822,23 +810,28 @@ impl App {
         }
     }
 
-    pub(super) fn active_keybinding_contexts(&self) -> [cc_keybindings::context::Context; 2] {
+    pub(super) fn active_keybinding_contexts(&self) -> Vec<cc_keybindings::context::Context> {
         if self.selected_message.is_some() {
-            return [
+            return vec![
                 cc_keybindings::context::Context::MessageActions,
                 cc_keybindings::context::Context::Global,
             ];
         }
         if self.view_mode.is_transcript_like() {
-            [
+            vec![
                 cc_keybindings::context::Context::Transcript,
                 cc_keybindings::context::Context::Scroll,
             ]
         } else {
-            [
+            let mut contexts = Vec::with_capacity(3);
+            if self.is_streaming {
+                contexts.push(cc_keybindings::context::Context::Busy);
+            }
+            contexts.extend([
                 cc_keybindings::context::Context::Chat,
                 cc_keybindings::context::Context::Scroll,
-            ]
+            ]);
+            contexts
         }
     }
 
@@ -967,6 +960,21 @@ impl App {
                     self.take_prompt_submission()
                         .map_or(AppAction::None, AppAction::Submit),
                 );
+            }
+            "chat:steer" => {
+                return Some(
+                    self.take_prompt_submission()
+                        .map_or(AppAction::None, AppAction::Steer),
+                );
+            }
+            "chat:queue" => {
+                let Some(text) = self.take_prompt_submission() else {
+                    return Some(AppAction::None);
+                };
+                if self.is_streaming {
+                    return Some(AppAction::Queue(text));
+                }
+                return Some(AppAction::Submit(text));
             }
             "chat:killAgents" => {
                 return Some(AppAction::KillAgentThreads(self.active_agent_thread_ids()));

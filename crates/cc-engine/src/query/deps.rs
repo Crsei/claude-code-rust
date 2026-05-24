@@ -126,6 +126,10 @@ pub trait QueryDeps: Send + Sync {
         vec![]
     }
 
+    fn drain_steer_messages(&self) -> Vec<String> {
+        vec![]
+    }
+
     fn hook_runner(&self) -> Arc<dyn cc_types::hooks::HookRunner> {
         Arc::new(cc_types::hooks::NoopHookRunner)
     }

@@ -1,5 +1,6 @@
 use super::*;
 use std::pin::Pin;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -53,6 +54,7 @@ struct MockDeps {
     refreshed_tools: parking_lot::Mutex<Option<Tools>>,
     refresh_seen: AtomicBool,
     hook_runner: parking_lot::Mutex<Arc<dyn HookRunner>>,
+    steer_drains: parking_lot::Mutex<VecDeque<Vec<String>>>,
 }
 
 impl MockDeps {
@@ -87,6 +89,7 @@ impl MockDeps {
             refreshed_tools: parking_lot::Mutex::new(None),
             refresh_seen: AtomicBool::new(false),
             hook_runner: parking_lot::Mutex::new(Arc::new(cc_types::hooks::NoopHookRunner)),
+            steer_drains: parking_lot::Mutex::new(VecDeque::new()),
         }
     }
 
@@ -123,6 +126,10 @@ impl MockDeps {
 
     fn set_hook_runner(&self, runner: Arc<dyn HookRunner>) {
         *self.hook_runner.lock() = runner;
+    }
+
+    fn set_steer_drains(&self, drains: Vec<Vec<String>>) {
+        *self.steer_drains.lock() = drains.into();
     }
 
     fn stop_after_tool_execution(&self) {
@@ -304,6 +311,10 @@ impl QueryDeps for MockDeps {
 
     fn hook_runner(&self) -> Arc<dyn HookRunner> {
         self.hook_runner.lock().clone()
+    }
+
+    fn drain_steer_messages(&self) -> Vec<String> {
+        self.steer_drains.lock().pop_front().unwrap_or_default()
     }
 }
 
@@ -551,6 +562,37 @@ async fn query_shapes_autocompact_with_final_request_context() {
     assert_eq!(recorded[0].tools[0].name(), "mcp__late__fresh");
     assert_eq!(recorded[0].max_output_tokens, Some(1234));
     assert_eq!(recorded[0].skip_cache_write, Some(true));
+}
+
+#[tokio::test]
+async fn query_drains_steer_before_next_model_request() {
+    let deps = Arc::new(MockDeps::new(vec![
+        make_text_response("first answer"),
+        make_text_response("steered answer"),
+    ]));
+    deps.set_steer_drains(vec![vec![], vec!["steer now".to_string()]]);
+
+    let items: Vec<QueryYield> = query(
+        make_query_params(vec![make_user_message_for_test("start")]),
+        deps.clone(),
+    )
+    .collect()
+    .await;
+
+    assert_eq!(request_start_count(&items), 2);
+    assert!(items.iter().any(|item| matches!(
+        item,
+        QueryYield::Message(Message::User(user))
+            if matches!(&user.content, MessageContent::Text(text) if text == "steer now")
+    )));
+
+    let recorded = deps.recorded_params();
+    assert_eq!(recorded.len(), 2);
+    assert!(recorded[1].messages.iter().any(|message| matches!(
+        message,
+        Message::User(user)
+            if matches!(&user.content, MessageContent::Text(text) if text == "steer now")
+    )));
 }
 
 struct StopContinuationHookRunner {
