@@ -1518,31 +1518,76 @@ impl ApiClient {
     /// Construct an `ApiClient` using the full auth resolution chain.
     ///
     /// Resolution order:
-    /// 1. Multi-provider environment variable detection (Anthropic, OpenAI, Google, etc.)
-    /// 2. `ANTHROPIC_AUTH_TOKEN` environment variable
-    /// 3. API key from system keychain
+    /// 1. Explicit cloud provider env flags (Bedrock, Vertex, Foundry)
+    /// 2. Persisted / active settings provider selection
+    /// 3. Multi-provider environment variable detection (Anthropic, OpenAI, Google, etc.)
+    /// 4. `ANTHROPIC_AUTH_TOKEN` environment variable
+    /// 5. API key from system keychain
     ///
     /// Returns `None` if no authentication is available.
     pub fn from_auth_result() -> Result<Option<Self>> {
-        // 1. Try multi-provider env detection
+        // Env-flag cloud providers are explicit one-off selections and should
+        // still fail fast before persisted provider selection is considered.
+        if let Some(client) = Self::from_env_flag_provider_result()? {
+            return Ok(Some(client));
+        }
+
+        // Honor the active settings provider before generic env detection.
+        // This prevents unrelated inherited tokens, especially
+        // OPENAI_CODEX_AUTH_TOKEN from the TypeScript/Codex install, from
+        // silently routing a cc-rust Anthropic profile to openai-codex.
+        if let Some(provider) = selected_api_provider_from_settings()? {
+            return Self::from_selected_provider_result(&provider);
+        }
+
+        // Try multi-provider env detection when settings did not select a
+        // provider explicitly.
         if let Some(client) = Self::from_env_result()? {
             return Ok(Some(client));
         }
 
-        // 2. With no provider env, honor the persisted provider selection.
-        match selected_api_provider_from_settings()? {
-            Some(provider) if provider == cc_config::settings::API_PROVIDER_OPENAI => {
-                return Self::from_openai_api_keychain_result();
-            }
-            Some(provider) if provider == cc_config::settings::API_PROVIDER_OPENAI_CODEX => {
-                return Self::from_codex_auth_result();
-            }
-            Some(provider) if provider == cc_config::settings::API_PROVIDER_ANTHROPIC => {}
-            Some(provider) => bail!("unsupported apiProvider `{provider}`"),
-            None => {}
-        }
+        // Fall back to Anthropic auth resolution (keychain, external token, OAuth).
+        Self::from_anthropic_auth_result()
+    }
 
-        // 3. Fall back to Anthropic auth resolution (keychain, external token, OAuth)
+    fn from_env_flag_provider_result() -> Result<Option<Self>> {
+        if is_env_truthy("CLAUDE_CODE_USE_FOUNDRY") {
+            let validation = crate::api::providers::validate_provider_name("azure-foundry");
+            let reason = validation
+                .diagnostics
+                .first()
+                .map(|diagnostic| diagnostic.message.as_str())
+                .unwrap_or(crate::api::providers::FOUNDRY_UNSUPPORTED_REASON);
+            bail!("{reason}");
+        }
+        if is_env_truthy("CLAUDE_CODE_USE_BEDROCK") {
+            return Self::from_bedrock_env_result().map(Some);
+        }
+        if is_env_truthy("CLAUDE_CODE_USE_VERTEX") {
+            return Self::from_vertex_env_result().map(Some);
+        }
+        Ok(None)
+    }
+
+    fn from_selected_provider_result(provider: &str) -> Result<Option<Self>> {
+        match provider {
+            cc_config::settings::API_PROVIDER_OPENAI => {
+                if let Some(info) = crate::api::providers::get_provider(OPENAI_PROVIDER_NAME) {
+                    if let Ok(api_key) = std::env::var(info.env_key) {
+                        if !api_key.trim().is_empty() {
+                            return Ok(Some(Self::from_provider_info(info, &api_key)));
+                        }
+                    }
+                }
+                Self::from_openai_api_keychain_result()
+            }
+            cc_config::settings::API_PROVIDER_OPENAI_CODEX => Self::from_codex_auth_result(),
+            cc_config::settings::API_PROVIDER_ANTHROPIC => Self::from_anthropic_auth_result(),
+            provider => bail!("unsupported apiProvider `{provider}`"),
+        }
+    }
+
+    fn from_anthropic_auth_result() -> Result<Option<Self>> {
         let auth = cc_auth::try_resolve_auth()?;
         let auth = match auth {
             cc_auth::AuthMethod::ApiKey(api_key) => AnthropicAuth::ApiKey(api_key),

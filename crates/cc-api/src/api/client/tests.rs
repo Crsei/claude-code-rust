@@ -63,6 +63,22 @@ fn clear_env(keys: &[&str]) {
     }
 }
 
+struct CwdGuard(std::path::PathBuf);
+
+impl CwdGuard {
+    fn set(path: &std::path::Path) -> Self {
+        let previous = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(path).expect("set current dir");
+        Self(previous)
+    }
+}
+
+impl Drop for CwdGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.0);
+    }
+}
+
 fn fixture_json(name: &str) -> serde_json::Value {
     let raw = match name {
         "auth_header_expected" => {
@@ -1620,6 +1636,7 @@ fn test_from_auth_uses_openai_keychain_when_api_provider_is_openai() {
         "CLAUDE_CODE_USE_FOUNDRY",
     ]);
     std::env::set_var("CC_RUST_HOME", temp.path());
+    let _cwd = CwdGuard::set(temp.path());
     cc_auth::api_key::remove_api_key().unwrap();
     cc_auth::api_key::remove_openai_api_key().unwrap();
     cc_auth::api_key::store_openai_api_key("sk-proj-keychain-openai-123456").unwrap();
@@ -1669,6 +1686,7 @@ fn test_from_auth_anthropic_provider_does_not_read_openai_keychain() {
         "CLAUDE_CODE_USE_FOUNDRY",
     ]);
     std::env::set_var("CC_RUST_HOME", temp.path());
+    let _cwd = CwdGuard::set(temp.path());
     cc_auth::api_key::remove_api_key().unwrap();
     cc_auth::api_key::remove_openai_api_key().unwrap();
     cc_auth::api_key::store_openai_api_key("sk-proj-keychain-openai-abcdef").unwrap();
@@ -1689,7 +1707,7 @@ fn test_from_auth_anthropic_provider_does_not_read_openai_keychain() {
 }
 
 #[test]
-fn test_from_auth_env_key_takes_priority_over_api_provider_keychain() {
+fn test_from_auth_settings_provider_takes_priority_over_other_env_key() {
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     use_persistent_test_keyring();
     let temp = tempfile::tempdir().expect("tempdir");
@@ -1712,6 +1730,7 @@ fn test_from_auth_env_key_takes_priority_over_api_provider_keychain() {
         "CLAUDE_CODE_USE_FOUNDRY",
     ]);
     std::env::set_var("CC_RUST_HOME", temp.path());
+    let _cwd = CwdGuard::set(temp.path());
     std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-api03-env-priority-key");
     cc_auth::api_key::remove_openai_api_key().unwrap();
     cc_auth::api_key::store_openai_api_key("sk-proj-keychain-openai-priority").unwrap();
@@ -1724,13 +1743,93 @@ fn test_from_auth_env_key_takes_priority_over_api_provider_keychain() {
 
     let client = ApiClient::from_auth_result()
         .expect("auth resolution should not error")
-        .expect("env client");
+        .expect("settings-selected provider client");
     match &client.config().provider {
-        ApiProvider::Anthropic { auth, .. } => {
+        ApiProvider::OpenAiCompat { name, api_key, .. } => {
+            assert_eq!(name, OPENAI_PROVIDER_NAME);
+            assert_eq!(api_key, "sk-proj-keychain-openai-priority");
+        }
+        other => panic!("expected OpenAI provider, got {:?}", other),
+    }
+
+    restore_env(saved);
+}
+
+#[test]
+fn test_active_anthropic_profile_ignores_inherited_codex_token() {
+    let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let saved = save_env(&[
+        "CC_RUST_HOME",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        OPENAI_CODEX_TOKEN_ENV,
+        OPENAI_CODEX_BASE_URL_ENV,
+        OPENAI_CODEX_MODEL_ENV,
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    clear_env(&[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        OPENAI_CODEX_TOKEN_ENV,
+        OPENAI_CODEX_BASE_URL_ENV,
+        OPENAI_CODEX_MODEL_ENV,
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    std::env::set_var("CC_RUST_HOME", temp.path());
+    let _cwd = CwdGuard::set(temp.path());
+    std::env::set_var(OPENAI_CODEX_TOKEN_ENV, "inherited-codex-token");
+    cc_config::settings::write_user_settings(&cc_config::settings::RawSettings {
+        active_auth_profile: Some("claude_code".to_string()),
+        auth_profiles: Some(HashMap::from([(
+            "claude_code".to_string(),
+            cc_config::settings::ProviderProfileSettings {
+                backend: Some("native".to_string()),
+                api_provider: Some(cc_config::settings::API_PROVIDER_ANTHROPIC.to_string()),
+                model: Some("deepseek-v4-pro".to_string()),
+                base_url: Some("https://compatible.example.com/anthropic".to_string()),
+                env: Some(HashMap::from([(
+                    "ANTHROPIC_AUTH_TOKEN".to_string(),
+                    "anthropic-profile-token".to_string(),
+                )])),
+                ..Default::default()
+            },
+        )])),
+        ..Default::default()
+    })
+    .unwrap();
+    let loaded = cc_config::settings::load_effective(temp.path()).unwrap();
+    cc_config::settings::apply_startup_runtime_env(&loaded.effective.env)
+        .expect("profile env applies");
+
+    let client = ApiClient::from_auth_result()
+        .expect("auth resolution should not error")
+        .expect("anthropic profile client");
+
+    match &client.config().provider {
+        ApiProvider::Anthropic {
+            auth,
+            base_url,
+            endpoint_kind,
+        } => {
             assert_eq!(
                 auth,
-                &AnthropicAuth::ApiKey("sk-ant-api03-env-priority-key".to_string())
+                &AnthropicAuth::BearerToken("anthropic-profile-token".to_string())
             );
+            assert_eq!(
+                base_url.as_deref(),
+                Some("https://compatible.example.com/anthropic")
+            );
+            assert_eq!(endpoint_kind, &AnthropicEndpointKind::CompatibleAnthropic);
+            assert_eq!(client.config().default_model, "deepseek-v4-pro");
         }
         other => panic!("expected Anthropic provider, got {:?}", other),
     }
