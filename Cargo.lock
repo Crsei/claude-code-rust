@@ -35,6 +35,933 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "allthecodes"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-api",
+ "allthecodes-auth",
+ "allthecodes-bootstrap",
+ "allthecodes-browser",
+ "allthecodes-commands",
+ "allthecodes-compact",
+ "allthecodes-computer-use",
+ "allthecodes-config",
+ "allthecodes-daemon",
+ "allthecodes-engine",
+ "allthecodes-gateway",
+ "allthecodes-ipc",
+ "allthecodes-ipc-adapters",
+ "allthecodes-ipc-client",
+ "allthecodes-ipc-protocol",
+ "allthecodes-keybindings",
+ "allthecodes-lsp-service",
+ "allthecodes-mcp",
+ "allthecodes-models",
+ "allthecodes-observability",
+ "allthecodes-permissions",
+ "allthecodes-plugins",
+ "allthecodes-query",
+ "allthecodes-safety",
+ "allthecodes-sandbox",
+ "allthecodes-services",
+ "allthecodes-session",
+ "allthecodes-skills",
+ "allthecodes-startup",
+ "allthecodes-tasks",
+ "allthecodes-teams",
+ "allthecodes-tools",
+ "allthecodes-types",
+ "allthecodes-utils",
+ "allthecodes-voice",
+ "allthecodes-web",
+ "allthecodes-worktree",
+ "anyhow",
+ "assert_cmd",
+ "assert_fs",
+ "async-stream",
+ "async-trait",
+ "axum",
+ "base64",
+ "bytes",
+ "chrono",
+ "clap",
+ "crossterm",
+ "dirs",
+ "dotenvy",
+ "eventsource-stream",
+ "futures",
+ "git2",
+ "glob",
+ "hex",
+ "hmac",
+ "ignore",
+ "image",
+ "insta",
+ "keyring",
+ "libc",
+ "lru",
+ "lsp-types",
+ "notify-rust",
+ "opentelemetry",
+ "opentelemetry-langfuse",
+ "opentelemetry_sdk",
+ "parking_lot",
+ "portable-pty",
+ "predicates",
+ "pulldown-cmark",
+ "rand 0.8.5",
+ "ratatui",
+ "regex",
+ "reqwest",
+ "ring",
+ "semver",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2",
+ "shell-words",
+ "similar",
+ "strip-ansi-escapes",
+ "syntect",
+ "tempfile",
+ "textwrap",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite 0.26.2",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-appender",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "tree-sitter",
+ "unicode-width 0.2.0",
+ "url",
+ "urlencoding",
+ "uuid",
+ "vt100",
+ "walkdir",
+ "which",
+]
+
+[[package]]
+name = "allthecodes-api"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-auth",
+ "allthecodes-config",
+ "allthecodes-models",
+ "allthecodes-types",
+ "allthecodes-utils",
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "base64",
+ "bytes",
+ "chrono",
+ "futures",
+ "hex",
+ "hmac",
+ "keyring",
+ "reqwest",
+ "ring",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-auth"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-config",
+ "anyhow",
+ "base64",
+ "chrono",
+ "dirs",
+ "keyring",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "urlencoding",
+]
+
+[[package]]
+name = "allthecodes-bootstrap"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-models",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-browser"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-config",
+ "allthecodes-types",
+ "anyhow",
+ "chrono",
+ "dirs",
+ "libc",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "allthecodes-commands"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-api",
+ "allthecodes-auth",
+ "allthecodes-bootstrap",
+ "allthecodes-browser",
+ "allthecodes-compact",
+ "allthecodes-config",
+ "allthecodes-engine",
+ "allthecodes-gateway",
+ "allthecodes-ipc-protocol",
+ "allthecodes-keybindings",
+ "allthecodes-mcp",
+ "allthecodes-models",
+ "allthecodes-permissions",
+ "allthecodes-plugins",
+ "allthecodes-sandbox",
+ "allthecodes-services",
+ "allthecodes-session",
+ "allthecodes-skills",
+ "allthecodes-tasks",
+ "allthecodes-tools",
+ "allthecodes-types",
+ "allthecodes-utils",
+ "allthecodes-voice",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs",
+ "dotenvy",
+ "futures",
+ "git2",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-compact"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-types",
+ "allthecodes-utils",
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-computer-use"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-engine",
+ "allthecodes-types",
+ "anyhow",
+ "async-trait",
+ "base64",
+ "dirs",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "allthecodes-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-daemon"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-commands",
+ "allthecodes-config",
+ "allthecodes-engine",
+ "allthecodes-gateway",
+ "allthecodes-tools",
+ "allthecodes-types",
+ "allthecodes-utils",
+ "anyhow",
+ "axum",
+ "chrono",
+ "futures",
+ "hex",
+ "hmac",
+ "libc",
+ "mime_guess",
+ "parking_lot",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tower-http",
+ "tracing",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-engine"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-api",
+ "allthecodes-bootstrap",
+ "allthecodes-browser",
+ "allthecodes-compact",
+ "allthecodes-config",
+ "allthecodes-ipc-protocol",
+ "allthecodes-keybindings",
+ "allthecodes-lsp-service",
+ "allthecodes-mcp",
+ "allthecodes-models",
+ "allthecodes-observability",
+ "allthecodes-permissions",
+ "allthecodes-sandbox",
+ "allthecodes-session",
+ "allthecodes-shell-command",
+ "allthecodes-skills",
+ "allthecodes-tasks",
+ "allthecodes-tools",
+ "allthecodes-types",
+ "allthecodes-utils",
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "chrono",
+ "dirs",
+ "futures",
+ "git2",
+ "libc",
+ "opentelemetry",
+ "opentelemetry-langfuse",
+ "opentelemetry_sdk",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-opentelemetry",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-gateway"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-config",
+ "axum",
+ "hex",
+ "hmac",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "allthecodes-ipc"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-ipc-client",
+ "allthecodes-ipc-protocol",
+ "allthecodes-ipc-transport",
+ "allthecodes-types",
+ "anyhow",
+ "chrono",
+ "parking_lot",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-ipc-adapters"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-ipc-protocol",
+ "allthecodes-types",
+ "serde_json",
+]
+
+[[package]]
+name = "allthecodes-ipc-client"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-ipc-adapters",
+ "allthecodes-ipc-protocol",
+ "allthecodes-ipc-transport",
+ "allthecodes-types",
+ "anyhow",
+ "futures",
+ "parking_lot",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-ipc-protocol"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "allthecodes-ipc-transport"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-ipc-protocol",
+ "async-trait",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "allthecodes-keybindings"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "allthecodes-lsp-service"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-config",
+ "allthecodes-ipc-protocol",
+ "allthecodes-mcp",
+ "allthecodes-tools",
+ "allthecodes-types",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "lsp-types",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "which",
+]
+
+[[package]]
+name = "allthecodes-mcp"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-config",
+ "allthecodes-types",
+ "anyhow",
+ "base64",
+ "bytes",
+ "chrono",
+ "futures",
+ "parking_lot",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "allthecodes-models"
+version = "0.1.0"
+
+[[package]]
+name = "allthecodes-observability"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-permissions"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-bootstrap",
+ "allthecodes-shell-command",
+ "allthecodes-types",
+ "allthecodes-utils",
+ "anyhow",
+ "parking_lot",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "allthecodes-plugins"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-config",
+ "allthecodes-mcp",
+ "allthecodes-tools",
+ "allthecodes-types",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "flate2",
+ "hex",
+ "lru",
+ "parking_lot",
+ "regex",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+ "zip",
+]
+
+[[package]]
+name = "allthecodes-query"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-api",
+ "allthecodes-engine",
+ "allthecodes-models",
+ "allthecodes-observability",
+ "allthecodes-services",
+ "allthecodes-types",
+ "allthecodes-utils",
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "chrono",
+ "futures",
+ "parking_lot",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-safety"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-config",
+ "allthecodes-engine",
+ "allthecodes-permissions",
+ "allthecodes-query",
+ "allthecodes-types",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "insta",
+ "parking_lot",
+ "regex",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-sandbox"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-config",
+ "allthecodes-shell-command",
+ "allthecodes-types",
+ "allthecodes-utils",
+ "anyhow",
+ "dirs",
+ "libc",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "url",
+ "which",
+]
+
+[[package]]
+name = "allthecodes-services"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-api",
+ "allthecodes-config",
+ "allthecodes-engine",
+ "allthecodes-ipc-protocol",
+ "allthecodes-observability",
+ "allthecodes-session",
+ "allthecodes-types",
+ "anyhow",
+ "chrono",
+ "dirs",
+ "git2",
+ "ignore",
+ "opentelemetry",
+ "opentelemetry-langfuse",
+ "opentelemetry_sdk",
+ "parking_lot",
+ "rand 0.8.5",
+ "regex",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-session"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-bootstrap",
+ "allthecodes-compact",
+ "allthecodes-config",
+ "allthecodes-models",
+ "allthecodes-types",
+ "allthecodes-utils",
+ "anyhow",
+ "chrono",
+ "dirs",
+ "git2",
+ "hex",
+ "parking_lot",
+ "regex",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
+name = "allthecodes-shell-command"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "regex",
+ "serde",
+ "shell-words",
+ "thiserror 2.0.18",
+ "tree-sitter",
+ "tree-sitter-bash",
+]
+
+[[package]]
+name = "allthecodes-skills"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-config",
+ "allthecodes-types",
+ "chrono",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-startup"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-api",
+ "allthecodes-browser",
+ "allthecodes-config",
+ "allthecodes-engine",
+ "allthecodes-lsp-service",
+ "allthecodes-mcp",
+ "allthecodes-models",
+ "allthecodes-permissions",
+ "allthecodes-plugins",
+ "allthecodes-services",
+ "allthecodes-tasks",
+ "allthecodes-teams",
+ "allthecodes-tools",
+ "allthecodes-types",
+ "allthecodes-worktree",
+ "anyhow",
+ "async-trait",
+ "dotenvy",
+ "futures",
+ "opentelemetry",
+ "opentelemetry-langfuse",
+ "opentelemetry_sdk",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-appender",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "allthecodes-tasks"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-teams"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-bootstrap",
+ "allthecodes-commands",
+ "allthecodes-config",
+ "allthecodes-engine",
+ "allthecodes-tasks",
+ "allthecodes-tools",
+ "allthecodes-types",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "futures",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-tools"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-browser",
+ "allthecodes-config",
+ "allthecodes-ipc-protocol",
+ "allthecodes-permissions",
+ "allthecodes-sandbox",
+ "allthecodes-skills",
+ "allthecodes-tasks",
+ "allthecodes-types",
+ "allthecodes-utils",
+ "anyhow",
+ "async-trait",
+ "base64",
+ "chrono",
+ "dirs",
+ "glob",
+ "hex",
+ "ignore",
+ "libc",
+ "parking_lot",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2",
+ "similar",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-types"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-utils"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-config",
+ "allthecodes-shell-command",
+ "allthecodes-types",
+ "anyhow",
+ "chrono",
+ "git2",
+ "parking_lot",
+ "regex",
+ "serde_json",
+ "shell-words",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "allthecodes-voice"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-auth",
+ "async-trait",
+ "parking_lot",
+ "serial_test",
+ "tokio",
+]
+
+[[package]]
+name = "allthecodes-web"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-bootstrap",
+ "allthecodes-commands",
+ "allthecodes-daemon",
+ "allthecodes-engine",
+ "allthecodes-permissions",
+ "allthecodes-session",
+ "allthecodes-types",
+ "anyhow",
+ "axum",
+ "futures",
+ "parking_lot",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
+name = "allthecodes-worktree"
+version = "0.1.0"
+dependencies = [
+ "allthecodes-engine",
+ "allthecodes-types",
+ "anyhow",
+ "async-trait",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -525,804 +1452,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cc-api"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "base64",
- "bytes",
- "cc-auth",
- "cc-config",
- "cc-models",
- "cc-types",
- "cc-utils",
- "chrono",
- "futures",
- "hex",
- "hmac",
- "keyring",
- "reqwest",
- "ring",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "tracing",
- "url",
- "urlencoding",
- "uuid",
-]
-
-[[package]]
-name = "cc-auth"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "cc-config",
- "chrono",
- "dirs",
- "keyring",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "tracing",
- "urlencoding",
-]
-
-[[package]]
-name = "cc-bootstrap"
-version = "0.1.0"
-dependencies = [
- "cc-models",
- "parking_lot",
- "serde",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "cc-browser"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc-config",
- "cc-types",
- "chrono",
- "dirs",
- "libc",
- "parking_lot",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "cc-commands"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "cc-api",
- "cc-auth",
- "cc-bootstrap",
- "cc-browser",
- "cc-compact",
- "cc-config",
- "cc-engine",
- "cc-ipc-protocol",
- "cc-keybindings",
- "cc-mcp",
- "cc-models",
- "cc-permissions",
- "cc-plugins",
- "cc-sandbox",
- "cc-services",
- "cc-session",
- "cc-skills",
- "cc-tasks",
- "cc-tools",
- "cc-types",
- "cc-utils",
- "cc-voice",
- "chrono",
- "dirs",
- "dotenvy",
- "futures",
- "gateway",
- "git2",
- "parking_lot",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "cc-compact"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc-types",
- "cc-utils",
- "chrono",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "cc-computer-use"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64",
- "cc-engine",
- "cc-types",
- "dirs",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "cc-config"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "dirs",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "cc-daemon"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "cc-commands",
- "cc-config",
- "cc-engine",
- "cc-tools",
- "cc-types",
- "cc-utils",
- "chrono",
- "futures",
- "gateway",
- "hex",
- "hmac",
- "libc",
- "mime_guess",
- "parking_lot",
- "reqwest",
- "serde",
- "serde_json",
- "serial_test",
- "sha2",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tower-http",
- "tracing",
- "urlencoding",
- "uuid",
-]
-
-[[package]]
-name = "cc-engine"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "cc-api",
- "cc-bootstrap",
- "cc-browser",
- "cc-compact",
- "cc-config",
- "cc-ipc-protocol",
- "cc-keybindings",
- "cc-lsp-service",
- "cc-mcp",
- "cc-models",
- "cc-observability",
- "cc-permissions",
- "cc-sandbox",
- "cc-session",
- "cc-shell-command",
- "cc-skills",
- "cc-tasks",
- "cc-tools",
- "cc-types",
- "cc-utils",
- "chrono",
- "dirs",
- "futures",
- "git2",
- "libc",
- "opentelemetry",
- "opentelemetry-langfuse",
- "opentelemetry_sdk",
- "parking_lot",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-opentelemetry",
- "uuid",
-]
-
-[[package]]
-name = "cc-ipc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc-ipc-client",
- "cc-ipc-protocol",
- "cc-ipc-transport",
- "cc-types",
- "chrono",
- "parking_lot",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "cc-ipc-adapters"
-version = "0.1.0"
-dependencies = [
- "cc-ipc-protocol",
- "cc-types",
- "serde_json",
-]
-
-[[package]]
-name = "cc-ipc-client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc-ipc-adapters",
- "cc-ipc-protocol",
- "cc-ipc-transport",
- "cc-types",
- "futures",
- "parking_lot",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "cc-ipc-protocol"
-version = "0.1.0"
-dependencies = [
- "cc-types",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cc-ipc-transport"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "cc-ipc-protocol",
- "parking_lot",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cc-keybindings"
-version = "0.1.0"
-dependencies = [
- "crossterm",
- "parking_lot",
- "serde",
- "serde_json",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "cc-lsp-service"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "cc-config",
- "cc-ipc-protocol",
- "cc-mcp",
- "cc-tools",
- "cc-types",
- "chrono",
- "lsp-types",
- "parking_lot",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "tokio",
- "tracing",
- "which",
-]
-
-[[package]]
-name = "cc-mcp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "bytes",
- "cc-config",
- "cc-types",
- "chrono",
- "futures",
- "parking_lot",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "serial_test",
- "sha2",
- "tempfile",
- "tokio",
- "tokio-util",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "cc-models"
-version = "0.1.0"
-
-[[package]]
-name = "cc-observability"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "parking_lot",
- "serde",
- "serde_json",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "cc-permissions"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc-bootstrap",
- "cc-shell-command",
- "cc-types",
- "cc-utils",
- "parking_lot",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "cc-plugins"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "cc-config",
- "cc-mcp",
- "cc-tools",
- "cc-types",
- "chrono",
- "flate2",
- "hex",
- "lru",
- "parking_lot",
- "regex",
- "reqwest",
- "semver",
- "serde",
- "serde_json",
- "serial_test",
- "sha2",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "url",
- "uuid",
- "zip",
-]
-
-[[package]]
-name = "cc-query"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "cc-api",
- "cc-engine",
- "cc-models",
- "cc-observability",
- "cc-services",
- "cc-types",
- "cc-utils",
- "chrono",
- "futures",
- "parking_lot",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "cc-safety"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "cc-config",
- "cc-engine",
- "cc-permissions",
- "cc-query",
- "cc-types",
- "chrono",
- "insta",
- "parking_lot",
- "regex",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "cc-sandbox"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc-config",
- "cc-shell-command",
- "cc-types",
- "cc-utils",
- "dirs",
- "libc",
- "regex",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "url",
- "which",
-]
-
-[[package]]
-name = "cc-services"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc-api",
- "cc-config",
- "cc-engine",
- "cc-ipc-protocol",
- "cc-observability",
- "cc-session",
- "cc-types",
- "chrono",
- "dirs",
- "git2",
- "ignore",
- "opentelemetry",
- "opentelemetry-langfuse",
- "opentelemetry_sdk",
- "parking_lot",
- "rand 0.8.5",
- "regex",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-opentelemetry",
- "uuid",
-]
-
-[[package]]
-name = "cc-session"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc-bootstrap",
- "cc-compact",
- "cc-config",
- "cc-models",
- "cc-types",
- "cc-utils",
- "chrono",
- "dirs",
- "git2",
- "hex",
- "parking_lot",
- "regex",
- "serde",
- "serde_json",
- "serial_test",
- "sha2",
- "tempfile",
- "tokio",
- "tracing",
- "uuid",
- "walkdir",
-]
-
-[[package]]
-name = "cc-shell-command"
-version = "0.1.0"
-dependencies = [
- "base64",
- "regex",
- "serde",
- "shell-words",
- "thiserror 2.0.18",
- "tree-sitter",
- "tree-sitter-bash",
-]
-
-[[package]]
-name = "cc-skills"
-version = "0.1.0"
-dependencies = [
- "cc-config",
- "cc-types",
- "chrono",
- "parking_lot",
- "serde",
- "serde_json",
- "tempfile",
- "uuid",
-]
-
-[[package]]
-name = "cc-startup"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "cc-api",
- "cc-browser",
- "cc-config",
- "cc-engine",
- "cc-lsp-service",
- "cc-mcp",
- "cc-models",
- "cc-permissions",
- "cc-plugins",
- "cc-services",
- "cc-tasks",
- "cc-teams",
- "cc-tools",
- "cc-types",
- "cc-worktree",
- "dotenvy",
- "futures",
- "opentelemetry",
- "opentelemetry-langfuse",
- "opentelemetry_sdk",
- "serde_json",
- "serial_test",
- "tempfile",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-appender",
- "tracing-opentelemetry",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "cc-tasks"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "dirs",
- "parking_lot",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "cc-teams"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "cc-bootstrap",
- "cc-commands",
- "cc-config",
- "cc-engine",
- "cc-tasks",
- "cc-tools",
- "cc-types",
- "chrono",
- "futures",
- "parking_lot",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "tokio",
- "tokio-util",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "cc-tools"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64",
- "cc-browser",
- "cc-config",
- "cc-ipc-protocol",
- "cc-permissions",
- "cc-sandbox",
- "cc-skills",
- "cc-tasks",
- "cc-types",
- "cc-utils",
- "chrono",
- "dirs",
- "glob",
- "hex",
- "ignore",
- "libc",
- "parking_lot",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "serial_test",
- "sha2",
- "similar",
- "tempfile",
- "tokio",
- "tokio-util",
- "tracing",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "cc-types"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "serde",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "cc-utils"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc-config",
- "cc-shell-command",
- "cc-types",
- "chrono",
- "git2",
- "parking_lot",
- "regex",
- "serde_json",
- "shell-words",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "cc-voice"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "cc-auth",
- "parking_lot",
- "serial_test",
- "tokio",
-]
-
-[[package]]
-name = "cc-web"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "cc-bootstrap",
- "cc-commands",
- "cc-daemon",
- "cc-engine",
- "cc-permissions",
- "cc-session",
- "cc-types",
- "futures",
- "parking_lot",
- "rust-embed",
- "serde",
- "serde_json",
- "tokio",
- "tower-http",
- "tracing",
-]
-
-[[package]]
-name = "cc-worktree"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "cc-engine",
- "cc-types",
- "parking_lot",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1397,118 +1526,6 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
-
-[[package]]
-name = "claude-code-rs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "assert_fs",
- "async-stream",
- "async-trait",
- "axum",
- "base64",
- "bytes",
- "cc-api",
- "cc-auth",
- "cc-bootstrap",
- "cc-browser",
- "cc-commands",
- "cc-compact",
- "cc-computer-use",
- "cc-config",
- "cc-daemon",
- "cc-engine",
- "cc-ipc",
- "cc-ipc-adapters",
- "cc-ipc-client",
- "cc-ipc-protocol",
- "cc-keybindings",
- "cc-lsp-service",
- "cc-mcp",
- "cc-models",
- "cc-observability",
- "cc-permissions",
- "cc-plugins",
- "cc-query",
- "cc-safety",
- "cc-sandbox",
- "cc-services",
- "cc-session",
- "cc-skills",
- "cc-startup",
- "cc-tasks",
- "cc-teams",
- "cc-tools",
- "cc-types",
- "cc-utils",
- "cc-voice",
- "cc-web",
- "cc-worktree",
- "chrono",
- "clap",
- "crossterm",
- "dirs",
- "dotenvy",
- "eventsource-stream",
- "futures",
- "gateway",
- "git2",
- "glob",
- "hex",
- "hmac",
- "ignore",
- "image",
- "insta",
- "keyring",
- "libc",
- "lru",
- "lsp-types",
- "notify-rust",
- "opentelemetry",
- "opentelemetry-langfuse",
- "opentelemetry_sdk",
- "parking_lot",
- "portable-pty",
- "predicates",
- "pulldown-cmark",
- "rand 0.8.5",
- "ratatui",
- "regex",
- "reqwest",
- "ring",
- "semver",
- "serde",
- "serde_json",
- "serial_test",
- "sha2",
- "shell-words",
- "similar",
- "strip-ansi-escapes",
- "syntect",
- "tempfile",
- "textwrap",
- "thiserror 2.0.18",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite 0.26.2",
- "tokio-util",
- "tower",
- "tower-http",
- "tracing",
- "tracing-appender",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "tree-sitter",
- "unicode-width 0.2.0",
- "url",
- "urlencoding",
- "uuid",
- "vt100",
- "walkdir",
- "which",
-]
 
 [[package]]
 name = "colorchoice"
@@ -2116,23 +2133,6 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
-]
-
-[[package]]
-name = "gateway"
-version = "0.1.0"
-dependencies = [
- "axum",
- "cc-config",
- "hex",
- "hmac",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "tower",
 ]
 
 [[package]]

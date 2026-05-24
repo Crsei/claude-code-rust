@@ -3,6 +3,12 @@
 **/*.rs.bk
 *.pdb
 
+# CI/CD infrastructure
+.github/
+Dockerfile.ci
+docker-compose.test.yml
+.dockerignore
+
 # Environment secrets
 .env
 .env.*
@@ -71,3 +77,7 @@ web-ui/
 sdk/
 .tmp/
 crates/claude-code-rs/logs/
+
+# Test logs (generated at runtime)
+crates/*/logs/
+

@@ -1,9 +1,0 @@
-target/
-target2/
-logs/
-ui/node_modules/
-ui/dist/
-.git/
-*.pdb
-*.exe
-*.d
